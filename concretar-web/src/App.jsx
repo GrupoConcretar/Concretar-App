@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
-  Database, Loader2, RefreshCw, DollarSign, Check
+  Database, Loader2, RefreshCw, DollarSign, Check, Menu
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -208,6 +208,7 @@ function monthsBetween(d1, d2) {
 
 export default function ConcretarApp() {
   const [tab, setTab] = useState("dashboard");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const DEMO_OBRAS = [
     { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso" },
@@ -475,18 +476,44 @@ export default function ConcretarApp() {
   }
 
   return (
-    <div className="flex h-full min-h-[720px] w-full overflow-hidden rounded-xl border border-stone-200 bg-stone-100 text-slate-800" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+    <div className="relative flex h-full min-h-[720px] w-full overflow-hidden md:rounded-xl md:border md:border-stone-200 bg-stone-100 text-slate-800" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+      {/* Barra superior solo en celular */}
+      <div className="fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-slate-900 px-4 py-3 text-slate-100 md:hidden">
+        <button onClick={() => setMobileNavOpen(true)} aria-label="Abrir menú">
+          <Menu size={22} />
+        </button>
+        <div className="text-sm font-bold tracking-tight">Concretar App</div>
+        <div className="w-[22px]" />
+      </div>
+
+      {/* Fondo oscuro al abrir el menú en celular */}
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setMobileNavOpen(false)} />
+      )}
+
       {/* Sidebar */}
-      <aside className="flex w-56 shrink-0 flex-col bg-slate-900 text-slate-100">
-        <div className="border-b border-slate-700/60 px-5 py-5">
-          <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-amber-400">Concretar</div>
-          <div className="text-lg font-bold tracking-tight">App de Obra</div>
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 -translate-x-full flex-col bg-slate-900 text-slate-100 transition-transform duration-200 md:static md:z-auto md:w-56 md:translate-x-0 ${
+          mobileNavOpen ? "translate-x-0" : ""
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-slate-700/60 px-5 py-5">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-amber-400">Concretar</div>
+            <div className="text-lg font-bold tracking-tight">App de Obra</div>
+          </div>
+          <button onClick={() => setMobileNavOpen(false)} className="text-slate-400 md:hidden" aria-label="Cerrar menú">
+            <X size={20} />
+          </button>
         </div>
-        <nav className="flex-1 space-y-1 px-2 py-4">
+        <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
           {NAV.map((item) => (
             <button
               key={item.id}
-              onClick={() => setTab(item.id)}
+              onClick={() => {
+                setTab(item.id);
+                setMobileNavOpen(false);
+              }}
               className={`flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm font-medium transition ${
                 tab === item.id ? "bg-amber-500 text-slate-900" : "text-slate-300 hover:bg-slate-800 hover:text-white"
               }`}
@@ -519,7 +546,7 @@ export default function ConcretarApp() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto p-8">
+      <main className="mt-12 flex-1 overflow-y-auto p-4 md:mt-0 md:p-8">
         {tab === "dashboard" && !obraSel && (
           <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
             <Building2 size={28} className="text-slate-400" />
