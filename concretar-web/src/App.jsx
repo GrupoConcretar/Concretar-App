@@ -59,7 +59,7 @@ const objToSnake = (obj) => {
 
 async function sbSelect(table) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=*&order=id.asc`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+    headers: { apikey: SUPABASE_ANON_KEY },
   });
   if (!res.ok) throw new Error(`No se pudo leer "${table}" (HTTP ${res.status})`);
   const rows = await res.json();
@@ -71,7 +71,6 @@ async function sbInsert(table, obj) {
     method: "POST",
     headers: {
       apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       "Content-Type": "application/json",
       Prefer: "return=representation",
     },
@@ -87,7 +86,6 @@ async function sbUpdate(table, id, patch) {
     method: "PATCH",
     headers: {
       apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       "Content-Type": "application/json",
       Prefer: "return=representation",
     },
@@ -101,7 +99,7 @@ async function sbUpdate(table, id, patch) {
 async function sbDelete(table, id) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
     method: "DELETE",
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+    headers: { apikey: SUPABASE_ANON_KEY },
   });
   if (!res.ok) throw new Error(`No se pudo eliminar en "${table}" (HTTP ${res.status})`);
 }
