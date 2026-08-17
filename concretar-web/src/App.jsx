@@ -18,8 +18,9 @@ const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
 const CATEGORIAS_HERRAMIENTA = ["Eléctrica", "Manual", "Estructura", "Medición", "Seguridad", "Otro"];
 const CATEGORIAS_PERSONAL = ["Oficial Especializado", "Oficial", "Medio Oficial", "Ayudante", "Gerente", "HyS", "Recursos Humanos", "Capataz", "Logística"];
 const ESTADOS_PERSONAL = ["Activo", "Licencia", "Baja"];
-const ESTADOS_ASISTENCIA = ["Cargada", "Aprobada"];
-const ESTADOS_LIQUIDACION = ["Pendiente", "Liquidada"];
+const MANO_HABIL = ["Diestro", "Zurdo"];
+const TIPOS_SANGRE = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const ESTADOS_ASISTENCIA = ["Presente", "Ausente", "Tardanza"];
 const UMBRAL_APROBACION_OC = 3000000;
 const DESVIO_ALERTA_PCT = 10;
 const DESVIO_DANGER_PCT = 20;
@@ -128,6 +129,9 @@ const BADGE_STYLES = {
   Activo: "border-emerald-600 text-emerald-700",
   Licencia: "border-amber-600 text-amber-700",
   Baja: "border-rose-600 text-rose-700",
+  Presente: "border-emerald-600 text-emerald-700",
+  Ausente: "border-rose-600 text-rose-700",
+  Tardanza: "border-amber-600 text-amber-700",
   Cargada: "border-slate-400 text-slate-500",
   Liquidada: "border-emerald-600 text-emerald-700",
 };
@@ -215,21 +219,21 @@ export default function ConcretarApp() {
     { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso" },
   ];
   const DEMO_PERSONAL = [
-    { id: 1, nombreCompleto: "Facundo C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null },
-    { id: 2, nombreCompleto: "Eduardo Sr", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null },
-    { id: 3, nombreCompleto: "Daniel Tello", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null },
-    { id: 4, nombreCompleto: "Pablo Robles", dni: "", telefono: "", categoria: "Gerente", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null },
-    { id: 5, nombreCompleto: "Pepito Chespirito", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null },
-    { id: 6, nombreCompleto: "Emi Perez", dni: "", telefono: "", categoria: "Logística", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null },
+    { id: 1, nombreCompleto: "Facundo C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
+    { id: 2, nombreCompleto: "Eduardo Sr", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
+    { id: 3, nombreCompleto: "Daniel Tello", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
+    { id: 4, nombreCompleto: "Pablo Robles", dni: "", telefono: "", categoria: "Gerente", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
+    { id: 5, nombreCompleto: "Pepito Chespirito", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
+    { id: 6, nombreCompleto: "Emi Perez", dni: "", telefono: "", categoria: "Logística", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
   ];
   const DEMO_COSTOS = CATEGORIAS_PERSONAL.map((cat, i) => ({ id: i + 1, categoria: cat, costoHora: null }));
 
   const DEMO_ASISTENCIA = [
-    { id: 1, fecha: "2026-08-03", obraId: 1, nombre: "Pablo Robles", horas: 8, cargadoPor: "Emi Perez", estado: "Aprobada", liquidacion: "Liquidada" },
-    { id: 2, fecha: "2026-08-03", obraId: 1, nombre: "Eduardo Sr", horas: 9, cargadoPor: "Emi Perez", estado: "Aprobada", liquidacion: "Liquidada" },
-    { id: 3, fecha: "2026-08-04", obraId: 1, nombre: "Daniel Tello", horas: 8, cargadoPor: "Emi Perez", estado: "Aprobada", liquidacion: "Pendiente" },
-    { id: 4, fecha: "2026-08-05", obraId: 2, nombre: "Facundo C", horas: 6, cargadoPor: "Pablo Robles", estado: "Cargada", liquidacion: "Pendiente" },
-    { id: 5, fecha: "2026-08-05", obraId: 2, nombre: "Pepito Chespirito", horas: 8, cargadoPor: "Pablo Robles", estado: "Cargada", liquidacion: "Pendiente" },
+    { id: 1, fecha: "2026-08-03", obraId: 1, nombre: "Pablo Robles", horas: 8, cargadoPor: "Gerente", estado: "Presente" },
+    { id: 2, fecha: "2026-08-03", obraId: 1, nombre: "Eduardo Sr", horas: 9, cargadoPor: "Gerente", estado: "Presente" },
+    { id: 3, fecha: "2026-08-04", obraId: 1, nombre: "Daniel Tello", horas: 8, cargadoPor: "Capataz", estado: "Tardanza" },
+    { id: 4, fecha: "2026-08-05", obraId: 2, nombre: "Facundo C", horas: 6, cargadoPor: "Capataz", estado: "Presente" },
+    { id: 5, fecha: "2026-08-05", obraId: 2, nombre: "Pepito Chespirito", horas: 0, cargadoPor: "Capataz", estado: "Ausente" },
   ];
   const DEMO_HERRAMIENTAS = [
     { id: 1, nombre: "Amoladora angular", categoria: "Eléctrica", ubicacion: "Depósito central", responsable: "-", estado: "Disponible" },
@@ -353,9 +357,26 @@ export default function ConcretarApp() {
     setTimeout(() => setSavedCostoId((id) => (id === costo.id ? null : id)), 1500);
   }
 
+  const [viewingPersonId, setViewingPersonId] = useState(null);
+  const viewingPerson = personal.find((p) => p.id === viewingPersonId) || null;
+
+  function nombreCorto(nombreCompleto) {
+    const partes = (nombreCompleto || "").trim().split(/\s+/);
+    return partes.slice(0, 2).join(" ") || "—";
+  }
+
+  function ultimaObraDe(nombreCompleto) {
+    const registros = asistencia
+      .filter((a) => a.nombre === nombreCompleto)
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    if (registros.length === 0) return null;
+    return obras.find((o) => o.id === registros[0].obraId)?.nombre || null;
+  }
+
   const emptyPersonalForm = {
     nombreCompleto: "", dni: "", categoria: CATEGORIAS_PERSONAL[0],
     estado: "Activo", direccion: "", fechaNacimiento: "", fotoPersona: null, dniFrente: null, dniDorso: null,
+    manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "",
   };
   const [personalForm, setPersonalForm] = useState(emptyPersonalForm);
   const [editingPersonalId, setEditingPersonalId] = useState(null);
@@ -372,6 +393,10 @@ export default function ConcretarApp() {
       fotoPersona: p.fotoPersona || null,
       dniFrente: p.dniFrente || null,
       dniDorso: p.dniDorso || null,
+      manoHabil: p.manoHabil || "Diestro",
+      tipoSangre: p.tipoSangre || "",
+      tarjetaIeric: p.tarjetaIeric || "No",
+      observaciones: p.observaciones || "",
     });
     setEditingPersonalId(p.id);
     setShowPersonalForm(true);
@@ -395,6 +420,10 @@ export default function ConcretarApp() {
       fotoPersona: personalForm.fotoPersona,
       dniFrente: personalForm.dniFrente,
       dniDorso: personalForm.dniDorso,
+      manoHabil: personalForm.manoHabil,
+      tipoSangre: personalForm.tipoSangre,
+      tarjetaIeric: personalForm.tarjetaIeric,
+      observaciones: personalForm.observaciones,
     };
     if (editingPersonalId) {
       updateRecord("personal", editingPersonalId, payload, setPersonal);
@@ -447,6 +476,37 @@ export default function ConcretarApp() {
   const [showFacturaForm, setShowFacturaForm] = useState(false);
   const [showPersonalForm, setShowPersonalForm] = useState(false);
   const [showAsistenciaForm, setShowAsistenciaForm] = useState(false);
+  const emptyAsistenciaForm = { fecha: new Date().toISOString().slice(0, 10), nombre: "", obraId: obras[0]?.id ?? "", horas: 8, estado: "Presente" };
+  const [asistenciaForm, setAsistenciaForm] = useState(emptyAsistenciaForm);
+  const [asistenciaSesion, setAsistenciaSesion] = useState([]);
+  const asf = (key) => (val) => setAsistenciaForm((f) => ({ ...f, [key]: val }));
+
+  function abrirCargaAsistencia() {
+    setAsistenciaForm(emptyAsistenciaForm);
+    setAsistenciaSesion([]);
+    setShowAsistenciaForm(true);
+  }
+
+  function finalizarCargaAsistencia() {
+    setShowAsistenciaForm(false);
+    setAsistenciaSesion([]);
+  }
+
+  function submitAsistenciaForm(e) {
+    e.preventDefault();
+    if (!asistenciaForm.nombre) return;
+    addRecord("asistencia", {
+      fecha: asistenciaForm.fecha,
+      nombre: asistenciaForm.nombre,
+      obraId: Number(asistenciaForm.obraId),
+      horas: Number(asistenciaForm.horas) || 0,
+      estado: asistenciaForm.estado,
+      cargadoPor: currentRole,
+    }, setAsistencia);
+    setAsistenciaSesion((prev) => [...prev, asistenciaForm.nombre]);
+    // Mantiene fecha, obra, horas y estado; solo limpia el nombre para cargar a la próxima persona.
+    setAsistenciaForm((f) => ({ ...f, nombre: "" }));
+  }
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
 
   const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
@@ -709,7 +769,7 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "personal" && (
+        {tab === "personal" && !viewingPerson && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Personal</h2>
@@ -718,7 +778,7 @@ export default function ConcretarApp() {
                   onClick={() => (showPersonalForm ? cancelPersonalForm() : setShowPersonalForm(true))}
                   className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
                 >
-                  <Plus size={16} /> Añadir elemento
+                  <Plus size={16} /> Añadir personal
                 </button>
               ) : (
                 <span className="text-xs text-slate-400">Tu rol no puede dar de alta personal</span>
@@ -730,7 +790,7 @@ export default function ConcretarApp() {
             </div>
 
             {showPersonalForm && canCrearPersonal && (
-              <Panel title={editingPersonalId ? "Editar elemento" : "Añadir elemento"} action={<button onClick={cancelPersonalForm}><X size={16} /></button>}>
+              <Panel title={editingPersonalId ? "Editar personal" : "Añadir personal"} action={<button onClick={cancelPersonalForm}><X size={16} /></button>}>
                 <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitPersonalForm}>
                   <Field label="Nombre completo">
                     <input value={personalForm.nombreCompleto} onChange={(e) => pf("nombreCompleto")(e.target.value)} required className={inputCls} />
@@ -754,6 +814,34 @@ export default function ConcretarApp() {
                   <Field label="Dirección">
                     <input value={personalForm.direccion} onChange={(e) => pf("direccion")(e.target.value)} className={inputCls} />
                   </Field>
+                  <Field label="Mano hábil">
+                    <select value={personalForm.manoHabil} onChange={(e) => pf("manoHabil")(e.target.value)} className={inputCls}>
+                      {MANO_HABIL.map((m) => <option key={m}>{m}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Tipo de sangre">
+                    <select value={personalForm.tipoSangre} onChange={(e) => pf("tipoSangre")(e.target.value)} className={inputCls}>
+                      <option value="">Sin especificar</option>
+                      {TIPOS_SANGRE.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="¿Tiene tarjeta IERIC?">
+                    <select value={personalForm.tarjetaIeric} onChange={(e) => pf("tarjetaIeric")(e.target.value)} className={inputCls}>
+                      <option>No</option>
+                      <option>Sí</option>
+                    </select>
+                  </Field>
+                  <div className="md:col-span-3">
+                    <Field label="Observaciones (alergias, lesiones previas, etc.)">
+                      <textarea
+                        value={personalForm.observaciones}
+                        onChange={(e) => pf("observaciones")(e.target.value)}
+                        rows={3}
+                        placeholder="Ej: alérgico a la penicilina, lesión previa de hombro derecho..."
+                        className={inputCls}
+                      />
+                    </Field>
+                  </div>
                   <PhotoInput label="Foto de la persona" value={personalForm.fotoPersona} onChange={pf("fotoPersona")} />
                   <PhotoInput label="DNI frente" value={personalForm.dniFrente} onChange={pf("dniFrente")} />
                   <PhotoInput label="DNI dorso" value={personalForm.dniDorso} onChange={pf("dniDorso")} />
@@ -767,49 +855,40 @@ export default function ConcretarApp() {
               </Panel>
             )}
 
-            <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-4 py-3">Foto</th>
-                    <th className="px-4 py-3">Nombre</th>
-                    <th className="px-4 py-3">Categoría</th>
-                    <th className="px-4 py-3">DNI</th>
-                    <th className="px-4 py-3">Costo/hora</th>
-                    <th className="px-4 py-3">Estado</th>
-                    {canEditarPersonal && <th className="px-4 py-3">Acciones</th>}
+                    <th className="px-2 py-2">Foto</th>
+                    <th className="px-2 py-2">Nombre</th>
+                    <th className="px-2 py-2">Categoría</th>
+                    <th className="px-2 py-2">Última obra</th>
+                    <th className="px-2 py-2">DNI</th>
                   </tr>
                 </thead>
                 <tbody>
                   {personal.map((p) => (
                     <tr key={p.id} className="border-t border-stone-100">
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-1.5">
                         {p.fotoPersona ? (
-                          <img src={p.fotoPersona} alt={p.nombreCompleto} className="h-9 w-9 rounded-full border border-stone-200 object-cover" />
+                          <img src={p.fotoPersona} alt={p.nombreCompleto} className="h-7 w-7 rounded-full border border-stone-200 object-cover" />
                         ) : (
-                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-100 text-[10px] font-semibold text-slate-400">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-stone-100 text-[9px] font-semibold text-slate-400">
                             {(p.nombreCompleto || "?").slice(0, 1)}
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3 font-medium text-slate-900">{p.nombreCompleto}</td>
-                      <td className="px-4 py-3 text-slate-600">{p.categoria}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{p.dni || "—"}</td>
-                      <td className="px-4 py-3 font-mono text-slate-700">
-                        {(() => {
-                          const c = costosCategoria.find((x) => x.categoria === p.categoria)?.costoHora;
-                          return c ? fmtARS(c) : <span className="text-slate-400">Sin definir</span>;
-                        })()}
+                      <td className="px-2 py-1.5">
+                        <button onClick={() => setViewingPersonId(p.id)} className="flex items-center gap-1 font-medium text-slate-900 underline decoration-dotted hover:text-amber-600">
+                          {nombreCorto(p.nombreCompleto)}
+                          {p.observaciones && (
+                            <span title={p.observaciones}><AlertTriangle size={12} className="text-amber-500" /></span>
+                          )}
+                        </button>
                       </td>
-                      <td className="px-4 py-3"><Badge estado={p.estado} /></td>
-                      {canEditarPersonal && (
-                        <td className="px-4 py-3">
-                          <div className="flex gap-2">
-                            <button onClick={() => startEditPersonal(p)} className={btnGhost}>Editar</button>
-                            <button onClick={() => deleteRecord("personal", p.id, setPersonal)} className={btnGhostDanger}>Eliminar</button>
-                          </div>
-                        </td>
-                      )}
+                      <td className="px-2 py-1.5 text-slate-600">{p.categoria}</td>
+                      <td className="px-2 py-1.5 text-slate-600">{ultimaObraDe(p.nombreCompleto) || <span className="text-slate-400">—</span>}</td>
+                      <td className="px-2 py-1.5 font-mono text-slate-500">{p.dni || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -818,61 +897,145 @@ export default function ConcretarApp() {
           </div>
         )}
 
+        {tab === "personal" && viewingPerson && (
+          <div className="space-y-4">
+            <button onClick={() => setViewingPersonId(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
+              ← Volver a Personal
+            </button>
+
+            <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-center gap-4">
+                {viewingPerson.fotoPersona ? (
+                  <img src={viewingPerson.fotoPersona} alt={viewingPerson.nombreCompleto} className="h-20 w-20 rounded-full border border-stone-200 object-cover" />
+                ) : (
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full bg-stone-100 text-2xl font-semibold text-slate-400">
+                    {(viewingPerson.nombreCompleto || "?").slice(0, 1)}
+                  </div>
+                )}
+                <div>
+                  <div className="text-xl font-bold text-slate-900">{viewingPerson.nombreCompleto}</div>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    <Badge estado={viewingPerson.estado} />
+                    <span className="text-sm text-slate-500">{viewingPerson.categoria}</span>
+                  </div>
+                </div>
+                {canEditarPersonal && (
+                  <div className="ml-auto flex gap-2">
+                    <button onClick={() => startEditPersonal(viewingPerson)} className={btnGhost}>Editar</button>
+                    <button
+                      onClick={() => {
+                        deleteRecord("personal", viewingPerson.id, setPersonal);
+                        setViewingPersonId(null);
+                      }}
+                      className={btnGhostDanger}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 md:grid-cols-3">
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">DNI</div><div className="font-mono text-slate-800">{viewingPerson.dni || "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Costo por hora</div><div className="font-mono text-slate-800">{(() => { const c = costosCategoria.find((x) => x.categoria === viewingPerson.categoria)?.costoHora; return c ? fmtARS(c) : "Sin definir"; })()}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Última obra</div><div className="text-slate-800">{ultimaObraDe(viewingPerson.nombreCompleto) || "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fecha de nacimiento</div><div className="text-slate-800">{viewingPerson.fechaNacimiento ? new Date(viewingPerson.fechaNacimiento).toLocaleDateString("es-AR") : "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dirección</div><div className="text-slate-800">{viewingPerson.direccion || "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Mano hábil</div><div className="text-slate-800">{viewingPerson.manoHabil || "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tipo de sangre</div><div className="text-slate-800">{viewingPerson.tipoSangre || "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tarjeta IERIC</div><div className="text-slate-800">{viewingPerson.tarjetaIeric || "No"}</div></div>
+              </div>
+
+              {viewingPerson.observaciones && (
+                <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide"><AlertTriangle size={13} /> Observaciones</div>
+                  {viewingPerson.observaciones}
+                </div>
+              )}
+
+              {(viewingPerson.dniFrente || viewingPerson.dniDorso) && (
+                <div className="mt-4 flex flex-wrap gap-4">
+                  {viewingPerson.dniFrente && (
+                    <div>
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">DNI frente</div>
+                      <img src={viewingPerson.dniFrente} alt="DNI frente" className="h-24 rounded-md border border-stone-200 object-cover" />
+                    </div>
+                  )}
+                  {viewingPerson.dniDorso && (
+                    <div>
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">DNI dorso</div>
+                      <img src={viewingPerson.dniDorso} alt="DNI dorso" className="h-24 rounded-md border border-stone-200 object-cover" />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {tab === "asistencia" && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Asistencia</h2>
-              <button onClick={() => setShowAsistenciaForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+              <button onClick={abrirCargaAsistencia} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                 <Plus size={16} /> Cargar asistencia
               </button>
             </div>
 
             {showAsistenciaForm && (
-              <Panel title="Cargar asistencia" action={<button onClick={() => setShowAsistenciaForm(false)}><X size={16} /></button>}>
-                <form
-                  className="grid grid-cols-1 gap-4 md:grid-cols-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const f = new FormData(e.target);
-                    addRecord("asistencia", {
-                      fecha: f.get("fecha"),
-                      obraId: Number(f.get("obraId")),
-                      nombre: f.get("nombre"),
-                      horas: Number(f.get("horas")) || 0,
-                      cargadoPor: f.get("cargadoPor"),
-                      estado: f.get("estado"),
-                      liquidacion: f.get("liquidacion"),
-                    }, setAsistencia);
-                    e.target.reset();
-                    setShowAsistenciaForm(false);
-                  }}
-                >
-                  <Field label="Fecha"><input name="fecha" type="date" required className={inputCls} /></Field>
-                  <Field label="Obra">
-                    <select name="obraId" className={inputCls}>{obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
+              <Panel title="Cargar asistencia" action={<button onClick={finalizarCargaAsistencia}><X size={16} /></button>}>
+                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitAsistenciaForm}>
+                  <Field label="Fecha">
+                    <input type="date" required value={asistenciaForm.fecha} onChange={(e) => asf("fecha")(e.target.value)} className={inputCls} />
                   </Field>
                   <Field label="Nombre y apellido">
-                    <select name="nombre" className={inputCls}>{personal.map((p) => <option key={p.id}>{p.nombreCompleto}</option>)}</select>
+                    <select required value={asistenciaForm.nombre} onChange={(e) => asf("nombre")(e.target.value)} className={inputCls}>
+                      <option value="">-- Elegí a la persona --</option>
+                      {personal.map((p) => <option key={p.id}>{p.nombreCompleto}</option>)}
+                    </select>
                   </Field>
-                  <Field label="Hs trabajadas"><input name="horas" type="number" defaultValue={8} required className={inputCls} /></Field>
-                  <Field label="Cargado por">
-                    <select name="cargadoPor" className={inputCls}>{personal.map((p) => <option key={p.id}>{p.nombreCompleto}</option>)}</select>
+                  <Field label="Centro de costo / Obra">
+                    <select value={asistenciaForm.obraId} onChange={(e) => asf("obraId")(e.target.value)} className={inputCls}>
+                      {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Hs trabajadas">
+                    <input type="number" required value={asistenciaForm.horas} onChange={(e) => asf("horas")(e.target.value)} className={inputCls} />
                   </Field>
                   <Field label="Estado">
-                    <select name="estado" className={inputCls}>{ESTADOS_ASISTENCIA.map((s) => <option key={s}>{s}</option>)}</select>
+                    <select value={asistenciaForm.estado} onChange={(e) => asf("estado")(e.target.value)} className={inputCls}>
+                      {ESTADOS_ASISTENCIA.map((s) => <option key={s}>{s}</option>)}
+                    </select>
                   </Field>
-                  <Field label="Estado liquidación">
-                    <select name="liquidacion" className={inputCls}>{ESTADOS_LIQUIDACION.map((s) => <option key={s}>{s}</option>)}</select>
-                  </Field>
-                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Enviar</button></div>
+                  <div className="flex flex-col justify-end gap-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cargado por</span>
+                    <span className="rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-slate-500">{currentRole} (vos)</span>
+                  </div>
+                  <div className="flex items-end gap-2 md:col-span-3">
+                    <button type="submit" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+                      Confirmar y cargar siguiente
+                    </button>
+                    <button type="button" onClick={finalizarCargaAsistencia} className={btnGhost}>Finalizar</button>
+                  </div>
                 </form>
+
+                {asistenciaSesion.length > 0 && (
+                  <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                    <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide"><CheckCircle2 size={13} /> Cargados en esta tanda ({asistenciaSesion.length})</div>
+                    {asistenciaSesion.join(", ")}
+                  </div>
+                )}
+
+                <div className="mt-3 text-[11px] text-slate-400">
+                  La fecha, el centro de costo, las horas y el estado quedan fijos entre carga y carga — solo cambiá el nombre para ir sumando a toda la cuadrilla rápido. "Cargado por" se completa solo con tu rol actual; cuando armemos el login real, va a quedar el nombre de quien inició sesión.
+                </div>
               </Panel>
             )}
 
-            <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Nombre</th><th className="px-4 py-3">Hs</th><th className="px-4 py-3">Cargado por</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Liquidación</th></tr>
+                  <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Nombre</th><th className="px-4 py-3">Centro de costo</th><th className="px-4 py-3">Hs</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Cargado por</th></tr>
                 </thead>
                 <tbody>
                   {[...asistencia].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map((a) => {
@@ -880,12 +1043,11 @@ export default function ConcretarApp() {
                     return (
                       <tr key={a.id} className="border-t border-stone-100">
                         <td className="px-4 py-3 text-slate-600">{new Date(a.fecha).toLocaleDateString("es-AR")}</td>
-                        <td className="px-4 py-3 text-slate-600">{obra?.nombre}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">{a.nombre}</td>
+                        <td className="px-4 py-3 text-slate-600">{obra?.nombre}</td>
                         <td className="px-4 py-3 font-mono text-slate-700">{a.horas}</td>
-                        <td className="px-4 py-3 text-slate-600">{a.cargadoPor}</td>
                         <td className="px-4 py-3"><Badge estado={a.estado} /></td>
-                        <td className="px-4 py-3"><Badge estado={a.liquidacion} /></td>
+                        <td className="px-4 py-3 text-slate-500">{a.cargadoPor}</td>
                       </tr>
                     );
                   })}
@@ -962,7 +1124,7 @@ export default function ConcretarApp() {
               </select>
             </div>
 
-            <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   <tr><th className="px-4 py-3">Herramienta</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Ubicación</th><th className="px-4 py-3">Responsable</th><th className="px-4 py-3">Estado</th></tr>
@@ -1112,7 +1274,7 @@ export default function ConcretarApp() {
               </Panel>
             )}
 
-            <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Proveedor</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Comprobante</th><th className="px-4 py-3">Monto</th><th className="px-4 py-3">Estado</th></tr>
@@ -1146,7 +1308,7 @@ export default function ConcretarApp() {
               {!canEditarCostos && " Solo Gerente y RRHH pueden modificarlo."}
             </div>
 
-            <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
