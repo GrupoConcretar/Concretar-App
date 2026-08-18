@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
-  Database, Loader2, RefreshCw, DollarSign, Check, Menu
+  Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck,
+  Printer, HardHat, Wrench, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -20,16 +23,31 @@ const CATEGORIAS_PERSONAL = ["Oficial Especializado", "Oficial", "Medio Oficial"
 const ESTADOS_PERSONAL = ["Activo", "Licencia", "Baja"];
 const MANO_HABIL = ["Diestro", "Zurdo"];
 const TIPOS_SANGRE = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const TALLES_PANTALON = ["38", "40", "42", "44", "46", "48", "50", "52", "54"];
+const TALLES_CAMISA = ["S", "M", "L", "XL", "XXL"];
+const TALLES_GUANTES = ["S", "M", "L", "XL"];
+const TALLES_CALZADO = ["37", "38", "39", "40", "41", "42", "43", "44", "45", "46"];
+const ESPECIALIDADES = ["Civil", "Metalúrgico", "Eléctrico", "Pintor", "Plomería", "Carpintero", "Hierrero"];
+const ICONO_ESPECIALIDAD = {
+  Civil: HardHat,
+  "Metalúrgico": Wrench,
+  "Eléctrico": Zap,
+  Pintor: PaintRoller,
+  "Plomería": Droplet,
+  Carpintero: Hammer,
+  Hierrero: Flame,
+};
 const ESTADOS_ASISTENCIA = ["Presente", "Ausente", "Tardanza"];
 const UMBRAL_APROBACION_OC = 3000000;
 const DESVIO_ALERTA_PCT = 10;
 const DESVIO_DANGER_PCT = 20;
 
 // Roles que pueden "iniciar sesión" (simulado hasta que armemos el login real)
-const ROLES = ["Gerente", "Recursos Humanos", "HyS", "Capataz", "Otro (sin acceso)"];
+const ROLES = ["Gerente", "Recursos Humanos", "HyS", "Capataz", "Contador", "Otro (sin acceso)"];
 const ROLES_ALTA_PERSONAL = ["Gerente", "Recursos Humanos", "HyS", "Capataz"];
 const ROLES_EDITAR_PERSONAL = ["Gerente", "Recursos Humanos"];
 const ROLES_EDITAR_COSTOS = ["Gerente", "Recursos Humanos"];
+const ROLES_LIQUIDACION = ["Gerente", "Contador"];
 
 // ============================================================
 // CONFIGURACIÓN DE SUPABASE
@@ -124,6 +142,7 @@ const BADGE_STYLES = {
   Aprobada: "border-amber-600 text-amber-700",
   Recibida: "border-emerald-600 text-emerald-700",
   Pagada: "border-emerald-600 text-emerald-700",
+  Pagado: "border-emerald-600 text-emerald-700",
   "En curso": "border-amber-600 text-amber-700",
   Finalizada: "border-emerald-600 text-emerald-700",
   Activo: "border-emerald-600 text-emerald-700",
@@ -140,6 +159,16 @@ function Badge({ estado }) {
   return (
     <span className={`inline-block rounded-full border-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap ${BADGE_STYLES[estado] || "border-slate-400 text-slate-500"}`}>
       {estado}
+    </span>
+  );
+}
+
+function EspecialidadIcon({ especialidad, size = 13 }) {
+  const IconComp = ICONO_ESPECIALIDAD[especialidad];
+  if (!IconComp) return null;
+  return (
+    <span title={especialidad} className="inline-flex items-center text-slate-500">
+      <IconComp size={size} />
     </span>
   );
 }
@@ -219,12 +248,12 @@ export default function ConcretarApp() {
     { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso" },
   ];
   const DEMO_PERSONAL = [
-    { id: 1, nombreCompleto: "Facundo C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
-    { id: 2, nombreCompleto: "Eduardo Sr", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
-    { id: 3, nombreCompleto: "Daniel Tello", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
-    { id: 4, nombreCompleto: "Pablo Robles", dni: "", telefono: "", categoria: "Gerente", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
-    { id: 5, nombreCompleto: "Pepito Chespirito", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
-    { id: 6, nombreCompleto: "Emi Perez", dni: "", telefono: "", categoria: "Logística", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "" },
+    { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
+    { id: 2, nombre: "Eduardo", apellido: "Sr", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
+    { id: 3, nombre: "Daniel", apellido: "Tello", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
+    { id: 4, nombre: "Pablo", apellido: "Robles", dni: "", telefono: "", categoria: "Gerente", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
+    { id: 5, nombre: "Pepito", apellido: "Chespirito", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
+    { id: 6, nombre: "Emi", apellido: "Perez", dni: "", telefono: "", categoria: "Logística", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
   ];
   const DEMO_COSTOS = CATEGORIAS_PERSONAL.map((cat, i) => ({ id: i + 1, categoria: cat, costoHora: null }));
 
@@ -358,11 +387,20 @@ export default function ConcretarApp() {
   }
 
   const [viewingPersonId, setViewingPersonId] = useState(null);
+  const [modoSeleccionPdf, setModoSeleccionPdf] = useState(false);
+  const [seleccionadosPdf, setSeleccionadosPdf] = useState([]);
+  const toggleSeleccionPdf = (id) =>
+    setSeleccionadosPdf((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const viewingPerson = personal.find((p) => p.id === viewingPersonId) || null;
 
-  function nombreCorto(nombreCompleto) {
-    const partes = (nombreCompleto || "").trim().split(/\s+/);
-    return partes.slice(0, 2).join(" ") || "—";
+  function nombreCompletoDe(p) {
+    return [p.nombre, p.apellido].filter(Boolean).join(" ") || "—";
+  }
+
+  function nombreCorto(p) {
+    const n = (p.nombre || "").trim().split(/\s+/)[0] || "";
+    const a = (p.apellido || "").trim().split(/\s+/)[0] || "";
+    return [n, a].filter(Boolean).join(" ") || "—";
   }
 
   function ultimaObraDe(nombreCompleto) {
@@ -373,10 +411,129 @@ export default function ConcretarApp() {
     return obras.find((o) => o.id === registros[0].obraId)?.nombre || null;
   }
 
+  function formatoImagen(dataUrl) {
+    const m = /^data:image\/(\w+);/.exec(dataUrl || "");
+    if (!m) return "JPEG";
+    const f = m[1].toUpperCase();
+    return f === "JPG" ? "JPEG" : f;
+  }
+
+  function generarPdfSeguro(personas) {
+    if (!personas || personas.length === 0) return;
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const pageWidth = 210;
+    const margin = 15;
+
+    personas.forEach((p, idx) => {
+      if (idx > 0) doc.addPage();
+      let y = margin;
+
+      doc.setFontSize(15);
+      doc.setFont(undefined, "bold");
+      doc.text("FICHA DE ALTA — SEGURO", margin, y);
+      doc.setFontSize(9);
+      doc.setFont(undefined, "normal");
+      doc.text(new Date().toLocaleDateString("es-AR"), pageWidth - margin, y, { align: "right" });
+      y += 10;
+
+      if (p.fotoPersona) {
+        try { doc.addImage(p.fotoPersona, formatoImagen(p.fotoPersona), pageWidth - margin - 32, margin + 4, 32, 32); } catch (e) {}
+      }
+
+      doc.setFontSize(13);
+      doc.setFont(undefined, "bold");
+      doc.text(nombreCompletoDe(p), margin, y);
+      y += 9;
+
+      doc.setFontSize(10);
+      const campo = (label, valor) => {
+        doc.setFont(undefined, "bold");
+        doc.text(`${label}:`, margin, y);
+        doc.setFont(undefined, "normal");
+        doc.text(String(valor || "—"), margin + 42, y);
+        y += 7;
+      };
+
+      campo("DNI", p.dni);
+      campo("Categoría", p.categoria);
+      campo("Fecha de nacimiento", p.fechaNacimiento ? new Date(p.fechaNacimiento).toLocaleDateString("es-AR") : "—");
+      campo("Dirección", p.direccion);
+      campo("Mano hábil", p.manoHabil);
+      campo("Tipo de sangre", p.tipoSangre);
+      campo("Tarjeta IERIC", p.tarjetaIeric);
+      campo("Estado", p.estado);
+      y += 3;
+
+      if (p.observaciones) {
+        doc.setFont(undefined, "bold");
+        doc.text("Observaciones:", margin, y);
+        y += 6;
+        doc.setFont(undefined, "normal");
+        const lineas = doc.splitTextToSize(p.observaciones, pageWidth - margin * 2);
+        doc.text(lineas, margin, y);
+        y += lineas.length * 5 + 4;
+      }
+
+      y = Math.max(y, margin + 45) + 4;
+      doc.setFont(undefined, "bold");
+      doc.text("Documentación", margin, y);
+      y += 4;
+
+      const imgW = 80, imgH = 50;
+      if (p.dniFrente) {
+        try {
+          doc.addImage(p.dniFrente, formatoImagen(p.dniFrente), margin, y, imgW, imgH);
+          doc.setFontSize(8);
+          doc.setFont(undefined, "normal");
+          doc.text("DNI frente", margin, y + imgH + 4);
+        } catch (e) {}
+      }
+      if (p.dniDorso) {
+        try {
+          doc.addImage(p.dniDorso, formatoImagen(p.dniDorso), margin + imgW + 10, y, imgW, imgH);
+          doc.setFontSize(8);
+          doc.setFont(undefined, "normal");
+          doc.text("DNI dorso", margin + imgW + 10, y + imgH + 4);
+        } catch (e) {}
+      }
+    });
+
+    doc.save(`altas_seguro_${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
+  function generarPdfTalles(personas) {
+    if (!personas || personas.length === 0) return;
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    doc.setFontSize(14);
+    doc.setFont(undefined, "bold");
+    doc.text("Resumen de talles — indumentaria", 15, 15);
+    doc.setFontSize(9);
+    doc.setFont(undefined, "normal");
+    doc.text(new Date().toLocaleDateString("es-AR"), 195, 15, { align: "right" });
+
+    autoTable(doc, {
+      startY: 22,
+      head: [["Nombre", "Categoría", "Pantalón", "Camisa", "Guantes", "Calzado"]],
+      body: personas.map((p) => [
+        nombreCompletoDe(p),
+        p.categoria || "—",
+        p.tallePantalon || "—",
+        p.talleCamisa || "—",
+        p.talleGuantes || "—",
+        p.talleCalzado || "—",
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [15, 23, 42] },
+    });
+
+    doc.save(`resumen_talles_${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
   const emptyPersonalForm = {
-    nombreCompleto: "", dni: "", categoria: CATEGORIAS_PERSONAL[0],
+    nombre: "", apellido: "", dni: "", categoria: CATEGORIAS_PERSONAL[0],
     estado: "Activo", direccion: "", fechaNacimiento: "", fotoPersona: null, dniFrente: null, dniDorso: null,
     manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "",
+    especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "",
   };
   const [personalForm, setPersonalForm] = useState(emptyPersonalForm);
   const [editingPersonalId, setEditingPersonalId] = useState(null);
@@ -384,7 +541,8 @@ export default function ConcretarApp() {
 
   function startEditPersonal(p) {
     setPersonalForm({
-      nombreCompleto: p.nombreCompleto || "",
+      nombre: p.nombre || "",
+      apellido: p.apellido || "",
       dni: p.dni || "",
       categoria: p.categoria || CATEGORIAS_PERSONAL[0],
       estado: p.estado || "Activo",
@@ -397,6 +555,11 @@ export default function ConcretarApp() {
       tipoSangre: p.tipoSangre || "",
       tarjetaIeric: p.tarjetaIeric || "No",
       observaciones: p.observaciones || "",
+      especialidad: p.especialidad || "",
+      tallePantalon: p.tallePantalon || "",
+      talleCamisa: p.talleCamisa || "",
+      talleGuantes: p.talleGuantes || "",
+      talleCalzado: p.talleCalzado || "",
     });
     setEditingPersonalId(p.id);
     setShowPersonalForm(true);
@@ -411,7 +574,8 @@ export default function ConcretarApp() {
   function submitPersonalForm(e) {
     e.preventDefault();
     const payload = {
-      nombreCompleto: personalForm.nombreCompleto,
+      nombre: personalForm.nombre,
+      apellido: personalForm.apellido,
       dni: personalForm.dni,
       categoria: personalForm.categoria,
       estado: personalForm.estado,
@@ -424,6 +588,11 @@ export default function ConcretarApp() {
       tipoSangre: personalForm.tipoSangre,
       tarjetaIeric: personalForm.tarjetaIeric,
       observaciones: personalForm.observaciones,
+      especialidad: personalForm.especialidad,
+      tallePantalon: personalForm.tallePantalon,
+      talleCamisa: personalForm.talleCamisa,
+      talleGuantes: personalForm.talleGuantes,
+      talleCalzado: personalForm.talleCalzado,
     };
     if (editingPersonalId) {
       updateRecord("personal", editingPersonalId, payload, setPersonal);
@@ -438,6 +607,7 @@ export default function ConcretarApp() {
     { id: "obras", label: "Obras", icon: Building2 },
     { id: "personal", label: "Personal", icon: Users },
     { id: "asistencia", label: "Asistencia", icon: ClipboardCheck },
+    { id: "liquidacion", label: "Liquidación", icon: Wallet },
     { id: "herramientas", label: "Herramientas", icon: Wrench },
     { id: "ordenes", label: "Órdenes de Compra", icon: ShoppingCart },
     { id: "facturas", label: "Compras y Facturas", icon: Receipt },
@@ -467,7 +637,8 @@ export default function ConcretarApp() {
   const herramientasAtencion = herramientas.filter((h) => h.estado === "Mantenimiento" || h.estado === "Perdida");
   const ocPendientesAprobacion = ordenesCompra.filter((o) => o.estado === "Requiere aprobación");
   const hayDesvioAlerta = desvioPct > DESVIO_ALERTA_PCT;
-  const totalAlertas = herramientasAtencion.length + ocPendientesAprobacion.length + (hayDesvioAlerta ? 1 : 0);
+  const asistenciasEditadas = asistencia.filter((a) => a.editado);
+  const totalAlertas = herramientasAtencion.length + ocPendientesAprobacion.length + (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length;
 
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
@@ -507,6 +678,91 @@ export default function ConcretarApp() {
     // Mantiene fecha, obra, horas y estado; solo limpia el nombre para cargar a la próxima persona.
     setAsistenciaForm((f) => ({ ...f, nombre: "" }));
   }
+
+  // ---------- Edición de asistencia (con motivo obligatorio) ----------
+  const [editingAsistenciaId, setEditingAsistenciaId] = useState(null);
+  const [editAsistenciaDraft, setEditAsistenciaDraft] = useState(null);
+  const [motivoEdicionAsistencia, setMotivoEdicionAsistencia] = useState("");
+
+  function startEditAsistencia(a) {
+    setEditingAsistenciaId(a.id);
+    setEditAsistenciaDraft({ fecha: a.fecha, nombre: a.nombre, obraId: a.obraId, horas: a.horas, estado: a.estado });
+    setMotivoEdicionAsistencia("");
+  }
+
+  function cancelEditAsistencia() {
+    setEditingAsistenciaId(null);
+    setEditAsistenciaDraft(null);
+    setMotivoEdicionAsistencia("");
+  }
+
+  function submitEditAsistencia(e) {
+    e.preventDefault();
+    if (!motivoEdicionAsistencia.trim()) return;
+    updateRecord("asistencia", editingAsistenciaId, {
+      fecha: editAsistenciaDraft.fecha,
+      nombre: editAsistenciaDraft.nombre,
+      obraId: Number(editAsistenciaDraft.obraId),
+      horas: Number(editAsistenciaDraft.horas) || 0,
+      estado: editAsistenciaDraft.estado,
+      editado: true,
+      motivoEdicion: motivoEdicionAsistencia.trim(),
+      editadoPor: currentRole,
+      fechaEdicion: new Date().toISOString(),
+    }, setAsistencia);
+    cancelEditAsistencia();
+  }
+
+  // ---------- Liquidación (pago de jornales) ----------
+  const canVerLiquidacion = ROLES_LIQUIDACION.includes(currentRole);
+  const [obraLiquidacionId, setObraLiquidacionId] = useState(obras[0]?.id ?? "");
+  const [seleccionLiquidacion, setSeleccionLiquidacion] = useState([]);
+  const [vistaLiquidacion, setVistaLiquidacion] = useState("pendientes");
+
+  function categoriaDe(nombreCompleto) {
+    return personal.find((p) => nombreCompletoDe(p) === nombreCompleto)?.categoria || null;
+  }
+
+  function costoHoraDeCategoria(categoria) {
+    return costosCategoria.find((c) => c.categoria === categoria)?.costoHora || 0;
+  }
+
+  function montoDe(a) {
+    return (a.horas || 0) * costoHoraDeCategoria(categoriaDe(a.nombre));
+  }
+
+  const asistenciaPendientePago = asistencia.filter(
+    (a) => a.obraId === Number(obraLiquidacionId) && a.estadoPago !== "Pagado" && a.estado !== "Ausente" && (a.horas || 0) > 0
+  );
+  const historialPagos = asistencia
+    .filter((a) => a.obraId === Number(obraLiquidacionId) && a.estadoPago === "Pagado")
+    .sort((a, b) => new Date(b.fechaPago) - new Date(a.fechaPago));
+
+  const toggleSeleccionLiquidacion = (id) =>
+    setSeleccionLiquidacion((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const totalesPorPersona = {};
+  seleccionLiquidacion.forEach((id) => {
+    const a = asistenciaPendientePago.find((x) => x.id === id);
+    if (!a) return;
+    totalesPorPersona[a.nombre] = (totalesPorPersona[a.nombre] || 0) + montoDe(a);
+  });
+  const totalSeleccionado = Object.values(totalesPorPersona).reduce((s, v) => s + v, 0);
+  const totalHistorico = historialPagos.reduce((s, a) => s + (a.montoAbonado || 0), 0);
+
+  async function confirmarPago() {
+    if (seleccionLiquidacion.length === 0) return;
+    if (!window.confirm(`¿Confirmar el pago de ${fmtARS(totalSeleccionado)} para ${Object.keys(totalesPorPersona).length} persona(s)?`)) return;
+    const hoy = new Date().toISOString().slice(0, 10);
+    await Promise.all(
+      seleccionLiquidacion.map((id) => {
+        const a = asistenciaPendientePago.find((x) => x.id === id);
+        return updateRecord("asistencia", id, { estadoPago: "Pagado", fechaPago: hoy, montoAbonado: montoDe(a) }, setAsistencia);
+      })
+    );
+    setSeleccionLiquidacion([]);
+  }
+
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
 
   const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
@@ -663,6 +919,21 @@ export default function ConcretarApp() {
                       {herramientasAtencion.length} herramienta(s) en mantenimiento o perdidas.
                     </div>
                   )}
+                  {asistenciasEditadas.length > 0 && (
+                    <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <AlertTriangle size={16} />
+                        {asistenciasEditadas.length} registro(s) de asistencia modificados — revisión sugerida.
+                      </div>
+                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
+                        {asistenciasEditadas.slice(0, 5).map((a) => (
+                          <li key={a.id}>
+                            {a.nombre} ({new Date(a.fecha).toLocaleDateString("es-AR")}) — {a.editadoPor}: "{a.motivoEdicion}"
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </Panel>
@@ -771,29 +1042,71 @@ export default function ConcretarApp() {
 
         {tab === "personal" && !viewingPerson && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Personal</h2>
-              {canCrearPersonal ? (
-                <button
-                  onClick={() => (showPersonalForm ? cancelPersonalForm() : setShowPersonalForm(true))}
-                  className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
-                >
-                  <Plus size={16} /> Añadir personal
-                </button>
-              ) : (
-                <span className="text-xs text-slate-400">Tu rol no puede dar de alta personal</span>
-              )}
+              <div className="flex gap-2">
+                {canEditarPersonal && (
+                  <button
+                    onClick={() => {
+                      setModoSeleccionPdf((v) => !v);
+                      setSeleccionadosPdf([]);
+                    }}
+                    className={`flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-semibold ${
+                      modoSeleccionPdf ? "border-slate-400 bg-stone-100 text-slate-700" : "border-stone-300 bg-white text-slate-700 hover:bg-stone-50"
+                    }`}
+                  >
+                    <ShieldCheck size={16} /> {modoSeleccionPdf ? "Cancelar selección" : "Reportes de personal"}
+                  </button>
+                )}
+                {canCrearPersonal && (
+                  <button
+                    onClick={() => (showPersonalForm ? cancelPersonalForm() : setShowPersonalForm(true))}
+                    className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                  >
+                    <Plus size={16} /> Añadir personal
+                  </button>
+                )}
+              </div>
             </div>
 
+            {!canCrearPersonal && !canEditarPersonal && (
+              <span className="text-xs text-slate-400">Tu rol no puede dar de alta ni gestionar personal</span>
+            )}
+
+            {modoSeleccionPdf && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3">
+                <span className="text-sm text-amber-800">{seleccionadosPdf.length} persona(s) seleccionada(s) — tocá los nombres en la lista para elegirlas.</span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    disabled={seleccionadosPdf.length === 0}
+                    onClick={() => generarPdfSeguro(personal.filter((p) => seleccionadosPdf.includes(p.id)))}
+                    className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <FileDown size={16} /> PDF seguro
+                  </button>
+                  <button
+                    disabled={seleccionadosPdf.length === 0}
+                    onClick={() => generarPdfTalles(personal.filter((p) => seleccionadosPdf.includes(p.id)))}
+                    className="flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Printer size={16} /> Resumen de talles
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-              Capataz, Gerentes, RRHH e HyS pueden dar de alta. Solo Gerentes y RRHH pueden editar o eliminar. El costo por hora ya no se carga por persona: se toma automáticamente de la pestaña "Costos por Categoría" según la categoría de cada uno.
+              Capataz, Gerentes, RRHH e HyS pueden dar de alta. Solo Gerentes y RRHH pueden editar, eliminar y generar el PDF para el seguro. El costo por hora ya no se carga por persona: se toma automáticamente de la pestaña "Costos por Categoría" según la categoría de cada uno.
             </div>
 
             {showPersonalForm && canCrearPersonal && (
               <Panel title={editingPersonalId ? "Editar personal" : "Añadir personal"} action={<button onClick={cancelPersonalForm}><X size={16} /></button>}>
                 <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitPersonalForm}>
-                  <Field label="Nombre completo">
-                    <input value={personalForm.nombreCompleto} onChange={(e) => pf("nombreCompleto")(e.target.value)} required className={inputCls} />
+                  <Field label="Nombre">
+                    <input value={personalForm.nombre} onChange={(e) => pf("nombre")(e.target.value)} required className={inputCls} />
+                  </Field>
+                  <Field label="Apellido">
+                    <input value={personalForm.apellido} onChange={(e) => pf("apellido")(e.target.value)} required className={inputCls} />
                   </Field>
                   <Field label="DNI">
                     <input value={personalForm.dni} onChange={(e) => pf("dni")(e.target.value)} className={inputCls} />
@@ -831,6 +1144,36 @@ export default function ConcretarApp() {
                       <option>Sí</option>
                     </select>
                   </Field>
+                  <Field label="Especialidad en obra">
+                    <select value={personalForm.especialidad} onChange={(e) => pf("especialidad")(e.target.value)} className={inputCls}>
+                      <option value="">Sin especificar</option>
+                      {ESPECIALIDADES.map((e) => <option key={e}>{e}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Talle de pantalón">
+                    <select value={personalForm.tallePantalon} onChange={(e) => pf("tallePantalon")(e.target.value)} className={inputCls}>
+                      <option value="">Sin especificar</option>
+                      {TALLES_PANTALON.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Talle de camisa">
+                    <select value={personalForm.talleCamisa} onChange={(e) => pf("talleCamisa")(e.target.value)} className={inputCls}>
+                      <option value="">Sin especificar</option>
+                      {TALLES_CAMISA.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Talle de guantes">
+                    <select value={personalForm.talleGuantes} onChange={(e) => pf("talleGuantes")(e.target.value)} className={inputCls}>
+                      <option value="">Sin especificar</option>
+                      {TALLES_GUANTES.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Talle de calzado">
+                    <select value={personalForm.talleCalzado} onChange={(e) => pf("talleCalzado")(e.target.value)} className={inputCls}>
+                      <option value="">Sin especificar</option>
+                      {TALLES_CALZADO.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </Field>
                   <div className="md:col-span-3">
                     <Field label="Observaciones (alergias, lesiones previas, etc.)">
                       <textarea
@@ -856,39 +1199,60 @@ export default function ConcretarApp() {
             )}
 
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <table className="w-full text-left text-[11px]">
+                <thead className="bg-stone-50 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-2 py-2">Foto</th>
-                    <th className="px-2 py-2">Nombre</th>
-                    <th className="px-2 py-2">Categoría</th>
-                    <th className="px-2 py-2">Última obra</th>
-                    <th className="px-2 py-2">DNI</th>
+                    {modoSeleccionPdf && <th className="px-1.5 py-1.5"></th>}
+                    <th className="px-1.5 py-1.5">Foto</th>
+                    <th className="px-1.5 py-1.5">Nombre</th>
+                    <th className="px-1.5 py-1.5">Categoría</th>
+                    <th className="px-1.5 py-1.5">Última obra</th>
+                    <th className="px-1.5 py-1.5">DNI</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {personal.map((p) => (
-                    <tr key={p.id} className="border-t border-stone-100">
-                      <td className="px-2 py-1.5">
+                  {[...personal].sort((a, b) => b.id - a.id).map((p) => (
+                    <tr
+                      key={p.id}
+                      onClick={() => modoSeleccionPdf && toggleSeleccionPdf(p.id)}
+                      className={`border-t border-stone-100 ${modoSeleccionPdf ? "cursor-pointer" : ""} ${seleccionadosPdf.includes(p.id) ? "bg-amber-50" : ""}`}
+                    >
+                      {modoSeleccionPdf && (
+                        <td className="px-1.5 py-1">
+                          <input type="checkbox" checked={seleccionadosPdf.includes(p.id)} onChange={() => toggleSeleccionPdf(p.id)} className="h-3.5 w-3.5" />
+                        </td>
+                      )}
+                      <td className="px-1.5 py-1">
                         {p.fotoPersona ? (
-                          <img src={p.fotoPersona} alt={p.nombreCompleto} className="h-7 w-7 rounded-full border border-stone-200 object-cover" />
+                          <img src={p.fotoPersona} alt={nombreCompletoDe(p)} className="h-6 w-6 rounded-full border border-stone-200 object-cover" />
                         ) : (
-                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-stone-100 text-[9px] font-semibold text-slate-400">
-                            {(p.nombreCompleto || "?").slice(0, 1)}
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-stone-100 text-[8px] font-semibold text-slate-400">
+                            {(p.nombre || "?").slice(0, 1)}
                           </div>
                         )}
                       </td>
-                      <td className="px-2 py-1.5">
-                        <button onClick={() => setViewingPersonId(p.id)} className="flex items-center gap-1 font-medium text-slate-900 underline decoration-dotted hover:text-amber-600">
-                          {nombreCorto(p.nombreCompleto)}
-                          {p.observaciones && (
-                            <span title={p.observaciones}><AlertTriangle size={12} className="text-amber-500" /></span>
-                          )}
-                        </button>
+                      <td className="px-1.5 py-1">
+                        {modoSeleccionPdf ? (
+                          <span className="flex items-center gap-1 font-medium text-slate-900">
+                            <EspecialidadIcon especialidad={p.especialidad} />
+                            {nombreCorto(p)}
+                            {p.observaciones && (
+                              <span title={p.observaciones}><AlertTriangle size={11} className="text-amber-500" /></span>
+                            )}
+                          </span>
+                        ) : (
+                          <button onClick={() => setViewingPersonId(p.id)} className="flex items-center gap-1 font-medium text-slate-900 underline decoration-dotted hover:text-amber-600">
+                            <EspecialidadIcon especialidad={p.especialidad} />
+                            {nombreCorto(p)}
+                            {p.observaciones && (
+                              <span title={p.observaciones}><AlertTriangle size={11} className="text-amber-500" /></span>
+                            )}
+                          </button>
+                        )}
                       </td>
-                      <td className="px-2 py-1.5 text-slate-600">{p.categoria}</td>
-                      <td className="px-2 py-1.5 text-slate-600">{ultimaObraDe(p.nombreCompleto) || <span className="text-slate-400">—</span>}</td>
-                      <td className="px-2 py-1.5 font-mono text-slate-500">{p.dni || "—"}</td>
+                      <td className="px-1.5 py-1 text-slate-600">{p.categoria}</td>
+                      <td className="px-1.5 py-1 text-slate-600">{ultimaObraDe(nombreCompletoDe(p)) || <span className="text-slate-400">—</span>}</td>
+                      <td className="px-1.5 py-1 font-mono text-slate-500">{p.dni || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -906,14 +1270,14 @@ export default function ConcretarApp() {
             <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
               <div className="flex flex-wrap items-center gap-4">
                 {viewingPerson.fotoPersona ? (
-                  <img src={viewingPerson.fotoPersona} alt={viewingPerson.nombreCompleto} className="h-20 w-20 rounded-full border border-stone-200 object-cover" />
+                  <img src={viewingPerson.fotoPersona} alt={nombreCompletoDe(viewingPerson)} className="h-20 w-20 rounded-full border border-stone-200 object-cover" />
                 ) : (
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-stone-100 text-2xl font-semibold text-slate-400">
-                    {(viewingPerson.nombreCompleto || "?").slice(0, 1)}
+                    {(viewingPerson.nombre || "?").slice(0, 1)}
                   </div>
                 )}
                 <div>
-                  <div className="text-xl font-bold text-slate-900">{viewingPerson.nombreCompleto}</div>
+                  <div className="text-xl font-bold text-slate-900">{nombreCompletoDe(viewingPerson)}</div>
                   <div className="mt-1 flex flex-wrap gap-2">
                     <Badge estado={viewingPerson.estado} />
                     <span className="text-sm text-slate-500">{viewingPerson.categoria}</span>
@@ -921,6 +1285,9 @@ export default function ConcretarApp() {
                 </div>
                 {canEditarPersonal && (
                   <div className="ml-auto flex gap-2">
+                    <button onClick={() => generarPdfSeguro([viewingPerson])} className={btnGhost}>
+                      <span className="flex items-center gap-1"><FileDown size={13} /> PDF seguro</span>
+                    </button>
                     <button onClick={() => startEditPersonal(viewingPerson)} className={btnGhost}>Editar</button>
                     <button
                       onClick={() => {
@@ -938,12 +1305,17 @@ export default function ConcretarApp() {
               <div className="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 md:grid-cols-3">
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">DNI</div><div className="font-mono text-slate-800">{viewingPerson.dni || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Costo por hora</div><div className="font-mono text-slate-800">{(() => { const c = costosCategoria.find((x) => x.categoria === viewingPerson.categoria)?.costoHora; return c ? fmtARS(c) : "Sin definir"; })()}</div></div>
-                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Última obra</div><div className="text-slate-800">{ultimaObraDe(viewingPerson.nombreCompleto) || "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Última obra</div><div className="text-slate-800">{ultimaObraDe(nombreCompletoDe(viewingPerson)) || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fecha de nacimiento</div><div className="text-slate-800">{viewingPerson.fechaNacimiento ? new Date(viewingPerson.fechaNacimiento).toLocaleDateString("es-AR") : "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dirección</div><div className="text-slate-800">{viewingPerson.direccion || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Mano hábil</div><div className="text-slate-800">{viewingPerson.manoHabil || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tipo de sangre</div><div className="text-slate-800">{viewingPerson.tipoSangre || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tarjeta IERIC</div><div className="text-slate-800">{viewingPerson.tarjetaIeric || "No"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Especialidad</div><div className="flex items-center gap-1.5 text-slate-800"><EspecialidadIcon especialidad={viewingPerson.especialidad} size={14} />{viewingPerson.especialidad || "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Talle pantalón</div><div className="text-slate-800">{viewingPerson.tallePantalon || "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Talle camisa</div><div className="text-slate-800">{viewingPerson.talleCamisa || "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Talle guantes</div><div className="text-slate-800">{viewingPerson.talleGuantes || "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Talle calzado</div><div className="text-slate-800">{viewingPerson.talleCalzado || "—"}</div></div>
               </div>
 
               {viewingPerson.observaciones && (
@@ -991,7 +1363,7 @@ export default function ConcretarApp() {
                   <Field label="Nombre y apellido">
                     <select required value={asistenciaForm.nombre} onChange={(e) => asf("nombre")(e.target.value)} className={inputCls}>
                       <option value="">-- Elegí a la persona --</option>
-                      {personal.map((p) => <option key={p.id}>{p.nombreCompleto}</option>)}
+                      {personal.map((p) => <option key={p.id}>{nombreCompletoDe(p)}</option>)}
                     </select>
                   </Field>
                   <Field label="Centro de costo / Obra">
@@ -1035,7 +1407,7 @@ export default function ConcretarApp() {
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Nombre</th><th className="px-4 py-3">Centro de costo</th><th className="px-4 py-3">Hs</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Cargado por</th></tr>
+                  <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Nombre</th><th className="px-4 py-3">Centro de costo</th><th className="px-4 py-3">Hs</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Cargado por</th><th className="px-4 py-3"></th></tr>
                 </thead>
                 <tbody>
                   {[...asistencia].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map((a) => {
@@ -1043,17 +1415,205 @@ export default function ConcretarApp() {
                     return (
                       <tr key={a.id} className="border-t border-stone-100">
                         <td className="px-4 py-3 text-slate-600">{new Date(a.fecha).toLocaleDateString("es-AR")}</td>
-                        <td className="px-4 py-3 font-medium text-slate-900">{a.nombre}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900">
+                          <span className="flex items-center gap-1.5">
+                            {a.nombre}
+                            {a.editado && <span title={`Editado por ${a.editadoPor}: ${a.motivoEdicion}`}><AlertTriangle size={12} className="text-sky-500" /></span>}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-slate-600">{obra?.nombre}</td>
                         <td className="px-4 py-3 font-mono text-slate-700">{a.horas}</td>
                         <td className="px-4 py-3"><Badge estado={a.estado} /></td>
                         <td className="px-4 py-3 text-slate-500">{a.cargadoPor}</td>
+                        <td className="px-4 py-3"><button onClick={() => startEditAsistencia(a)} className={btnGhost}>Editar</button></td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
+
+            {editingAsistenciaId && editAsistenciaDraft && (
+              <Panel title="Editar asistencia" action={<button onClick={cancelEditAsistencia}><X size={16} /></button>}>
+                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitEditAsistencia}>
+                  <Field label="Fecha">
+                    <input type="date" required value={editAsistenciaDraft.fecha} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, fecha: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <Field label="Nombre y apellido">
+                    <select required value={editAsistenciaDraft.nombre} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, nombre: e.target.value }))} className={inputCls}>
+                      {personal.map((p) => <option key={p.id}>{nombreCompletoDe(p)}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Centro de costo / Obra">
+                    <select value={editAsistenciaDraft.obraId} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, obraId: e.target.value }))} className={inputCls}>
+                      {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Hs trabajadas">
+                    <input type="number" required value={editAsistenciaDraft.horas} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, horas: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <Field label="Estado">
+                    <select value={editAsistenciaDraft.estado} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, estado: e.target.value }))} className={inputCls}>
+                      {ESTADOS_ASISTENCIA.map((s) => <option key={s}>{s}</option>)}
+                    </select>
+                  </Field>
+                  <div className="md:col-span-3">
+                    <Field label="Motivo de la modificación (obligatorio)">
+                      <textarea
+                        required
+                        value={motivoEdicionAsistencia}
+                        onChange={(e) => setMotivoEdicionAsistencia(e.target.value)}
+                        rows={2}
+                        placeholder="Ej: me equivoqué de persona, corrección de horas cargadas..."
+                        className={inputCls}
+                      />
+                    </Field>
+                  </div>
+                  <div className="flex items-end gap-2 md:col-span-3">
+                    <button type="submit" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar corrección</button>
+                    <button type="button" onClick={cancelEditAsistencia} className={btnGhost}>Cancelar</button>
+                  </div>
+                </form>
+                <div className="mt-3 text-[11px] text-slate-400">
+                  Esta corrección va a quedar visible para los gerentes en el panel de Alertas del Dashboard, junto con el motivo.
+                </div>
+              </Panel>
+            )}
+          </div>
+        )}
+
+        {tab === "liquidacion" && !canVerLiquidacion && (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
+            <Wallet size={28} className="text-slate-400" />
+            <div className="text-sm font-semibold text-slate-700">Sección restringida</div>
+            <div className="max-w-sm text-xs text-slate-500">Solo Gerente y Contador pueden ver y gestionar los pagos de jornales.</div>
+          </div>
+        )}
+
+        {tab === "liquidacion" && canVerLiquidacion && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Liquidación</h2>
+              <select className={inputCls} value={obraLiquidacionId} onChange={(e) => { setObraLiquidacionId(e.target.value); setSeleccionLiquidacion([]); }}>
+                {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+              </select>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setVistaLiquidacion("pendientes")}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaLiquidacion === "pendientes" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Pendientes de pago
+              </button>
+              <button
+                onClick={() => setVistaLiquidacion("historial")}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaLiquidacion === "historial" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Historial de la obra
+              </button>
+            </div>
+
+            {vistaLiquidacion === "pendientes" && (
+              <>
+                {seleccionLiquidacion.length > 0 && (
+                  <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3">
+                    <div className="text-sm text-amber-800">
+                      {seleccionLiquidacion.length} día(s) seleccionados — {Object.keys(totalesPorPersona).length} persona(s) — total <strong>{fmtARS(totalSeleccionado)}</strong>
+                    </div>
+                    <button onClick={confirmarPago} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+                      <Check size={16} /> Confirmar pago
+                    </button>
+                  </div>
+                )}
+
+                {asistenciaPendientePago.length === 0 ? (
+                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
+                    No hay días pendientes de pago para esta obra.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-3 py-3"></th>
+                          <th className="px-3 py-3">Fecha</th>
+                          <th className="px-3 py-3">Nombre</th>
+                          <th className="px-3 py-3">Rubro</th>
+                          <th className="px-3 py-3">Hs</th>
+                          <th className="px-3 py-3">Estado</th>
+                          <th className="px-3 py-3 text-right">Monto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...asistenciaPendientePago]
+                          .sort((a, b) => (categoriaDe(a.nombre) || "").localeCompare(categoriaDe(b.nombre) || "") || a.nombre.localeCompare(b.nombre))
+                          .map((a) => (
+                            <tr
+                              key={a.id}
+                              onClick={() => toggleSeleccionLiquidacion(a.id)}
+                              className={`cursor-pointer border-t border-stone-100 ${seleccionLiquidacion.includes(a.id) ? "bg-amber-50" : ""}`}
+                            >
+                              <td className="px-3 py-2"><input type="checkbox" checked={seleccionLiquidacion.includes(a.id)} onChange={() => toggleSeleccionLiquidacion(a.id)} className="h-3.5 w-3.5" /></td>
+                              <td className="px-3 py-2 text-slate-600">{new Date(a.fecha).toLocaleDateString("es-AR")}</td>
+                              <td className="px-3 py-2 font-medium text-slate-900">{a.nombre}</td>
+                              <td className="px-3 py-2 text-slate-600">{categoriaDe(a.nombre) || "—"}</td>
+                              <td className="px-3 py-2 font-mono text-slate-700">{a.horas}</td>
+                              <td className="px-3 py-2"><Badge estado={a.estado} /></td>
+                              <td className="px-3 py-2 text-right font-mono text-slate-800">{fmtARS(montoDe(a))}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <div className="text-[11px] text-slate-400">
+                  El monto se calcula con el costo por hora de "Costos por Categoría" según el rubro de cada persona a la fecha del pago. Tocá una fila o el checkbox para incluirla en el pago.
+                </div>
+              </>
+            )}
+
+            {vistaLiquidacion === "historial" && (
+              <>
+                <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total pagado en esta obra</div>
+                  <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalHistorico)}</div>
+                </div>
+
+                {historialPagos.length === 0 ? (
+                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
+                    Todavía no se registraron pagos en esta obra.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-3 py-3">Fecha trabajada</th>
+                          <th className="px-3 py-3">Nombre</th>
+                          <th className="px-3 py-3">Rubro</th>
+                          <th className="px-3 py-3">Hs</th>
+                          <th className="px-3 py-3 text-right">Monto pagado</th>
+                          <th className="px-3 py-3">Fecha de pago</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {historialPagos.map((a) => (
+                          <tr key={a.id} className="border-t border-stone-100">
+                            <td className="px-3 py-2 text-slate-600">{new Date(a.fecha).toLocaleDateString("es-AR")}</td>
+                            <td className="px-3 py-2 font-medium text-slate-900">{a.nombre}</td>
+                            <td className="px-3 py-2 text-slate-600">{categoriaDe(a.nombre) || "—"}</td>
+                            <td className="px-3 py-2 font-mono text-slate-700">{a.horas}</td>
+                            <td className="px-3 py-2 text-right font-mono text-slate-800">{fmtARS(a.montoAbonado)}</td>
+                            <td className="px-3 py-2 text-slate-500"><Badge estado="Pagado" />{" "}{new Date(a.fechaPago).toLocaleDateString("es-AR")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
