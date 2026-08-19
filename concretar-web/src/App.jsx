@@ -14,7 +14,7 @@ import {
 } from "recharts";
 
 const fmtARS = (n) =>
-  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n || 0);
+  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
 
 // Las fechas se guardan como texto "YYYY-MM-DD". Si se arman con
 // `new Date("YYYY-MM-DD")` a secas, JS las interpreta como medianoche
@@ -611,6 +611,7 @@ export default function ConcretarApp() {
     });
     setEditingPersonalId(p.id);
     setShowPersonalForm(true);
+    setViewingPersonId(null);
   }
 
   function cancelPersonalForm() {
@@ -836,6 +837,24 @@ export default function ConcretarApp() {
     .filter((a) => a.obraId === Number(obraHistorialId) && a.estadoPago === "Pagado")
     .sort((a, b) => fechaLocal(b.fechaPago) - fechaLocal(a.fechaPago));
   const totalHistorico = historialPagos.reduce((s, a) => s + (a.montoAbonado || 0), 0);
+
+  // Historial agrupado por semana, combinando pagos a Personal y avances a Tanteros
+  const tanterosDeObraHistorial = tanteros.filter((t) => t.obraId === Number(obraHistorialId));
+  const avancesDeObraHistorial = avancesTanteros.filter((av) => tanterosDeObraHistorial.some((t) => t.id === av.tanteroId));
+  const totalHistoricoTanteros = avancesDeObraHistorial.reduce((s, av) => s + (av.monto || 0), 0);
+
+  const semanasHistorial = {}; // semanaKey -> { personal: [...], tanteros: [...] }
+  historialPagos.forEach((a) => {
+    const key = claveSemana(a.fecha);
+    if (!semanasHistorial[key]) semanasHistorial[key] = { personal: [], tanteros: [] };
+    semanasHistorial[key].personal.push(a);
+  });
+  avancesDeObraHistorial.forEach((av) => {
+    const key = claveSemana(av.fecha);
+    if (!semanasHistorial[key]) semanasHistorial[key] = { personal: [], tanteros: [] };
+    semanasHistorial[key].tanteros.push(av);
+  });
+  const semanasHistorialOrdenadas = Object.keys(semanasHistorial).sort((a, b) => new Date(b) - new Date(a));
 
   async function confirmarPago() {
     if (seleccionLiquidacion.length === 0) return;
@@ -1240,7 +1259,7 @@ export default function ConcretarApp() {
                     onClick={() => generarPdfSeguro(personal.filter((p) => seleccionadosPdf.includes(p.id)))}
                     className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <FileDown size={16} /> PDF seguro
+                    <FileDown size={16} /> Imprimir Datos Personal
                   </button>
                   <button
                     disabled={seleccionadosPdf.length === 0}
@@ -1252,10 +1271,6 @@ export default function ConcretarApp() {
                 </div>
               </div>
             )}
-
-            <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-              Capataz, Gerentes, RRHH e HyS pueden dar de alta. Solo Gerentes y RRHH pueden editar, eliminar y generar el PDF para el seguro. El costo por hora ya no se carga por persona: se toma automáticamente de la pestaña "Costos por Categoría" según la categoría de cada uno.
-            </div>
 
             {showPersonalForm && canCrearPersonal && (
               <Panel title={editingPersonalId ? "Editar personal" : "Añadir personal"} action={<button onClick={cancelPersonalForm}><X size={16} /></button>}>
@@ -1449,7 +1464,7 @@ export default function ConcretarApp() {
                 {canEditarPersonal && (
                   <div className="ml-auto flex gap-2">
                     <button onClick={() => generarPdfSeguro([viewingPerson])} className={btnGhost}>
-                      <span className="flex items-center gap-1"><FileDown size={13} /> PDF seguro</span>
+                      <span className="flex items-center gap-1"><FileDown size={13} /> Imprimir Datos Personal</span>
                     </button>
                     <button onClick={() => startEditPersonal(viewingPerson)} className={btnGhost}>Editar</button>
                     <button
@@ -1788,20 +1803,33 @@ export default function ConcretarApp() {
                             Todavía no hay nadie marcado como "Tantero" en Personal. Andá a Personal, editá a la persona y elegí "Tantero" en Tipo de trabajador.
                           </div>
                         ) : (
-                          <div className="flex flex-wrap gap-2">
-                            {tanterosDisponibles.map((p) => (
-                              <button
-                                type="button"
-                                key={p.id}
-                                onClick={() => toggleIntegranteTantero(p.id)}
-                                className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                                  tanteroForm.integrantes.includes(p.id) ? "border-amber-500 bg-amber-50 text-amber-800" : "border-stone-300 bg-white text-slate-600 hover:bg-stone-50"
-                                }`}
-                              >
-                                {nombreCompletoDe(p)}
-                              </button>
-                            ))}
-                          </div>
+                          <>
+                            <select
+                              value=""
+                              onChange={(e) => { if (e.target.value) toggleIntegranteTantero(Number(e.target.value)); }}
+                              className={inputCls}
+                            >
+                              <option value="">+ Agregar tantero...</option>
+                              {tanterosDisponibles
+                                .filter((p) => !tanteroForm.integrantes.includes(p.id))
+                                .map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
+                            </select>
+                            {tanteroForm.integrantes.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {tanteroForm.integrantes.map((id) => {
+                                  const p = personal.find((x) => x.id === id);
+                                  return (
+                                    <span key={id} className="flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">
+                                      {p ? nombreCompletoDe(p) : id}
+                                      <button type="button" onClick={() => toggleIntegranteTantero(id)} className="text-amber-600 hover:text-amber-900">
+                                        <X size={12} />
+                                      </button>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                       <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar grupo</button></div>
@@ -1897,42 +1925,66 @@ export default function ConcretarApp() {
                   {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                 </select>
 
-                <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total pagado en esta obra</div>
-                  <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalHistorico)}</div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total pagado a Personal</div>
+                    <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalHistorico)}</div>
+                  </div>
+                  <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total pagado a Tanteros</div>
+                    <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalHistoricoTanteros)}</div>
+                  </div>
                 </div>
 
-                {historialPagos.length === 0 ? (
+                {semanasHistorialOrdenadas.length === 0 ? (
                   <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
                     Todavía no se registraron pagos en esta obra.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-3 py-3">Fecha trabajada</th>
-                          <th className="px-3 py-3">Nombre</th>
-                          <th className="px-3 py-3">Rubro</th>
-                          <th className="px-3 py-3">Hs</th>
-                          <th className="px-3 py-3 text-right">Monto pagado</th>
-                          <th className="px-3 py-3">Fecha de pago</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {historialPagos.map((a) => (
-                          <tr key={a.id} className="border-t border-stone-100">
-                            <td className="px-3 py-2 text-slate-600">{fmtFecha(a.fecha)}</td>
-                            <td className="px-3 py-2 font-medium text-slate-900">{a.nombre}</td>
-                            <td className="px-3 py-2 text-slate-600">{categoriaDe(a.nombre) || "—"}</td>
-                            <td className="px-3 py-2 font-mono text-slate-700">{a.horas}</td>
-                            <td className="px-3 py-2 text-right font-mono text-slate-800">{fmtARS(a.montoAbonado)}</td>
-                            <td className="px-3 py-2 text-slate-500"><Badge estado="Pagado" />{" "}{fmtFecha(a.fechaPago)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  semanasHistorialOrdenadas.map((semanaKey) => {
+                    const { personal: pagosSemana, tanteros: avancesSemana } = semanasHistorial[semanaKey];
+                    const totalSemana =
+                      pagosSemana.reduce((s, a) => s + (a.montoAbonado || 0), 0) + avancesSemana.reduce((s, av) => s + (av.monto || 0), 0);
+                    return (
+                      <Panel
+                        key={semanaKey}
+                        title={`Semana del ${fmtFecha(semanaKey)}`}
+                        action={<span className="font-mono text-sm font-bold text-slate-800">{fmtARS(totalSemana)}</span>}
+                      >
+                        <div className="space-y-4">
+                          {pagosSemana.length > 0 && (
+                            <div>
+                              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Personal</div>
+                              <div className="space-y-1">
+                                {pagosSemana.map((a) => (
+                                  <div key={a.id} className="flex items-center justify-between text-sm">
+                                    <span className="text-slate-700">{a.nombre} <span className="text-xs text-slate-400">({fmtFecha(a.fecha)} · {a.horas} hs)</span></span>
+                                    <span className="font-mono text-slate-800">{fmtARS(a.montoAbonado)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {avancesSemana.length > 0 && (
+                            <div className={pagosSemana.length > 0 ? "border-t border-stone-100 pt-3" : ""}>
+                              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tanteros</div>
+                              <div className="space-y-1">
+                                {avancesSemana.map((av) => {
+                                  const t = tanteros.find((x) => x.id === av.tanteroId);
+                                  return (
+                                    <div key={av.id} className="flex items-center justify-between text-sm">
+                                      <span className="text-slate-700">{t?.nombreGrupo || "Grupo"} <span className="text-xs text-slate-400">({fmtFecha(av.fecha)} · {av.descripcion || "avance"})</span></span>
+                                      <span className="font-mono text-slate-800">{fmtARS(av.monto)}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </Panel>
+                    );
+                  })
                 )}
               </>
             )}
