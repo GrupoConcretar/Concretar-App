@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck,
-  Printer, HardHat, Wrench, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
+  Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
   Landmark, Smartphone, Banknote
 } from "lucide-react";
 import {
