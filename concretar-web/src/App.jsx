@@ -43,6 +43,7 @@ const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
 const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
 const CATEGORIAS_HERRAMIENTA = ["Eléctrica", "Manual", "Estructura", "Medición", "Seguridad", "Otro"];
 const CATEGORIAS_PERSONAL = ["Oficial Especializado", "Oficial", "Medio Oficial", "Ayudante", "Gerente", "HyS", "Recursos Humanos", "Capataz", "Logística"];
+const TIPOS_TRABAJADOR = ["Empresa", "Tantero"];
 const ESTADOS_PERSONAL = ["Activo", "Licencia", "Baja"];
 const MANO_HABIL = ["Diestro", "Zurdo"];
 const TIPOS_SANGRE = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -268,12 +269,14 @@ export default function ConcretarApp() {
     { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso" },
   ];
   const DEMO_PERSONAL = [
-    { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
-    { id: 2, nombre: "Eduardo", apellido: "Sr", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
-    { id: 3, nombre: "Daniel", apellido: "Tello", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
-    { id: 4, nombre: "Pablo", apellido: "Robles", dni: "", telefono: "", categoria: "Gerente", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
-    { id: 5, nombre: "Pepito", apellido: "Chespirito", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
-    { id: 6, nombre: "Emi", apellido: "Perez", dni: "", telefono: "", categoria: "Logística", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "" },
+    { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
+    { id: 2, nombre: "Eduardo", apellido: "Sr", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
+    { id: 3, nombre: "Daniel", apellido: "Tello", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
+    { id: 4, nombre: "Pablo", apellido: "Robles", dni: "", telefono: "", categoria: "Gerente", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
+    { id: 5, nombre: "Pepito", apellido: "Chespirito", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
+    { id: 6, nombre: "Emi", apellido: "Perez", dni: "", telefono: "", categoria: "Logística", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
+    { id: 7, nombre: "Mario", apellido: "González", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero" },
+    { id: 8, nombre: "Raúl", apellido: "Medina", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero" },
   ];
   const DEMO_COSTOS = CATEGORIAS_PERSONAL.map((cat, i) => ({ id: i + 1, categoria: cat, costoHora: null }));
 
@@ -315,6 +318,14 @@ export default function ConcretarApp() {
     { id: 5, fecha: "2026-06-20", obraId: 2, concepto: "Pago en mano acordado", monto: 4000000, formalidad: "Negro", cuenta: "Efectivo" },
   ];
 
+  const DEMO_TANTEROS = [
+    { id: 1, nombreGrupo: "Mario Electricista", obraId: 1, integrantes: [7, 8], precioTotal: 12000000 },
+  ];
+  const DEMO_AVANCES_TANTEROS = [
+    { id: 1, tanteroId: 1, fecha: "2026-06-01", monto: 4000000, descripcion: "1er avance — cableado planta baja" },
+    { id: 2, tanteroId: 1, fecha: "2026-07-10", monto: 3000000, descripcion: "2do avance — tablero principal" },
+  ];
+
   const [obras, setObras] = useState(isSupabaseConfigured ? [] : DEMO_OBRAS);
   const [selectedObraId, setSelectedObraId] = useState(1);
   const [personal, setPersonal] = useState(isSupabaseConfigured ? [] : DEMO_PERSONAL);
@@ -324,6 +335,8 @@ export default function ConcretarApp() {
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
   const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
   const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
+  const [tanteros, setTanteros] = useState(isSupabaseConfigured ? [] : DEMO_TANTEROS);
+  const [avancesTanteros, setAvancesTanteros] = useState(isSupabaseConfigured ? [] : DEMO_AVANCES_TANTEROS);
 
   const [dbLoading, setDbLoading] = useState(isSupabaseConfigured);
   const [dbError, setDbError] = useState(null);
@@ -335,9 +348,10 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
-        const [o, p, cc, a, h, oc, cf, ing] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
+          sbSelect("tanteros"), sbSelect("avances_tanteros"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -347,6 +361,8 @@ export default function ConcretarApp() {
         setOrdenesCompra(oc);
         setComprasFacturas(cf);
         setIngresos(ing);
+        setTanteros(tt);
+        setAvancesTanteros(av);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -564,6 +580,7 @@ export default function ConcretarApp() {
     estado: "Activo", direccion: "", fechaNacimiento: "", fotoPersona: null, dniFrente: null, dniDorso: null,
     manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "",
     especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "",
+    tipoTrabajador: "Empresa",
   };
   const [personalForm, setPersonalForm] = useState(emptyPersonalForm);
   const [editingPersonalId, setEditingPersonalId] = useState(null);
@@ -590,6 +607,7 @@ export default function ConcretarApp() {
       talleCamisa: p.talleCamisa || "",
       talleGuantes: p.talleGuantes || "",
       talleCalzado: p.talleCalzado || "",
+      tipoTrabajador: p.tipoTrabajador || "Empresa",
     });
     setEditingPersonalId(p.id);
     setShowPersonalForm(true);
@@ -623,6 +641,7 @@ export default function ConcretarApp() {
       talleCamisa: personalForm.talleCamisa,
       talleGuantes: personalForm.talleGuantes,
       talleCalzado: personalForm.talleCalzado,
+      tipoTrabajador: personalForm.tipoTrabajador,
     };
     if (editingPersonalId) {
       updateRecord("personal", editingPersonalId, payload, setPersonal);
@@ -748,8 +767,8 @@ export default function ConcretarApp() {
 
   // ---------- Liquidación (pago de jornales) ----------
   const canVerLiquidacion = ROLES_LIQUIDACION.includes(currentRole);
-  const [obraLiquidacionId, setObraLiquidacionId] = useState(obras[0]?.id ?? "");
-  const [seleccionLiquidacion, setSeleccionLiquidacion] = useState([]);
+  const [obraHistorialId, setObraHistorialId] = useState(obras[0]?.id ?? "");
+  const [seleccionLiquidacion, setSeleccionLiquidacion] = useState([]); // claves "semana|obraId|nombre"
   const [vistaLiquidacion, setVistaLiquidacion] = useState("pendientes");
 
   function categoriaDe(nombreCompleto) {
@@ -764,36 +783,125 @@ export default function ConcretarApp() {
     return (a.horas || 0) * costoHoraDeCategoria(categoriaDe(a.nombre));
   }
 
-  const asistenciaPendientePago = asistencia.filter(
-    (a) => a.obraId === Number(obraLiquidacionId) && a.estadoPago !== "Pagado" && a.estado !== "Ausente" && (a.horas || 0) > 0
-  );
-  const historialPagos = asistencia
-    .filter((a) => a.obraId === Number(obraLiquidacionId) && a.estadoPago === "Pagado")
-    .sort((a, b) => fechaLocal(b.fechaPago) - fechaLocal(a.fechaPago));
+  // Lunes de la semana a la que pertenece una fecha "YYYY-MM-DD"
+  function inicioSemana(fechaStr) {
+    const d = fechaLocal(fechaStr);
+    const dia = d.getDay(); // 0=domingo ... 6=sábado
+    const diff = (dia === 0 ? -6 : 1) - dia;
+    const lunes = new Date(d);
+    lunes.setDate(d.getDate() + diff);
+    return lunes;
+  }
+  function claveSemana(fechaStr) {
+    const l = inicioSemana(fechaStr);
+    const y = l.getFullYear();
+    const m = String(l.getMonth() + 1).padStart(2, "0");
+    const dd = String(l.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  }
 
-  const toggleSeleccionLiquidacion = (id) =>
-    setSeleccionLiquidacion((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const pendientesTodasObras = asistencia.filter((a) => a.estadoPago !== "Pagado" && a.estado !== "Ausente" && (a.horas || 0) > 0);
 
-  const totalesPorPersona = {};
-  seleccionLiquidacion.forEach((id) => {
-    const a = asistenciaPendientePago.find((x) => x.id === id);
-    if (!a) return;
-    totalesPorPersona[a.nombre] = (totalesPorPersona[a.nombre] || 0) + montoDe(a);
+  // Agrupa: semana -> obraId -> nombre -> { registros:[ids], horas, monto }
+  const gruposSemana = {};
+  pendientesTodasObras.forEach((a) => {
+    const semanaKey = claveSemana(a.fecha);
+    const obraId = a.obraId;
+    const nombre = a.nombre;
+    if (!gruposSemana[semanaKey]) gruposSemana[semanaKey] = {};
+    if (!gruposSemana[semanaKey][obraId]) gruposSemana[semanaKey][obraId] = {};
+    if (!gruposSemana[semanaKey][obraId][nombre]) gruposSemana[semanaKey][obraId][nombre] = { registros: [], horas: 0, monto: 0 };
+    const g = gruposSemana[semanaKey][obraId][nombre];
+    g.registros.push(a.id);
+    g.horas += a.horas || 0;
+    g.monto += montoDe(a);
   });
-  const totalSeleccionado = Object.values(totalesPorPersona).reduce((s, v) => s + v, 0);
+  const semanasOrdenadas = Object.keys(gruposSemana).sort((a, b) => new Date(b) - new Date(a));
+
+  const toggleSeleccionLiquidacion = (key) =>
+    setSeleccionLiquidacion((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]));
+
+  let totalSeleccionado = 0;
+  const personasSeleccionadas = new Set();
+  seleccionLiquidacion.forEach((key) => {
+    const [semanaKey, obraId, nombre] = key.split("|");
+    const g = gruposSemana[semanaKey]?.[obraId]?.[nombre];
+    if (g) {
+      totalSeleccionado += g.monto;
+      personasSeleccionadas.add(nombre);
+    }
+  });
+
+  const historialPagos = asistencia
+    .filter((a) => a.obraId === Number(obraHistorialId) && a.estadoPago === "Pagado")
+    .sort((a, b) => fechaLocal(b.fechaPago) - fechaLocal(a.fechaPago));
   const totalHistorico = historialPagos.reduce((s, a) => s + (a.montoAbonado || 0), 0);
 
   async function confirmarPago() {
     if (seleccionLiquidacion.length === 0) return;
-    if (!window.confirm(`¿Confirmar el pago de ${fmtARS(totalSeleccionado)} para ${Object.keys(totalesPorPersona).length} persona(s)?`)) return;
+    if (!window.confirm(`¿Confirmar el pago de ${fmtARS(totalSeleccionado)} para ${personasSeleccionadas.size} trabajador(es)?`)) return;
     const hoy = hoyISO();
+    const idsAPagar = [];
+    seleccionLiquidacion.forEach((key) => {
+      const [semanaKey, obraId, nombre] = key.split("|");
+      const registros = gruposSemana[semanaKey]?.[obraId]?.[nombre]?.registros || [];
+      idsAPagar.push(...registros);
+    });
     await Promise.all(
-      seleccionLiquidacion.map((id) => {
-        const a = asistenciaPendientePago.find((x) => x.id === id);
+      idsAPagar.map((id) => {
+        const a = asistencia.find((x) => x.id === id);
         return updateRecord("asistencia", id, { estadoPago: "Pagado", fechaPago: hoy, montoAbonado: montoDe(a) }, setAsistencia);
       })
     );
     setSeleccionLiquidacion([]);
+  }
+
+  // ---------- Tanteros (mano de obra por precio cerrado) ----------
+  const [showTanteroForm, setShowTanteroForm] = useState(false);
+  const emptyTanteroForm = { nombreGrupo: "", obraId: obras[0]?.id ?? "", precioTotal: "", integrantes: [] };
+  const [tanteroForm, setTanteroForm] = useState(emptyTanteroForm);
+  const [avanceAbiertoId, setAvanceAbiertoId] = useState(null);
+  const [avanceForm, setAvanceForm] = useState({ fecha: hoyISO(), monto: "", descripcion: "" });
+
+  const tanterosDisponibles = personal.filter((p) => p.tipoTrabajador === "Tantero");
+
+  function toggleIntegranteTantero(id) {
+    setTanteroForm((f) => ({
+      ...f,
+      integrantes: f.integrantes.includes(id) ? f.integrantes.filter((x) => x !== id) : [...f.integrantes, id],
+    }));
+  }
+
+  function submitTanteroForm(e) {
+    e.preventDefault();
+    if (tanteroForm.integrantes.length === 0) {
+      alert("Elegí al menos un integrante del grupo.");
+      return;
+    }
+    addRecord("tanteros", {
+      nombreGrupo: tanteroForm.nombreGrupo,
+      obraId: Number(tanteroForm.obraId),
+      precioTotal: Number(tanteroForm.precioTotal) || 0,
+      integrantes: tanteroForm.integrantes,
+    }, setTanteros);
+    setTanteroForm(emptyTanteroForm);
+    setShowTanteroForm(false);
+  }
+
+  function pagadoDeTantero(tanteroId) {
+    return avancesTanteros.filter((a) => a.tanteroId === tanteroId).reduce((s, a) => s + (a.monto || 0), 0);
+  }
+
+  function submitAvanceForm(e, tanteroId) {
+    e.preventDefault();
+    addRecord("avances_tanteros", {
+      tanteroId,
+      fecha: avanceForm.fecha,
+      monto: Number(avanceForm.monto) || 0,
+      descripcion: avanceForm.descripcion,
+    }, setAvancesTanteros);
+    setAvanceForm({ fecha: hoyISO(), monto: "", descripcion: "" });
+    setAvanceAbiertoId(null);
   }
 
   // ---------- Resumen de Cuentas (blanco/negro x efectivo/banco/MP) ----------
@@ -1166,6 +1274,11 @@ export default function ConcretarApp() {
                       {CATEGORIAS_PERSONAL.map((c) => <option key={c}>{c}</option>)}
                     </select>
                   </Field>
+                  <Field label="Tipo de trabajador">
+                    <select value={personalForm.tipoTrabajador} onChange={(e) => pf("tipoTrabajador")(e.target.value)} className={inputCls}>
+                      {TIPOS_TRABAJADOR.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </Field>
                   <Field label="Estado">
                     <select value={personalForm.estado} onChange={(e) => pf("estado")(e.target.value)} className={inputCls}>
                       {ESTADOS_PERSONAL.map((s) => <option key={s}>{s}</option>)}
@@ -1361,6 +1474,7 @@ export default function ConcretarApp() {
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Mano hábil</div><div className="text-slate-800">{viewingPerson.manoHabil || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tipo de sangre</div><div className="text-slate-800">{viewingPerson.tipoSangre || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tarjeta IERIC</div><div className="text-slate-800">{viewingPerson.tarjetaIeric || "No"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tipo de trabajador</div><div className="text-slate-800">{viewingPerson.tipoTrabajador || "Empresa"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Especialidad</div><div className="flex items-center gap-1.5 text-slate-800"><EspecialidadIcon especialidad={viewingPerson.especialidad} size={14} />{viewingPerson.especialidad || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Talle pantalón</div><div className="text-slate-800">{viewingPerson.tallePantalon || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Talle camisa</div><div className="text-slate-800">{viewingPerson.talleCamisa || "—"}</div></div>
@@ -1542,19 +1656,20 @@ export default function ConcretarApp() {
 
         {tab === "liquidacion" && canVerLiquidacion && (
           <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Liquidación</h2>
-              <select className={inputCls} value={obraLiquidacionId} onChange={(e) => { setObraLiquidacionId(e.target.value); setSeleccionLiquidacion([]); }}>
-                {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-              </select>
-            </div>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Liquidación</h2>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setVistaLiquidacion("pendientes")}
                 className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaLiquidacion === "pendientes" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
               >
                 Pendientes de pago
+              </button>
+              <button
+                onClick={() => setVistaLiquidacion("tanteros")}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaLiquidacion === "tanteros" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Tanteros
               </button>
               <button
                 onClick={() => setVistaLiquidacion("historial")}
@@ -1569,7 +1684,7 @@ export default function ConcretarApp() {
                 {seleccionLiquidacion.length > 0 && (
                   <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3">
                     <div className="text-sm text-amber-800">
-                      {seleccionLiquidacion.length} día(s) seleccionados — {Object.keys(totalesPorPersona).length} persona(s) — total <strong>{fmtARS(totalSeleccionado)}</strong>
+                      {seleccionLiquidacion.length} trabajador-semana seleccionados — {personasSeleccionadas.size} persona(s) — total <strong>{fmtARS(totalSeleccionado)}</strong>
                     </div>
                     <button onClick={confirmarPago} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700">
                       <Check size={16} /> Confirmar pago
@@ -1577,54 +1692,211 @@ export default function ConcretarApp() {
                   </div>
                 )}
 
-                {asistenciaPendientePago.length === 0 ? (
+                {semanasOrdenadas.length === 0 ? (
                   <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
-                    No hay días pendientes de pago para esta obra.
+                    No hay días pendientes de pago en ninguna obra. 🎉
                   </div>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-3 py-3"></th>
-                          <th className="px-3 py-3">Fecha</th>
-                          <th className="px-3 py-3">Nombre</th>
-                          <th className="px-3 py-3">Rubro</th>
-                          <th className="px-3 py-3">Hs</th>
-                          <th className="px-3 py-3">Estado</th>
-                          <th className="px-3 py-3 text-right">Monto</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[...asistenciaPendientePago]
-                          .sort((a, b) => (categoriaDe(a.nombre) || "").localeCompare(categoriaDe(b.nombre) || "") || a.nombre.localeCompare(b.nombre))
-                          .map((a) => (
-                            <tr
-                              key={a.id}
-                              onClick={() => toggleSeleccionLiquidacion(a.id)}
-                              className={`cursor-pointer border-t border-stone-100 ${seleccionLiquidacion.includes(a.id) ? "bg-amber-50" : ""}`}
-                            >
-                              <td className="px-3 py-2"><input type="checkbox" checked={seleccionLiquidacion.includes(a.id)} onChange={() => toggleSeleccionLiquidacion(a.id)} className="h-3.5 w-3.5" /></td>
-                              <td className="px-3 py-2 text-slate-600">{fmtFecha(a.fecha)}</td>
-                              <td className="px-3 py-2 font-medium text-slate-900">{a.nombre}</td>
-                              <td className="px-3 py-2 text-slate-600">{categoriaDe(a.nombre) || "—"}</td>
-                              <td className="px-3 py-2 font-mono text-slate-700">{a.horas}</td>
-                              <td className="px-3 py-2"><Badge estado={a.estado} /></td>
-                              <td className="px-3 py-2 text-right font-mono text-slate-800">{fmtARS(montoDe(a))}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  semanasOrdenadas.map((semanaKey) => {
+                    const obrasDeSemana = gruposSemana[semanaKey];
+                    const totalSemana = Object.values(obrasDeSemana).reduce(
+                      (s, trabajadores) => s + Object.values(trabajadores).reduce((s2, t) => s2 + t.monto, 0),
+                      0
+                    );
+                    return (
+                      <Panel
+                        key={semanaKey}
+                        title={`Semana del ${fmtFecha(semanaKey)}`}
+                        action={<span className="font-mono text-sm font-bold text-slate-800">{fmtARS(totalSemana)}</span>}
+                      >
+                        <div className="space-y-5">
+                          {Object.keys(obrasDeSemana).map((obraId) => {
+                            const obra = obras.find((o) => o.id === Number(obraId));
+                            const trabajadores = obrasDeSemana[obraId];
+                            const totalObra = Object.values(trabajadores).reduce((s, t) => s + t.monto, 0);
+                            return (
+                              <div key={obraId}>
+                                <div className="mb-2 flex items-center justify-between border-b border-stone-200 pb-1.5">
+                                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700"><Building2 size={14} className="text-amber-600" />{obra?.nombre || "Obra"}</span>
+                                  <span className="font-mono text-sm font-semibold text-slate-700">{fmtARS(totalObra)}</span>
+                                </div>
+                                <div className="space-y-1">
+                                  {Object.keys(trabajadores).map((nombre) => {
+                                    const t = trabajadores[nombre];
+                                    const key = `${semanaKey}|${obraId}|${nombre}`;
+                                    const seleccionado = seleccionLiquidacion.includes(key);
+                                    return (
+                                      <div
+                                        key={key}
+                                        onClick={() => toggleSeleccionLiquidacion(key)}
+                                        className={`flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm ${seleccionado ? "bg-amber-50" : "hover:bg-stone-50"}`}
+                                      >
+                                        <span className="flex items-center gap-2">
+                                          <input type="checkbox" checked={seleccionado} onChange={() => toggleSeleccionLiquidacion(key)} className="h-3.5 w-3.5" />
+                                          <span className="font-medium text-slate-900">{nombre}</span>
+                                          <span className="text-xs text-slate-400">({t.horas} hs)</span>
+                                        </span>
+                                        <span className="font-mono text-slate-800">{fmtARS(t.monto)}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </Panel>
+                    );
+                  })
                 )}
                 <div className="text-[11px] text-slate-400">
-                  El monto se calcula con el costo por hora de "Costos por Categoría" según el rubro de cada persona a la fecha del pago. Tocá una fila o el checkbox para incluirla en el pago.
+                  Cada línea es el total de esa persona, en esa obra, para toda la semana (lunes a domingo). Tocá una fila para incluirla en el pago — no hace falta elegir día por día.
                 </div>
+              </>
+            )}
+
+            {vistaLiquidacion === "tanteros" && (
+              <>
+                <div className="flex items-center justify-end">
+                  <button onClick={() => setShowTanteroForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                    <Plus size={16} /> Nuevo grupo
+                  </button>
+                </div>
+
+                <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
+                  Para que alguien aparezca acá, primero marcalo como "Tantero" en su ficha de Personal. Estos grupos no cobran por hora — tienen un precio cerrado por el trabajo, y vos cargás los avances que les vas pagando.
+                </div>
+
+                {showTanteroForm && (
+                  <Panel title="Nuevo grupo de tanteros" action={<button onClick={() => setShowTanteroForm(false)}><X size={16} /></button>}>
+                    <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitTanteroForm}>
+                      <Field label="Nombre del grupo">
+                        <input value={tanteroForm.nombreGrupo} onChange={(e) => setTanteroForm((f) => ({ ...f, nombreGrupo: e.target.value }))} required placeholder="Ej: Mario Electricista" className={inputCls} />
+                      </Field>
+                      <Field label="Obra">
+                        <select value={tanteroForm.obraId} onChange={(e) => setTanteroForm((f) => ({ ...f, obraId: e.target.value }))} className={inputCls}>
+                          {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Precio cerrado (ARS)">
+                        <input type="number" value={tanteroForm.precioTotal} onChange={(e) => setTanteroForm((f) => ({ ...f, precioTotal: e.target.value }))} required className={inputCls} />
+                      </Field>
+                      <div className="md:col-span-3">
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Integrantes del grupo</div>
+                        {tanterosDisponibles.length === 0 ? (
+                          <div className="rounded-md border border-dashed border-stone-300 p-3 text-xs text-slate-500">
+                            Todavía no hay nadie marcado como "Tantero" en Personal. Andá a Personal, editá a la persona y elegí "Tantero" en Tipo de trabajador.
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {tanterosDisponibles.map((p) => (
+                              <button
+                                type="button"
+                                key={p.id}
+                                onClick={() => toggleIntegranteTantero(p.id)}
+                                className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                                  tanteroForm.integrantes.includes(p.id) ? "border-amber-500 bg-amber-50 text-amber-800" : "border-stone-300 bg-white text-slate-600 hover:bg-stone-50"
+                                }`}
+                              >
+                                {nombreCompletoDe(p)}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar grupo</button></div>
+                    </form>
+                  </Panel>
+                )}
+
+                {tanteros.length === 0 ? (
+                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
+                    Todavía no hay grupos de tanteros cargados.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {tanteros.map((t) => {
+                      const obra = obras.find((o) => o.id === t.obraId);
+                      const pagado = pagadoDeTantero(t.id);
+                      const saldo = (t.precioTotal || 0) - pagado;
+                      const integrantesNombres = (t.integrantes || []).map((id) => {
+                        const p = personal.find((x) => x.id === id);
+                        return p ? nombreCompletoDe(p) : null;
+                      }).filter(Boolean);
+                      const avancesGrupo = avancesTanteros.filter((a) => a.tanteroId === t.id).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+                      return (
+                        <div key={t.id} className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="font-bold text-slate-900">{t.nombreGrupo}</div>
+                              <div className="text-sm text-slate-500">{obra?.nombre} · {integrantesNombres.length} integrante(s): {integrantesNombres.join(", ")}</div>
+                            </div>
+                            <button onClick={() => setAvanceAbiertoId(avanceAbiertoId === t.id ? null : t.id)} className={btnGhost}>
+                              {avanceAbiertoId === t.id ? "Cancelar" : "Cargar avance"}
+                            </button>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                            <div>
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Precio cerrado</div>
+                              <div className="font-mono font-semibold text-slate-900">{fmtARS(t.precioTotal)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pagado</div>
+                              <div className="font-mono font-semibold text-emerald-700">{fmtARS(pagado)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Saldo</div>
+                              <div className={`font-mono font-semibold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
+                            </div>
+                          </div>
+
+                          {avanceAbiertoId === t.id && (
+                            <form
+                              className="mt-4 grid grid-cols-1 gap-3 rounded-md border border-stone-200 bg-stone-50 p-3 md:grid-cols-4"
+                              onSubmit={(e) => submitAvanceForm(e, t.id)}
+                            >
+                              <Field label="Fecha">
+                                <input type="date" required value={avanceForm.fecha} onChange={(e) => setAvanceForm((f) => ({ ...f, fecha: e.target.value }))} className={inputCls} />
+                              </Field>
+                              <Field label="Monto (ARS)">
+                                <input type="number" required value={avanceForm.monto} onChange={(e) => setAvanceForm((f) => ({ ...f, monto: e.target.value }))} className={inputCls} />
+                              </Field>
+                              <div className="md:col-span-2">
+                                <Field label="Descripción">
+                                  <input value={avanceForm.descripcion} onChange={(e) => setAvanceForm((f) => ({ ...f, descripcion: e.target.value }))} placeholder="Ej: 3er avance" className={inputCls} />
+                                </Field>
+                              </div>
+                              <div className="md:col-span-4">
+                                <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar avance</button>
+                              </div>
+                            </form>
+                          )}
+
+                          {avancesGrupo.length > 0 && (
+                            <div className="mt-4 space-y-1 border-t border-stone-100 pt-3">
+                              {avancesGrupo.map((a) => (
+                                <div key={a.id} className="flex items-center justify-between text-xs text-slate-500">
+                                  <span>{fmtFecha(a.fecha)} — {a.descripcion || "Avance"}</span>
+                                  <span className="font-mono text-slate-700">{fmtARS(a.monto)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </>
             )}
 
             {vistaLiquidacion === "historial" && (
               <>
+                <select className={inputCls} value={obraHistorialId} onChange={(e) => setObraHistorialId(e.target.value)}>
+                  {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                </select>
+
                 <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total pagado en esta obra</div>
                   <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalHistorico)}</div>
