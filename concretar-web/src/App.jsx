@@ -16,6 +16,27 @@ import {
 const fmtARS = (n) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n || 0);
 
+// Las fechas se guardan como texto "YYYY-MM-DD". Si se arman con
+// `new Date("YYYY-MM-DD")` a secas, JS las interpreta como medianoche
+// UTC — y en Argentina (UTC-3) eso "cae" al día anterior. Estas dos
+// funciones arman/leen la fecha en horario LOCAL para evitar ese bug.
+function fechaLocal(fechaStr) {
+  if (!fechaStr) return null;
+  const [y, m, d] = String(fechaStr).slice(0, 10).split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function fmtFecha(fechaStr) {
+  const d = fechaLocal(fechaStr);
+  return d ? d.toLocaleDateString("es-AR") : "—";
+}
+function hoyISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 const ESTADOS_HERRAMIENTA = ["Disponible", "En uso", "Mantenimiento", "Perdida"];
 const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
 const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
@@ -415,7 +436,7 @@ export default function ConcretarApp() {
   function ultimaObraDe(nombreCompleto) {
     const registros = asistencia
       .filter((a) => a.nombre === nombreCompleto)
-      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+      .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
     if (registros.length === 0) return null;
     return obras.find((o) => o.id === registros[0].obraId)?.nombre || null;
   }
@@ -465,7 +486,7 @@ export default function ConcretarApp() {
 
       campo("DNI", p.dni);
       campo("Categoría", p.categoria);
-      campo("Fecha de nacimiento", p.fechaNacimiento ? new Date(p.fechaNacimiento).toLocaleDateString("es-AR") : "—");
+      campo("Fecha de nacimiento", p.fechaNacimiento ? fmtFecha(p.fechaNacimiento) : "—");
       campo("Dirección", p.direccion);
       campo("Mano hábil", p.manoHabil);
       campo("Tipo de sangre", p.tipoSangre);
@@ -507,7 +528,7 @@ export default function ConcretarApp() {
       }
     });
 
-    doc.save(`altas_seguro_${new Date().toISOString().slice(0, 10)}.pdf`);
+    doc.save(`altas_seguro_${hoyISO()}.pdf`);
   }
 
   function generarPdfTalles(personas) {
@@ -535,7 +556,7 @@ export default function ConcretarApp() {
       headStyles: { fillColor: [15, 23, 42] },
     });
 
-    doc.save(`resumen_talles_${new Date().toISOString().slice(0, 10)}.pdf`);
+    doc.save(`resumen_talles_${hoyISO()}.pdf`);
   }
 
   const emptyPersonalForm = {
@@ -627,13 +648,13 @@ export default function ConcretarApp() {
 
   // ---------- Dashboard calculations ----------
   const obraSel = obras.find((o) => o.id === selectedObraId) || obras[0] || null;
-  const startDate = obraSel ? new Date(obraSel.inicio) : new Date();
+  const startDate = obraSel ? fechaLocal(obraSel.inicio) : new Date();
   const meses = obraSel ? Array.from({ length: obraSel.meses }, (_, i) => new Date(startDate.getFullYear(), startDate.getMonth() + i, 1)) : [];
-  const gastosObra = obraSel ? comprasFacturas.filter((c) => c.obraId === obraSel.id).sort((a, b) => new Date(a.fecha) - new Date(b.fecha)) : [];
+  const gastosObra = obraSel ? comprasFacturas.filter((c) => c.obraId === obraSel.id).sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha)) : [];
 
   const chartData = meses.map((d, i) => {
     const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-    const real = gastosObra.filter((g) => new Date(g.fecha) <= monthEnd).reduce((s, g) => s + g.monto, 0);
+    const real = gastosObra.filter((g) => fechaLocal(g.fecha) <= monthEnd).reduce((s, g) => s + g.monto, 0);
     const planificado = Math.round((obraSel.presupuesto * (i + 1)) / obraSel.meses);
     return { mes: d.toLocaleDateString("es-AR", { month: "short", year: "2-digit" }), Planificado: planificado, Real: real };
   });
@@ -659,7 +680,7 @@ export default function ConcretarApp() {
   const [showIngresoForm, setShowIngresoForm] = useState(false);
   const [showPersonalForm, setShowPersonalForm] = useState(false);
   const [showAsistenciaForm, setShowAsistenciaForm] = useState(false);
-  const emptyAsistenciaForm = { fecha: new Date().toISOString().slice(0, 10), nombre: "", obraId: obras[0]?.id ?? "", horas: 8, estado: "Presente" };
+  const emptyAsistenciaForm = { fecha: hoyISO(), nombre: "", obraId: obras[0]?.id ?? "", horas: 8, estado: "Presente" };
   const [asistenciaForm, setAsistenciaForm] = useState(emptyAsistenciaForm);
   const [asistenciaSesion, setAsistenciaSesion] = useState([]);
   const asf = (key) => (val) => setAsistenciaForm((f) => ({ ...f, [key]: val }));
@@ -748,7 +769,7 @@ export default function ConcretarApp() {
   );
   const historialPagos = asistencia
     .filter((a) => a.obraId === Number(obraLiquidacionId) && a.estadoPago === "Pagado")
-    .sort((a, b) => new Date(b.fechaPago) - new Date(a.fechaPago));
+    .sort((a, b) => fechaLocal(b.fechaPago) - fechaLocal(a.fechaPago));
 
   const toggleSeleccionLiquidacion = (id) =>
     setSeleccionLiquidacion((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -765,7 +786,7 @@ export default function ConcretarApp() {
   async function confirmarPago() {
     if (seleccionLiquidacion.length === 0) return;
     if (!window.confirm(`¿Confirmar el pago de ${fmtARS(totalSeleccionado)} para ${Object.keys(totalesPorPersona).length} persona(s)?`)) return;
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = hoyISO();
     await Promise.all(
       seleccionLiquidacion.map((id) => {
         const a = asistenciaPendientePago.find((x) => x.id === id);
@@ -957,7 +978,7 @@ export default function ConcretarApp() {
                       <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
                         {asistenciasEditadas.slice(0, 5).map((a) => (
                           <li key={a.id}>
-                            {a.nombre} ({new Date(a.fecha).toLocaleDateString("es-AR")}) — {a.editadoPor}: "{a.motivoEdicion}"
+                            {a.nombre} ({fmtFecha(a.fecha)}) — {a.editadoPor}: "{a.motivoEdicion}"
                           </li>
                         ))}
                       </ul>
@@ -1061,7 +1082,7 @@ export default function ConcretarApp() {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500">Duración</span>
-                    <span>{o.meses} meses desde {new Date(o.inicio).toLocaleDateString("es-AR")}</span>
+                    <span>{o.meses} meses desde {fmtFecha(o.inicio)}</span>
                   </div>
                 </div>
               ))}
@@ -1335,7 +1356,7 @@ export default function ConcretarApp() {
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">DNI</div><div className="font-mono text-slate-800">{viewingPerson.dni || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Costo por hora</div><div className="font-mono text-slate-800">{(() => { const c = costosCategoria.find((x) => x.categoria === viewingPerson.categoria)?.costoHora; return c ? fmtARS(c) : "Sin definir"; })()}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Última obra</div><div className="text-slate-800">{ultimaObraDe(nombreCompletoDe(viewingPerson)) || "—"}</div></div>
-                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fecha de nacimiento</div><div className="text-slate-800">{viewingPerson.fechaNacimiento ? new Date(viewingPerson.fechaNacimiento).toLocaleDateString("es-AR") : "—"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fecha de nacimiento</div><div className="text-slate-800">{viewingPerson.fechaNacimiento ? fmtFecha(viewingPerson.fechaNacimiento) : "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dirección</div><div className="text-slate-800">{viewingPerson.direccion || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Mano hábil</div><div className="text-slate-800">{viewingPerson.manoHabil || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tipo de sangre</div><div className="text-slate-800">{viewingPerson.tipoSangre || "—"}</div></div>
@@ -1439,11 +1460,11 @@ export default function ConcretarApp() {
                   <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Nombre</th><th className="px-4 py-3">Centro de costo</th><th className="px-4 py-3">Hs</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Cargado por</th><th className="px-4 py-3"></th></tr>
                 </thead>
                 <tbody>
-                  {[...asistencia].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map((a) => {
+                  {[...asistencia].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((a) => {
                     const obra = obras.find((o) => o.id === a.obraId);
                     return (
                       <tr key={a.id} className="border-t border-stone-100">
-                        <td className="px-4 py-3 text-slate-600">{new Date(a.fecha).toLocaleDateString("es-AR")}</td>
+                        <td className="px-4 py-3 text-slate-600">{fmtFecha(a.fecha)}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">
                           <span className="flex items-center gap-1.5">
                             {a.nombre}
@@ -1584,7 +1605,7 @@ export default function ConcretarApp() {
                               className={`cursor-pointer border-t border-stone-100 ${seleccionLiquidacion.includes(a.id) ? "bg-amber-50" : ""}`}
                             >
                               <td className="px-3 py-2"><input type="checkbox" checked={seleccionLiquidacion.includes(a.id)} onChange={() => toggleSeleccionLiquidacion(a.id)} className="h-3.5 w-3.5" /></td>
-                              <td className="px-3 py-2 text-slate-600">{new Date(a.fecha).toLocaleDateString("es-AR")}</td>
+                              <td className="px-3 py-2 text-slate-600">{fmtFecha(a.fecha)}</td>
                               <td className="px-3 py-2 font-medium text-slate-900">{a.nombre}</td>
                               <td className="px-3 py-2 text-slate-600">{categoriaDe(a.nombre) || "—"}</td>
                               <td className="px-3 py-2 font-mono text-slate-700">{a.horas}</td>
@@ -1629,12 +1650,12 @@ export default function ConcretarApp() {
                       <tbody>
                         {historialPagos.map((a) => (
                           <tr key={a.id} className="border-t border-stone-100">
-                            <td className="px-3 py-2 text-slate-600">{new Date(a.fecha).toLocaleDateString("es-AR")}</td>
+                            <td className="px-3 py-2 text-slate-600">{fmtFecha(a.fecha)}</td>
                             <td className="px-3 py-2 font-medium text-slate-900">{a.nombre}</td>
                             <td className="px-3 py-2 text-slate-600">{categoriaDe(a.nombre) || "—"}</td>
                             <td className="px-3 py-2 font-mono text-slate-700">{a.horas}</td>
                             <td className="px-3 py-2 text-right font-mono text-slate-800">{fmtARS(a.montoAbonado)}</td>
-                            <td className="px-3 py-2 text-slate-500"><Badge estado="Pagado" />{" "}{new Date(a.fechaPago).toLocaleDateString("es-AR")}</td>
+                            <td className="px-3 py-2 text-slate-500"><Badge estado="Pagado" />{" "}{fmtFecha(a.fechaPago)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1790,7 +1811,7 @@ export default function ConcretarApp() {
                     <div>
                       <div className="font-semibold text-slate-900">{oc.proveedor}</div>
                       <div className="text-sm text-slate-500">{oc.item}</div>
-                      <div className="mt-1 text-xs text-slate-400">{obra?.nombre} · {new Date(oc.fecha).toLocaleDateString("es-AR")}</div>
+                      <div className="mt-1 text-xs text-slate-400">{obra?.nombre} · {fmtFecha(oc.fecha)}</div>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-sm font-semibold text-slate-800">{fmtARS(oc.montoEstimado)}</span>
@@ -1877,11 +1898,11 @@ export default function ConcretarApp() {
                   <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Proveedor</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Formalidad</th><th className="px-4 py-3">Cuenta</th><th className="px-4 py-3">Monto</th><th className="px-4 py-3">Estado</th></tr>
                 </thead>
                 <tbody>
-                  {[...comprasFacturas].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map((c) => {
+                  {[...comprasFacturas].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
                     const obra = obras.find((o) => o.id === c.obraId);
                     return (
                       <tr key={c.id} className="border-t border-stone-100">
-                        <td className="px-4 py-3 text-slate-600">{new Date(c.fecha).toLocaleDateString("es-AR")}</td>
+                        <td className="px-4 py-3 text-slate-600">{fmtFecha(c.fecha)}</td>
                         <td className="px-4 py-3 text-slate-600">{obra?.nombre}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">{c.proveedor}</td>
                         <td className="px-4 py-3 text-slate-600">{c.categoria}</td>
@@ -1961,11 +1982,11 @@ export default function ConcretarApp() {
                   <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Concepto</th><th className="px-4 py-3">Formalidad</th><th className="px-4 py-3">Cuenta</th><th className="px-4 py-3">Monto</th></tr>
                 </thead>
                 <tbody>
-                  {[...ingresos].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map((i) => {
+                  {[...ingresos].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((i) => {
                     const obra = obras.find((o) => o.id === i.obraId);
                     return (
                       <tr key={i.id} className="border-t border-stone-100">
-                        <td className="px-4 py-3 text-slate-600">{new Date(i.fecha).toLocaleDateString("es-AR")}</td>
+                        <td className="px-4 py-3 text-slate-600">{fmtFecha(i.fecha)}</td>
                         <td className="px-4 py-3 text-slate-600">{obra?.nombre}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">{i.concepto}</td>
                         <td className="px-4 py-3"><Badge estado={i.formalidad || "Blanco"} /></td>
