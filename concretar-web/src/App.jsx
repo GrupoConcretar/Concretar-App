@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
+import { createClient } from "@supabase/supabase-js";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck,
-  Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
+  Printer, HardHat, Wrench, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
   Landmark, Smartphone, Banknote
 } from "lucide-react";
 import {
@@ -67,6 +68,10 @@ const isSupabaseConfigured =
   SUPABASE_ANON_KEY &&
   !SUPABASE_ANON_KEY.includes("TU_ANON_KEY");
 
+// Cliente oficial. Se crea siempre (no rompe nada crearlo con valores
+// de ejemplo); solo se usa de verdad cuando isSupabaseConfigured es true.
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const toCamel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const toSnake = (s) => s.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase());
 const rowToCamel = (row) => {
@@ -81,50 +86,26 @@ const objToSnake = (obj) => {
 };
 
 async function sbSelect(table) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=*&order=id.asc`, {
-    headers: { apikey: SUPABASE_ANON_KEY },
-  });
-  if (!res.ok) throw new Error(`No se pudo leer "${table}" (HTTP ${res.status})`);
-  const rows = await res.json();
-  return rows.map(rowToCamel);
+  const { data, error } = await supabase.from(table).select("*").order("id", { ascending: true });
+  if (error) throw new Error(`No se pudo leer "${table}": ${error.message}`);
+  return data.map(rowToCamel);
 }
 
 async function sbInsert(table, obj) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify(objToSnake(obj)),
-  });
-  if (!res.ok) throw new Error(`No se pudo guardar en "${table}" (HTTP ${res.status})`);
-  const rows = await res.json();
-  return rowToCamel(rows[0]);
+  const { data, error } = await supabase.from(table).insert(objToSnake(obj)).select().single();
+  if (error) throw new Error(`No se pudo guardar en "${table}": ${error.message}`);
+  return rowToCamel(data);
 }
 
 async function sbUpdate(table, id, patch) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
-    method: "PATCH",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify(objToSnake(patch)),
-  });
-  if (!res.ok) throw new Error(`No se pudo actualizar "${table}" (HTTP ${res.status})`);
-  const rows = await res.json();
-  return rowToCamel(rows[0]);
+  const { data, error } = await supabase.from(table).update(objToSnake(patch)).eq("id", id).select().single();
+  if (error) throw new Error(`No se pudo actualizar "${table}": ${error.message}`);
+  return rowToCamel(data);
 }
 
 async function sbDelete(table, id) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
-    method: "DELETE",
-    headers: { apikey: SUPABASE_ANON_KEY },
-  });
-  if (!res.ok) throw new Error(`No se pudo eliminar en "${table}" (HTTP ${res.status})`);
+  const { error } = await supabase.from(table).delete().eq("id", id);
+  if (error) throw new Error(`No se pudo eliminar en "${table}": ${error.message}`);
 }
 
 function readFileAsDataURL(file) {
