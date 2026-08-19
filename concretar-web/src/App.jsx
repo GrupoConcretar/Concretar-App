@@ -434,6 +434,7 @@ export default function ConcretarApp() {
 
   const [viewingPersonId, setViewingPersonId] = useState(null);
   const [modoSeleccionPdf, setModoSeleccionPdf] = useState(false);
+  const [showCostosPanel, setShowCostosPanel] = useState(false);
   const [seleccionadosPdf, setSeleccionadosPdf] = useState([]);
   const toggleSeleccionPdf = (id) =>
     setSeleccionadosPdf((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -455,6 +456,92 @@ export default function ConcretarApp() {
       .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
     if (registros.length === 0) return null;
     return obras.find((o) => o.id === registros[0].obraId)?.nombre || null;
+  }
+
+  // Gerencia, RRHH, Logística, HyS trabajan "de todos lados" y por defecto
+  // se imputan al Centro de Costos General, no a una obra puntual.
+  const CATEGORIAS_CENTRO_GENERAL = ["Gerente", "Recursos Humanos", "Logística", "HyS"];
+
+  // En qué obra está trabajando esta persona ahora mismo:
+  // - Tantero: la obra del grupo al que pertenece.
+  // - Empresa: la obra de su registro de asistencia más reciente.
+  function obraActualDe(p) {
+    if (p.tipoTrabajador === "Tantero") {
+      const grupo = tanteros.find((t) => (t.integrantes || []).includes(p.id));
+      return grupo ? obras.find((o) => o.id === grupo.obraId) || null : null;
+    }
+    const registros = asistencia
+      .filter((a) => a.nombre === nombreCompletoDe(p))
+      .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+    if (registros.length === 0) return null;
+    return obras.find((o) => o.id === registros[0].obraId) || null;
+  }
+
+  // ---------- Agrupación para "Personal/Cuadrillas" ----------
+  const idsEnAlgunGrupoTantero = new Set(tanteros.flatMap((t) => t.integrantes || []));
+  const personalCentroGeneral = personal.filter((p) => CATEGORIAS_CENTRO_GENERAL.includes(p.categoria));
+  const cuadrillasPorObra = {}; // obraId -> { obra, empresa: [...], gruposTantero: [...] }
+  const personalSinAsignar = [];
+
+  personal
+    .filter((p) => !CATEGORIAS_CENTRO_GENERAL.includes(p.categoria))
+    .forEach((p) => {
+      if (p.tipoTrabajador === "Tantero") {
+        if (!idsEnAlgunGrupoTantero.has(p.id)) personalSinAsignar.push(p);
+        return; // si está en un grupo, se muestra a través del grupo, no individualmente
+      }
+      const obraActual = obraActualDe(p);
+      if (obraActual) {
+        if (!cuadrillasPorObra[obraActual.id]) cuadrillasPorObra[obraActual.id] = { obra: obraActual, empresa: [], gruposTantero: [] };
+        cuadrillasPorObra[obraActual.id].empresa.push(p);
+      } else {
+        personalSinAsignar.push(p);
+      }
+    });
+
+  tanteros.forEach((t) => {
+    if (!cuadrillasPorObra[t.obraId]) {
+      const obra = obras.find((o) => o.id === t.obraId);
+      if (obra) cuadrillasPorObra[t.obraId] = { obra, empresa: [], gruposTantero: [] };
+    }
+    if (cuadrillasPorObra[t.obraId]) cuadrillasPorObra[t.obraId].gruposTantero.push(t);
+  });
+
+  function renderPersonaRow(p) {
+    const seleccionado = seleccionadosPdf.includes(p.id);
+    return (
+      <div
+        key={p.id}
+        onClick={() => modoSeleccionPdf && toggleSeleccionPdf(p.id)}
+        className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm ${modoSeleccionPdf ? "cursor-pointer" : ""} ${seleccionado ? "bg-amber-50" : "hover:bg-stone-50"}`}
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          {modoSeleccionPdf && <input type="checkbox" checked={seleccionado} onChange={() => toggleSeleccionPdf(p.id)} className="h-3.5 w-3.5 shrink-0" />}
+          {p.fotoPersona ? (
+            <img src={p.fotoPersona} alt={nombreCompletoDe(p)} className="h-6 w-6 shrink-0 rounded-full border border-stone-200 object-cover" />
+          ) : (
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-100 text-[8px] font-semibold text-slate-400">{(p.nombre || "?").slice(0, 1)}</div>
+          )}
+          {modoSeleccionPdf ? (
+            <span className="flex items-center gap-1 truncate font-medium text-slate-900">
+              <EspecialidadIcon especialidad={p.especialidad} />
+              {nombreCorto(p)}
+              {p.observaciones && <span title={p.observaciones}><AlertTriangle size={11} className="text-amber-500 shrink-0" /></span>}
+            </span>
+          ) : (
+            <button onClick={() => setViewingPersonId(p.id)} className="flex items-center gap-1 truncate font-medium text-slate-900 underline decoration-dotted hover:text-amber-600">
+              <EspecialidadIcon especialidad={p.especialidad} />
+              {nombreCorto(p)}
+              {p.observaciones && <span title={p.observaciones}><AlertTriangle size={11} className="text-amber-500 shrink-0" /></span>}
+            </button>
+          )}
+        </span>
+        <span className="flex shrink-0 items-center gap-2 text-xs text-slate-500">
+          <span>{p.categoria}</span>
+          <Badge estado={p.estado} />
+        </span>
+      </div>
+    );
   }
 
   function formatoImagen(dataUrl) {
@@ -655,7 +742,7 @@ export default function ConcretarApp() {
   const NAV = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "obras", label: "Obras", icon: Building2 },
-    { id: "personal", label: "Personal", icon: Users },
+    { id: "personal", label: "Personal/Cuadrillas", icon: Users },
     { id: "asistencia", label: "Asistencia", icon: ClipboardCheck },
     { id: "liquidacion", label: "Liquidación", icon: Wallet },
     { id: "herramientas", label: "Herramientas", icon: Wrench },
@@ -663,7 +750,6 @@ export default function ConcretarApp() {
     { id: "ingresos", label: "Ingresos", icon: TrendingUp },
     { id: "facturas", label: "Compras y Facturas", icon: Receipt },
     { id: "cuentas", label: "Cuentas", icon: Landmark },
-    { id: "costos", label: "Costos por Categoría", icon: DollarSign },
   ];
 
   // ---------- Dashboard calculations ----------
@@ -1220,8 +1306,16 @@ export default function ConcretarApp() {
         {tab === "personal" && !viewingPerson && (
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Personal</h2>
-              <div className="flex gap-2">
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Personal/Cuadrillas</h2>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setShowCostosPanel((v) => !v)}
+                  className={`flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-semibold ${
+                    showCostosPanel ? "border-slate-400 bg-stone-100 text-slate-700" : "border-stone-300 bg-white text-slate-700 hover:bg-stone-50"
+                  }`}
+                >
+                  <DollarSign size={16} /> Costos por Categoría
+                </button>
                 {canEditarPersonal && (
                   <button
                     onClick={() => {
@@ -1270,6 +1364,54 @@ export default function ConcretarApp() {
                   </button>
                 </div>
               </div>
+            )}
+
+            {showCostosPanel && (
+              <Panel title="Costos por Categoría" action={<button onClick={() => setShowCostosPanel(false)}><X size={16} /></button>}>
+                <div className="mb-3 text-xs text-slate-500">
+                  Este valor se usa para calcular el costo por hora de cada persona, según su categoría.
+                  {!canEditarCostos && " Solo Gerente y RRHH pueden modificarlo."}
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-stone-200">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3">Categoría</th>
+                        <th className="px-4 py-3">Costo por hora (ARS)</th>
+                        {canEditarCostos && <th className="px-4 py-3"></th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costosCategoria.map((c) => (
+                        <tr key={c.id} className="border-t border-stone-100">
+                          <td className="px-4 py-3 font-medium text-slate-900">{c.categoria}</td>
+                          <td className="px-4 py-3">
+                            {canEditarCostos ? (
+                              <input
+                                type="number"
+                                className={`${inputCls} w-40`}
+                                value={costoDrafts[c.id] ?? (c.costoHora ?? "")}
+                                onChange={(e) => setCostoDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
+                              />
+                            ) : c.costoHora ? (
+                              fmtARS(c.costoHora)
+                            ) : (
+                              <span className="text-slate-400">Sin definir</span>
+                            )}
+                          </td>
+                          {canEditarCostos && (
+                            <td className="px-4 py-3">
+                              <button onClick={() => guardarCosto(c)} className={btnGhost}>
+                                {savedCostoId === c.id ? <span className="flex items-center gap-1 text-emerald-600"><Check size={14} /> Guardado</span> : "Guardar"}
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Panel>
             )}
 
             {showPersonalForm && canCrearPersonal && (
@@ -1376,65 +1518,59 @@ export default function ConcretarApp() {
               </Panel>
             )}
 
-            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-[11px]">
-                <thead className="bg-stone-50 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr>
-                    {modoSeleccionPdf && <th className="px-1.5 py-1.5"></th>}
-                    <th className="px-1.5 py-1.5">Foto</th>
-                    <th className="px-1.5 py-1.5">Nombre</th>
-                    <th className="px-1.5 py-1.5">Categoría</th>
-                    <th className="px-1.5 py-1.5">Última obra</th>
-                    <th className="px-1.5 py-1.5">DNI</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...personal].sort((a, b) => b.id - a.id).map((p) => (
-                    <tr
-                      key={p.id}
-                      onClick={() => modoSeleccionPdf && toggleSeleccionPdf(p.id)}
-                      className={`border-t border-stone-100 ${modoSeleccionPdf ? "cursor-pointer" : ""} ${seleccionadosPdf.includes(p.id) ? "bg-amber-50" : ""}`}
-                    >
-                      {modoSeleccionPdf && (
-                        <td className="px-1.5 py-1">
-                          <input type="checkbox" checked={seleccionadosPdf.includes(p.id)} onChange={() => toggleSeleccionPdf(p.id)} className="h-3.5 w-3.5" />
-                        </td>
-                      )}
-                      <td className="px-1.5 py-1">
-                        {p.fotoPersona ? (
-                          <img src={p.fotoPersona} alt={nombreCompletoDe(p)} className="h-6 w-6 rounded-full border border-stone-200 object-cover" />
-                        ) : (
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-stone-100 text-[8px] font-semibold text-slate-400">
-                            {(p.nombre || "?").slice(0, 1)}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-1.5 py-1">
-                        {modoSeleccionPdf ? (
-                          <span className="flex items-center gap-1 font-medium text-slate-900">
-                            <EspecialidadIcon especialidad={p.especialidad} />
-                            {nombreCorto(p)}
-                            {p.observaciones && (
-                              <span title={p.observaciones}><AlertTriangle size={11} className="text-amber-500" /></span>
-                            )}
-                          </span>
-                        ) : (
-                          <button onClick={() => setViewingPersonId(p.id)} className="flex items-center gap-1 font-medium text-slate-900 underline decoration-dotted hover:text-amber-600">
-                            <EspecialidadIcon especialidad={p.especialidad} />
-                            {nombreCorto(p)}
-                            {p.observaciones && (
-                              <span title={p.observaciones}><AlertTriangle size={11} className="text-amber-500" /></span>
-                            )}
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-1.5 py-1 text-slate-600">{p.categoria}</td>
-                      <td className="px-1.5 py-1 text-slate-600">{ultimaObraDe(nombreCompletoDe(p)) || <span className="text-slate-400">—</span>}</td>
-                      <td className="px-1.5 py-1 font-mono text-slate-500">{p.dni || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-5">
+              {personalCentroGeneral.length > 0 && (
+                <div className="rounded-lg border border-stone-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-1.5 border-b border-stone-100 bg-stone-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
+                    <Landmark size={14} className="text-amber-600" /> Centro de Costos General
+                  </div>
+                  <div className="divide-y divide-stone-50 p-1">
+                    {personalCentroGeneral.map(renderPersonaRow)}
+                  </div>
+                </div>
+              )}
+
+              {Object.values(cuadrillasPorObra).map(({ obra, empresa, gruposTantero }) => (
+                <div key={obra.id} className="rounded-lg border border-stone-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-1.5 border-b border-stone-100 bg-stone-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
+                    <Building2 size={14} className="text-amber-600" /> {obra.nombre}
+                  </div>
+                  <div className="p-2">
+                    {empresa.length > 0 && (
+                      <div className="mb-2">
+                        <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Empresa</div>
+                        <div className="divide-y divide-stone-50">{empresa.map(renderPersonaRow)}</div>
+                      </div>
+                    )}
+                    {gruposTantero.map((t) => {
+                      const integrantes = (t.integrantes || []).map((id) => personal.find((p) => p.id === id)).filter(Boolean);
+                      return (
+                        <div key={t.id} className="mb-2">
+                          <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Tanteros — {t.nombreGrupo}</div>
+                          <div className="divide-y divide-stone-50">{integrantes.map(renderPersonaRow)}</div>
+                        </div>
+                      );
+                    })}
+                    {empresa.length === 0 && gruposTantero.length === 0 && (
+                      <div className="px-2 py-2 text-xs text-slate-400">Sin personal cargado en esta obra todavía.</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              <div className="rounded-lg border border-stone-200 bg-white shadow-sm">
+                <div className="flex items-center gap-1.5 border-b border-stone-100 bg-stone-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
+                  <Users size={14} className="text-slate-500" /> Sin asignar a ninguna obra
+                </div>
+                {personalSinAsignar.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-slate-400">Todo el personal está afectado a alguna obra o al Centro General.</div>
+                ) : (
+                  <div className="divide-y divide-stone-50 p-1">{personalSinAsignar.map(renderPersonaRow)}</div>
+                )}
+                <div className="border-t border-stone-100 px-3 py-1.5 text-[11px] text-slate-400">
+                  Gente que tenemos disponible por si hace falta llamarla, aunque no esté trabajando en este momento.
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -2366,55 +2502,6 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "costos" && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Costos por Categoría</h2>
-            <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-              Este valor se usa para calcular el costo por hora de cada persona en Personal, según su categoría.
-              {!canEditarCostos && " Solo Gerente y RRHH pueden modificarlo."}
-            </div>
-
-            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">Categoría</th>
-                    <th className="px-4 py-3">Costo por hora (ARS)</th>
-                    {canEditarCostos && <th className="px-4 py-3"></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {costosCategoria.map((c) => (
-                    <tr key={c.id} className="border-t border-stone-100">
-                      <td className="px-4 py-3 font-medium text-slate-900">{c.categoria}</td>
-                      <td className="px-4 py-3">
-                        {canEditarCostos ? (
-                          <input
-                            type="number"
-                            className={`${inputCls} w-40`}
-                            value={costoDrafts[c.id] ?? (c.costoHora ?? "")}
-                            onChange={(e) => setCostoDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
-                          />
-                        ) : c.costoHora ? (
-                          fmtARS(c.costoHora)
-                        ) : (
-                          <span className="text-slate-400">Sin definir</span>
-                        )}
-                      </td>
-                      {canEditarCostos && (
-                        <td className="px-4 py-3">
-                          <button onClick={() => guardarCosto(c)} className={btnGhost}>
-                            {savedCostoId === c.id ? <span className="flex items-center gap-1 text-emerald-600"><Check size={14} /> Guardado</span> : "Guardar"}
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );
