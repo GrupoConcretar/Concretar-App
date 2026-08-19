@@ -5,7 +5,8 @@ import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck,
-  Printer, HardHat, Wrench, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet
+  Printer, HardHat, Wrench, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
+  Landmark, Smartphone, Banknote
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -48,6 +49,9 @@ const ROLES_ALTA_PERSONAL = ["Gerente", "Recursos Humanos", "HyS", "Capataz"];
 const ROLES_EDITAR_PERSONAL = ["Gerente", "Recursos Humanos"];
 const ROLES_EDITAR_COSTOS = ["Gerente", "Recursos Humanos"];
 const ROLES_LIQUIDACION = ["Gerente", "Contador"];
+const ROLES_FINANZAS = ["Gerente", "Contador"];
+const FORMALIDADES = ["Blanco", "Negro"];
+const CUENTAS = ["Efectivo", "Banco", "Mercado Pago"];
 
 // ============================================================
 // CONFIGURACIÓN DE SUPABASE
@@ -143,6 +147,8 @@ const BADGE_STYLES = {
   Recibida: "border-emerald-600 text-emerald-700",
   Pagada: "border-emerald-600 text-emerald-700",
   Pagado: "border-emerald-600 text-emerald-700",
+  Blanco: "border-sky-600 text-sky-700",
+  Negro: "border-slate-600 text-slate-700",
   "En curso": "border-amber-600 text-amber-700",
   Finalizada: "border-emerald-600 text-emerald-700",
   Activo: "border-emerald-600 text-emerald-700",
@@ -168,6 +174,18 @@ function EspecialidadIcon({ especialidad, size = 13 }) {
   if (!IconComp) return null;
   return (
     <span title={especialidad} className="inline-flex items-center text-slate-500">
+      <IconComp size={size} />
+    </span>
+  );
+}
+
+const ICONO_CUENTA = { Efectivo: Banknote, Banco: Landmark, "Mercado Pago": Smartphone };
+
+function CuentaIcon({ cuenta, size = 13 }) {
+  const IconComp = ICONO_CUENTA[cuenta];
+  if (!IconComp) return null;
+  return (
+    <span className="inline-flex items-center text-slate-500">
       <IconComp size={size} />
     </span>
   );
@@ -276,15 +294,23 @@ export default function ConcretarApp() {
     { id: 3, fecha: "2026-08-10", obraId: 2, proveedor: "Corralón San Martín", item: "Bloques cerámicos x1000", montoEstimado: 1500000, estado: "Pendiente" },
   ];
   const DEMO_FACTURAS = [
-    { id: 1, fecha: "2026-02-15", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 5200000, comprobante: "A-0001-00012345", estado: "Pagada" },
-    { id: 2, fecha: "2026-03-18", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 4800000, comprobante: "A-0001-00012400", estado: "Pagada" },
-    { id: 3, fecha: "2026-04-20", obraId: 1, ordenCompraId: null, proveedor: "Hierros del Sur", categoria: "Materiales", monto: 6100000, comprobante: "A-0002-00003321", estado: "Pagada" },
-    { id: 4, fecha: "2026-05-22", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 5300000, comprobante: "A-0001-00012551", estado: "Pagada" },
-    { id: 5, fecha: "2026-06-19", obraId: 1, ordenCompraId: 1, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 4200000, comprobante: "A-0003-00009087", estado: "Pagada" },
-    { id: 6, fecha: "2026-07-25", obraId: 1, ordenCompraId: 2, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 6800000, comprobante: "B-0001-00000442", estado: "Pendiente" },
-    { id: 7, fecha: "2026-05-10", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 3800000, comprobante: "A-0001-00012470", estado: "Pagada" },
-    { id: 8, fecha: "2026-06-14", obraId: 2, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 2600000, comprobante: "A-0001-00012600", estado: "Pagada" },
-    { id: 9, fecha: "2026-07-15", obraId: 2, ordenCompraId: 3, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 1500000, comprobante: "A-0004-00001180", estado: "Pendiente" },
+    { id: 1, fecha: "2026-02-15", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 5200000, comprobante: "A-0001-00012345", estado: "Pagada", formalidad: "Blanco", cuenta: "Banco" },
+    { id: 2, fecha: "2026-03-18", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 4800000, comprobante: "A-0001-00012400", estado: "Pagada", formalidad: "Negro", cuenta: "Efectivo" },
+    { id: 3, fecha: "2026-04-20", obraId: 1, ordenCompraId: null, proveedor: "Hierros del Sur", categoria: "Materiales", monto: 6100000, comprobante: "A-0002-00003321", estado: "Pagada", formalidad: "Blanco", cuenta: "Banco" },
+    { id: 4, fecha: "2026-05-22", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 5300000, comprobante: "A-0001-00012551", estado: "Pagada", formalidad: "Negro", cuenta: "Efectivo" },
+    { id: 5, fecha: "2026-06-19", obraId: 1, ordenCompraId: 1, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 4200000, comprobante: "A-0003-00009087", estado: "Pagada", formalidad: "Blanco", cuenta: "Banco" },
+    { id: 6, fecha: "2026-07-25", obraId: 1, ordenCompraId: 2, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 6800000, comprobante: "B-0001-00000442", estado: "Pendiente", formalidad: "Blanco", cuenta: "Banco" },
+    { id: 7, fecha: "2026-05-10", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 3800000, comprobante: "A-0001-00012470", estado: "Pagada", formalidad: "Blanco", cuenta: "Mercado Pago" },
+    { id: 8, fecha: "2026-06-14", obraId: 2, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 2600000, comprobante: "A-0001-00012600", estado: "Pagada", formalidad: "Negro", cuenta: "Efectivo" },
+    { id: 9, fecha: "2026-07-15", obraId: 2, ordenCompraId: 3, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 1500000, comprobante: "A-0004-00001180", estado: "Pendiente", formalidad: "Blanco", cuenta: "Banco" },
+  ];
+
+  const DEMO_INGRESOS = [
+    { id: 1, fecha: "2026-02-05", obraId: 1, concepto: "Anticipo certificado 1", monto: 20000000, formalidad: "Blanco", cuenta: "Banco" },
+    { id: 2, fecha: "2026-04-10", obraId: 1, concepto: "Certificado de avance 2", monto: 18000000, formalidad: "Blanco", cuenta: "Banco" },
+    { id: 3, fecha: "2026-05-15", obraId: 1, concepto: "Adicional acordado con el cliente", monto: 6000000, formalidad: "Negro", cuenta: "Efectivo" },
+    { id: 4, fecha: "2026-05-01", obraId: 2, concepto: "Anticipo Fam. Ledesma", monto: 12000000, formalidad: "Blanco", cuenta: "Mercado Pago" },
+    { id: 5, fecha: "2026-06-20", obraId: 2, concepto: "Pago en mano acordado", monto: 4000000, formalidad: "Negro", cuenta: "Efectivo" },
   ];
 
   const [obras, setObras] = useState(isSupabaseConfigured ? [] : DEMO_OBRAS);
@@ -295,6 +321,7 @@ export default function ConcretarApp() {
   const [herramientas, setHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_HERRAMIENTAS);
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
   const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
+  const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
 
   const [dbLoading, setDbLoading] = useState(isSupabaseConfigured);
   const [dbError, setDbError] = useState(null);
@@ -306,9 +333,9 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
-        const [o, p, cc, a, h, oc, cf] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
-          sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"),
+          sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -317,6 +344,7 @@ export default function ConcretarApp() {
         setHerramientas(h);
         setOrdenesCompra(oc);
         setComprasFacturas(cf);
+        setIngresos(ing);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -610,7 +638,9 @@ export default function ConcretarApp() {
     { id: "liquidacion", label: "Liquidación", icon: Wallet },
     { id: "herramientas", label: "Herramientas", icon: Wrench },
     { id: "ordenes", label: "Órdenes de Compra", icon: ShoppingCart },
+    { id: "ingresos", label: "Ingresos", icon: TrendingUp },
     { id: "facturas", label: "Compras y Facturas", icon: Receipt },
+    { id: "cuentas", label: "Cuentas", icon: Landmark },
     { id: "costos", label: "Costos por Categoría", icon: DollarSign },
   ];
 
@@ -645,6 +675,7 @@ export default function ConcretarApp() {
   const [showHerrForm, setShowHerrForm] = useState(false);
   const [showOcForm, setShowOcForm] = useState(false);
   const [showFacturaForm, setShowFacturaForm] = useState(false);
+  const [showIngresoForm, setShowIngresoForm] = useState(false);
   const [showPersonalForm, setShowPersonalForm] = useState(false);
   const [showAsistenciaForm, setShowAsistenciaForm] = useState(false);
   const emptyAsistenciaForm = { fecha: new Date().toISOString().slice(0, 10), nombre: "", obraId: obras[0]?.id ?? "", horas: 8, estado: "Presente" };
@@ -762,6 +793,23 @@ export default function ConcretarApp() {
     );
     setSeleccionLiquidacion([]);
   }
+
+  // ---------- Resumen de Cuentas (blanco/negro x efectivo/banco/MP) ----------
+  const canVerFinanzas = ROLES_FINANZAS.includes(currentRole);
+
+  function saldoCuenta(cuenta, formalidad) {
+    const totalIngresos = ingresos
+      .filter((i) => i.cuenta === cuenta && i.formalidad === formalidad)
+      .reduce((s, i) => s + (i.monto || 0), 0);
+    const totalEgresos = comprasFacturas
+      .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad)
+      .reduce((s, c) => s + (c.monto || 0), 0);
+    return totalIngresos - totalEgresos;
+  }
+
+  const saldosCuentas = CUENTAS.flatMap((cuenta) => FORMALIDADES.map((formalidad) => ({ cuenta, formalidad, saldo: saldoCuenta(cuenta, formalidad) })));
+  const totalBlanco = FORMALIDADES[0] && CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Blanco"), 0);
+  const totalNegro = CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Negro"), 0);
 
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
 
@@ -1805,6 +1853,8 @@ export default function ConcretarApp() {
                       monto: Number(f.get("monto")) || 0,
                       comprobante: f.get("comprobante"),
                       estado: f.get("estado"),
+                      formalidad: f.get("formalidad"),
+                      cuenta: f.get("cuenta"),
                     }, setComprasFacturas);
                     e.target.reset();
                     setShowFacturaForm(false);
@@ -1829,6 +1879,12 @@ export default function ConcretarApp() {
                   <Field label="Estado">
                     <select name="estado" className={inputCls}>{ESTADOS_FACTURA.map((s) => <option key={s}>{s}</option>)}</select>
                   </Field>
+                  <Field label="Formalidad">
+                    <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
+                  </Field>
+                  <Field label="Cuenta de pago">
+                    <select name="cuenta" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
+                  </Field>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
               </Panel>
@@ -1837,7 +1893,7 @@ export default function ConcretarApp() {
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-sm">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Proveedor</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Comprobante</th><th className="px-4 py-3">Monto</th><th className="px-4 py-3">Estado</th></tr>
+                  <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Proveedor</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Formalidad</th><th className="px-4 py-3">Cuenta</th><th className="px-4 py-3">Monto</th><th className="px-4 py-3">Estado</th></tr>
                 </thead>
                 <tbody>
                   {[...comprasFacturas].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map((c) => {
@@ -1848,7 +1904,8 @@ export default function ConcretarApp() {
                         <td className="px-4 py-3 text-slate-600">{obra?.nombre}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">{c.proveedor}</td>
                         <td className="px-4 py-3 text-slate-600">{c.categoria}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.comprobante}</td>
+                        <td className="px-4 py-3"><Badge estado={c.formalidad || "Blanco"} /></td>
+                        <td className="px-4 py-3 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta} />{c.cuenta || "—"}</span></td>
                         <td className="px-4 py-3 text-right font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</td>
                         <td className="px-4 py-3"><Badge estado={c.estado} /></td>
                       </tr>
@@ -1856,6 +1913,129 @@ export default function ConcretarApp() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {tab === "ingresos" && !canVerFinanzas && (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
+            <TrendingUp size={28} className="text-slate-400" />
+            <div className="text-sm font-semibold text-slate-700">Sección restringida</div>
+            <div className="max-w-sm text-xs text-slate-500">Solo Gerente y Contador pueden ver y cargar ingresos.</div>
+          </div>
+        )}
+
+        {tab === "ingresos" && canVerFinanzas && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Ingresos</h2>
+              <button onClick={() => setShowIngresoForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                <Plus size={16} /> Cargar ingreso
+              </button>
+            </div>
+
+            <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
+              Lo que cobrás de cada obra — con esto más los gastos de "Compras y Facturas" se arma el resumen de "Cuentas".
+            </div>
+
+            {showIngresoForm && (
+              <Panel title="Cargar ingreso" action={<button onClick={() => setShowIngresoForm(false)}><X size={16} /></button>}>
+                <form
+                  className="grid grid-cols-1 gap-4 md:grid-cols-3"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const f = new FormData(e.target);
+                    addRecord("ingresos", {
+                      fecha: f.get("fecha"),
+                      obraId: Number(f.get("obraId")),
+                      concepto: f.get("concepto"),
+                      monto: Number(f.get("monto")) || 0,
+                      formalidad: f.get("formalidad"),
+                      cuenta: f.get("cuenta"),
+                    }, setIngresos);
+                    e.target.reset();
+                    setShowIngresoForm(false);
+                  }}
+                >
+                  <Field label="Fecha"><input name="fecha" type="date" required className={inputCls} /></Field>
+                  <Field label="Obra">
+                    <select name="obraId" className={inputCls}>{obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
+                  </Field>
+                  <Field label="Concepto"><input name="concepto" required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
+                  <Field label="Monto (ARS)"><input name="monto" type="number" required className={inputCls} /></Field>
+                  <Field label="Formalidad">
+                    <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
+                  </Field>
+                  <Field label="Cuenta">
+                    <select name="cuenta" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
+                  </Field>
+                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                </form>
+              </Panel>
+            )}
+
+            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Concepto</th><th className="px-4 py-3">Formalidad</th><th className="px-4 py-3">Cuenta</th><th className="px-4 py-3">Monto</th></tr>
+                </thead>
+                <tbody>
+                  {[...ingresos].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map((i) => {
+                    const obra = obras.find((o) => o.id === i.obraId);
+                    return (
+                      <tr key={i.id} className="border-t border-stone-100">
+                        <td className="px-4 py-3 text-slate-600">{new Date(i.fecha).toLocaleDateString("es-AR")}</td>
+                        <td className="px-4 py-3 text-slate-600">{obra?.nombre}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900">{i.concepto}</td>
+                        <td className="px-4 py-3"><Badge estado={i.formalidad || "Blanco"} /></td>
+                        <td className="px-4 py-3 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}</span></td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab === "cuentas" && !canVerFinanzas && (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
+            <Landmark size={28} className="text-slate-400" />
+            <div className="text-sm font-semibold text-slate-700">Sección restringida</div>
+            <div className="max-w-sm text-xs text-slate-500">Solo Gerente y Contador pueden ver el resumen de cuentas.</div>
+          </div>
+        )}
+
+        {tab === "cuentas" && canVerFinanzas && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Total en blanco</div>
+                <div className="mt-1 font-mono text-2xl font-bold text-sky-900">{fmtARS(totalBlanco)}</div>
+              </div>
+              <div className="rounded-lg border border-slate-300 bg-slate-50 p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Total en negro</div>
+                <div className="mt-1 font-mono text-2xl font-bold text-slate-800">{fmtARS(totalNegro)}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {saldosCuentas.map(({ cuenta, formalidad, saldo }) => (
+                <div key={`${cuenta}-${formalidad}`} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700"><CuentaIcon cuenta={cuenta} size={15} />{cuenta}</span>
+                    <Badge estado={formalidad} />
+                  </div>
+                  <div className={`mt-2 font-mono text-lg font-bold ${saldo < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(saldo)}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="text-[11px] text-slate-400">
+              Saldo = Ingresos − Compras/Facturas de cada cuenta y formalidad. Un saldo negativo significa que se cargaron más gastos que ingresos en esa combinación.
             </div>
           </div>
         )}
