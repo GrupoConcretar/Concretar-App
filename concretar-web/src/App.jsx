@@ -13,6 +13,14 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
 } from "recharts";
 
+// Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
+const BRAND = {
+  navy900: "#021d34", // Tono principal
+  navy700: "#153f59",
+  navy400: "#3a5c66",
+  font: "'Poppins', ui-sans-serif, system-ui, sans-serif",
+};
+
 const fmtARS = (n) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
 
@@ -1055,9 +1063,9 @@ export default function ConcretarApp() {
   }
 
   return (
-    <div className="relative flex h-full min-h-[720px] w-full overflow-hidden md:rounded-xl md:border md:border-stone-200 bg-stone-100 text-slate-800" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+    <div className="relative flex h-full min-h-[720px] w-full overflow-hidden md:rounded-xl md:border md:border-stone-200 bg-stone-100 text-slate-800" style={{ fontFamily: BRAND.font }}>
       {/* Barra superior solo en celular */}
-      <div className="fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-slate-900 px-4 py-3 text-slate-100 md:hidden">
+      <div className="fixed inset-x-0 top-0 z-30 flex items-center justify-between px-4 py-3 text-slate-100 md:hidden" style={{ backgroundColor: BRAND.navy900 }}>
         <button onClick={() => setMobileNavOpen(true)} aria-label="Abrir menú">
           <Menu size={22} />
         </button>
@@ -1072,14 +1080,16 @@ export default function ConcretarApp() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 -translate-x-full flex-col bg-slate-900 text-slate-100 transition-transform duration-200 md:static md:z-auto md:w-56 md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 -translate-x-full flex-col text-slate-100 transition-transform duration-200 md:static md:z-auto md:w-56 md:translate-x-0 ${
           mobileNavOpen ? "translate-x-0" : ""
         }`}
+        style={{ backgroundColor: BRAND.navy900 }}
       >
-        <div className="flex items-center justify-between border-b border-slate-700/60 px-5 py-5">
+        <div className="flex items-start justify-between border-b border-white/10 px-5 py-5">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-amber-400">Concretar</div>
-            <div className="text-lg font-bold tracking-tight">App de Obra</div>
+            <div className="text-2xl font-extrabold uppercase tracking-tight text-white">Concretar</div>
+            <div className="mt-0.5 text-sm font-medium text-slate-300">Construyamos</div>
+            <img src="/gc-logo-white.png" alt="Grupo Concretar" className="mt-3 h-7 w-auto" />
           </div>
           <button onClick={() => setMobileNavOpen(false)} className="text-slate-400 md:hidden" aria-label="Cerrar menú">
             <X size={20} />
@@ -1093,8 +1103,9 @@ export default function ConcretarApp() {
                 setTab(item.id);
                 setMobileNavOpen(false);
               }}
+              style={tab === item.id ? { backgroundColor: BRAND.navy400 } : undefined}
               className={`flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm font-medium transition ${
-                tab === item.id ? "bg-amber-500 text-slate-900" : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                tab === item.id ? "text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"
               }`}
             >
               <span className="flex items-center gap-3"><item.icon size={17} />{item.label}</span>
@@ -1104,18 +1115,18 @@ export default function ConcretarApp() {
             </button>
           ))}
         </nav>
-        <div className="border-t border-slate-700/60 px-5 py-4">
+        <div className="border-t border-white/10 px-5 py-4">
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ingresando como</div>
           <select
             value={currentRole}
             onChange={(e) => setCurrentRole(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs text-slate-100"
+            className="w-full rounded-md border border-white/20 bg-black/20 px-2 py-1.5 text-xs text-slate-100"
           >
             {ROLES.map((r) => <option key={r}>{r}</option>)}
           </select>
           <div className="mt-1 text-[10px] text-slate-500">Simula el login hasta que armemos uno real</div>
         </div>
-        <div className="border-t border-slate-700/60 px-5 py-4 text-[11px] text-slate-500">
+        <div className="border-t border-white/10 px-5 py-4 text-[11px] text-slate-500">
           {isSupabaseConfigured ? (
             <span className="flex items-center gap-1.5 text-emerald-400"><Database size={12} /> Conectado a Supabase</span>
           ) : (
