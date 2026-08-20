@@ -48,6 +48,8 @@ function hoyISO() {
 const ESTADOS_HERRAMIENTA = ["Disponible", "En Obra", "En Reparación", "Baja"];
 const ESTADOS_ITEM_COMBO = ["Entregado", "Roto", "Perdido", "Devuelto"];
 const TIPOS_CAJA = ["Electricista", "Civil", "Pintor", "Metalúrgico"];
+const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const DIAS_SEMANA_JS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
 const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
 const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
@@ -302,8 +304,8 @@ export default function ConcretarApp() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const DEMO_OBRAS = [
-    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4 },
-    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null },
+    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4, diaCierre: "Viernes", horaCierre: "18:00" },
+    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diaCierre: "Viernes", horaCierre: "17:30" },
   ];
   const DEMO_PERSONAL = [
     { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
@@ -401,6 +403,18 @@ export default function ConcretarApp() {
       recibidoPor: "Gerente",
     },
   ];
+  const DEMO_AUDITORIAS = [
+    {
+      id: 1,
+      obraId: 1,
+      fecha: "2026-08-14",
+      tipo: "Cierre",
+      realizadoPor: "Capataz",
+      herramientasPresentes: [2],
+      herramientasFaltantes: [],
+      observaciones: "Todo en orden, semana cerrada sin novedades.",
+    },
+  ];
   const DEMO_OC = [
     { id: 1, fecha: "2026-07-02", obraId: 1, proveedor: "Corralón San Martín", item: "Cemento x50, hierro 8mm x200", montoEstimado: 4200000, estado: "Recibida" },
     { id: 2, fecha: "2026-08-05", obraId: 1, proveedor: "Aberturas del Norte", item: "Ventanas de aluminio (12 unid.)", montoEstimado: 6800000, estado: "Requiere aprobación" },
@@ -446,6 +460,7 @@ export default function ConcretarApp() {
   const [catalogoChicas, setCatalogoChicas] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_CHICAS);
   const [proveedores, setProveedores] = useState(isSupabaseConfigured ? [] : DEMO_PROVEEDORES);
   const [remitos, setRemitos] = useState(isSupabaseConfigured ? [] : DEMO_REMITOS);
+  const [auditorias, setAuditorias] = useState(isSupabaseConfigured ? [] : DEMO_AUDITORIAS);
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
   const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
   const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
@@ -462,12 +477,12 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
           sbSelect("catalogo_nombres_herramienta"), sbSelect("catalogo_marcas"), sbSelect("catalogo_herramientas_chicas"),
-          sbSelect("proveedores"), sbSelect("remitos"),
+          sbSelect("proveedores"), sbSelect("remitos"), sbSelect("auditorias_herramientas"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -485,6 +500,7 @@ export default function ConcretarApp() {
         setCatalogoChicas(cch);
         setProveedores(pv);
         setRemitos(rm);
+        setAuditorias(au);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -905,7 +921,26 @@ export default function ConcretarApp() {
   const ocPendientesAprobacion = ordenesCompra.filter((o) => o.estado === "Requiere aprobación");
   const hayDesvioAlerta = desvioPct > DESVIO_ALERTA_PCT;
   const asistenciasEditadas = asistencia.filter((a) => a.editado);
-  const totalAlertas = herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length + (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length;
+  function nombreDiaHoy() {
+    return DIAS_SEMANA_JS[new Date().getDay()];
+  }
+  function dentroDeVentanaCierre(obra) {
+    if (!obra.diaCierre || !obra.horaCierre) return false;
+    if (nombreDiaHoy() !== obra.diaCierre) return false;
+    const [h, m] = obra.horaCierre.split(":").map(Number);
+    const ahora = new Date();
+    const cierre = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), h, m || 0);
+    const diffMin = (cierre - ahora) / 60000;
+    return diffMin > 0 && diffMin <= 60;
+  }
+  function auditoriaHoy(obraId, tipo) {
+    return auditorias.some((a) => a.obraId === obraId && a.tipo === tipo && a.fecha === hoyISO());
+  }
+  const obrasEnVentanaCierre = obras.filter((o) => dentroDeVentanaCierre(o) && !auditoriaHoy(o.id, "Cierre"));
+  const obrasSinAperturaLunes = nombreDiaHoy() === "Lunes" ? obras.filter((o) => !auditoriaHoy(o.id, "Apertura")) : [];
+  const totalAlertas =
+    herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
+    (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + obrasEnVentanaCierre.length + obrasSinAperturaLunes.length;
 
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
@@ -1384,6 +1419,43 @@ export default function ConcretarApp() {
     await updateRecord("remitos", remito.id, { estado: "Recibido", fechaRecepcion: hoyISO(), recibidoPor: currentRole }, setRemitos);
   }
 
+  // ---------- Auditoría semanal de herramientas: formulario ----------
+  const [obraAuditoriaId, setObraAuditoriaId] = useState(obras[0]?.id ?? "");
+  const [tipoAuditoria, setTipoAuditoria] = useState("Cierre");
+  const [presentesAuditoria, setPresentesAuditoria] = useState([]);
+  const [obsAuditoria, setObsAuditoria] = useState("");
+  const [showAuditoriaForm, setShowAuditoriaForm] = useState(false);
+
+  const obraAuditoriaSel = obras.find((o) => o.id === Number(obraAuditoriaId));
+  const herramientasDeObraAuditoria = herramientas.filter((h) => obraAuditoriaSel && h.ubicacion === obraAuditoriaSel.nombre);
+
+  function abrirAuditoria(obraId, tipo) {
+    setObraAuditoriaId(obraId);
+    setTipoAuditoria(tipo);
+    setPresentesAuditoria([]);
+    setObsAuditoria("");
+    setShowAuditoriaForm(true);
+    setVistaHerramientas("auditoria");
+    setTab("herramientas");
+  }
+  function togglePresenteAuditoria(id) {
+    setPresentesAuditoria((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+  function submitAuditoria(e) {
+    e.preventDefault();
+    const faltantes = herramientasDeObraAuditoria.map((h) => h.id).filter((id) => !presentesAuditoria.includes(id));
+    addRecord("auditorias_herramientas", {
+      obraId: Number(obraAuditoriaId),
+      fecha: hoyISO(),
+      tipo: tipoAuditoria,
+      realizadoPor: currentRole,
+      herramientasPresentes: presentesAuditoria,
+      herramientasFaltantes: faltantes,
+      observaciones: obsAuditoria,
+    }, setAuditorias);
+    setShowAuditoriaForm(false);
+  }
+
   const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
   const recibirOC = (id) => updateRecord("ordenes_compra", id, { estado: "Recibida" }, setOrdenesCompra);
 
@@ -1557,6 +1629,28 @@ export default function ConcretarApp() {
                       </ul>
                     </div>
                   )}
+                  {obrasEnVentanaCierre.map((o) => (
+                    <div key={`cierre-${o.id}`} className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <AlertTriangle size={16} />
+                        Falta menos de 1hs para el cierre de "{o.nombre}" ({o.horaCierre}) — hacé el control de herramientas.
+                      </div>
+                      <button onClick={() => abrirAuditoria(o.id, "Cierre")} className="mt-1 ml-6 text-xs font-semibold underline hover:no-underline">
+                        Hacer control de cierre ahora →
+                      </button>
+                    </div>
+                  ))}
+                  {obrasSinAperturaLunes.map((o) => (
+                    <div key={`apertura-${o.id}`} className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <AlertTriangle size={16} />
+                        Falta validar el inventario inicial de "{o.nombre}" para arrancar la semana.
+                      </div>
+                      <button onClick={() => abrirAuditoria(o.id, "Apertura")} className="mt-1 ml-6 text-xs font-semibold underline hover:no-underline">
+                        Hacer control de apertura ahora →
+                      </button>
+                    </div>
+                  ))}
                   {asistenciasEditadas.length > 0 && (
                     <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
                       <div className="flex items-center gap-2 font-semibold">
@@ -1640,6 +1734,8 @@ export default function ConcretarApp() {
                       inicio: f.get("inicio"),
                       estado: "En curso",
                       encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
+                      diaCierre: f.get("diaCierre"),
+                      horaCierre: f.get("horaCierre"),
                     }, setObras);
                     e.target.reset();
                     setShowObraForm(false);
@@ -1656,10 +1752,18 @@ export default function ConcretarApp() {
                       {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
                     </select>
                   </Field>
+                  <Field label="Día de cierre semanal">
+                    <select name="diaCierre" defaultValue="Viernes" className={inputCls}>
+                      {DIAS_SEMANA.map((d) => <option key={d}>{d}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Hora de cierre">
+                    <input name="horaCierre" type="time" defaultValue="18:00" className={inputCls} />
+                  </Field>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
                 <div className="mt-3 text-[11px] text-slate-400">
-                  El encargado de obra aprueba la recepción de los remitos que le lleguen a esta obra. Gerencia siempre puede aprobar cualquier remito, sea cual sea el encargado.
+                  El encargado de obra aprueba la recepción de los remitos que le lleguen a esta obra. Gerencia siempre puede aprobar cualquier remito, sea cual sea el encargado. El día/hora de cierre dispara el aviso de auditoría semanal de herramientas.
                 </div>
               </Panel>
             )}
@@ -2545,6 +2649,15 @@ export default function ConcretarApp() {
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{remitosPendientes.length}</span>
                 )}
               </button>
+              <button
+                onClick={() => setVistaHerramientas("auditoria")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold ${vistaHerramientas === "auditoria" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Auditoría
+                {(obrasEnVentanaCierre.length + obrasSinAperturaLunes.length) > 0 && (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{obrasEnVentanaCierre.length + obrasSinAperturaLunes.length}</span>
+                )}
+              </button>
             </div>
 
             {vistaHerramientas === "altoValor" && !viewingHerramienta && (
@@ -3008,6 +3121,110 @@ export default function ConcretarApp() {
                           <span className="text-xs text-slate-400">Recibido el {fmtFecha(r.fechaRecepcion)} ({r.recibidoPor})</span>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {vistaHerramientas === "auditoria" && (
+              <>
+                <div className="text-xs text-slate-500">
+                  Control semanal de herramientas por obra: cierre (última hora del día de cierre) y apertura (lunes, al arrancar).
+                </div>
+
+                {(obrasEnVentanaCierre.length > 0 || obrasSinAperturaLunes.length > 0) && (
+                  <div className="space-y-2">
+                    {obrasEnVentanaCierre.map((o) => (
+                      <div key={`c-${o.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-rose-300 bg-rose-50 px-4 py-3">
+                        <span className="text-sm text-rose-800">Cierre de "{o.nombre}" en menos de 1hs ({o.horaCierre}).</span>
+                        <button onClick={() => abrirAuditoria(o.id, "Cierre")} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Hacer control</button>
+                      </div>
+                    ))}
+                    {obrasSinAperturaLunes.map((o) => (
+                      <div key={`a-${o.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3">
+                        <span className="text-sm text-amber-800">Falta la apertura de semana de "{o.nombre}".</span>
+                        <button onClick={() => abrirAuditoria(o.id, "Apertura")} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Hacer control</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end">
+                  <button
+                    onClick={() => { setShowAuditoriaForm((v) => !v); setPresentesAuditoria([]); setObsAuditoria(""); }}
+                    className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                  >
+                    <ClipboardCheck size={16} /> Hacer un control manual
+                  </button>
+                </div>
+
+                {showAuditoriaForm && (
+                  <Panel title={`Control de ${tipoAuditoria.toLowerCase()} de herramientas`} action={<button onClick={() => setShowAuditoriaForm(false)}><X size={16} /></button>}>
+                    <form className="space-y-4" onSubmit={submitAuditoria}>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <Field label="Obra">
+                          <select value={obraAuditoriaId} onChange={(e) => { setObraAuditoriaId(Number(e.target.value)); setPresentesAuditoria([]); }} className={inputCls}>
+                            {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                          </select>
+                        </Field>
+                        <Field label="Tipo de control">
+                          <select value={tipoAuditoria} onChange={(e) => setTipoAuditoria(e.target.value)} className={inputCls}>
+                            <option>Cierre</option>
+                            <option>Apertura</option>
+                          </select>
+                        </Field>
+                      </div>
+
+                      <div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Herramientas registradas en "{obraAuditoriaSel?.nombre}" — tildá las que están físicamente presentes
+                        </div>
+                        {herramientasDeObraAuditoria.length === 0 ? (
+                          <div className="rounded-md border border-dashed border-stone-300 p-3 text-xs text-slate-500">No hay herramientas de Alto Valor registradas en esta obra.</div>
+                        ) : (
+                          <div className="space-y-1 rounded-md border border-stone-200 p-2">
+                            {herramientasDeObraAuditoria.map((h) => (
+                              <label key={h.id} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-stone-50">
+                                <input type="checkbox" checked={presentesAuditoria.includes(h.id)} onChange={() => togglePresenteAuditoria(h.id)} className="h-3.5 w-3.5" />
+                                <CategoriaHerrIcon categoria={h.categoria} />
+                                {h.nombre} <span className="font-mono text-xs text-slate-400">({h.numeroSerie || "s/n"})</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <Field label="Observaciones">
+                        <textarea value={obsAuditoria} onChange={(e) => setObsAuditoria(e.target.value)} rows={2} placeholder="Ej: falta el rotomartillo, avisado al encargado..." className={inputCls} />
+                      </Field>
+
+                      <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar control</button>
+                    </form>
+                  </Panel>
+                )}
+
+                {auditorias.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Historial de controles</div>
+                    <div className="space-y-2">
+                      {[...auditorias].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).slice(0, 15).map((a) => {
+                        const obra = obras.find((o) => o.id === a.obraId);
+                        return (
+                          <div key={a.id} className="rounded-lg border border-stone-200 bg-white px-4 py-2.5 text-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-medium text-slate-800">{obra?.nombre} — {a.tipo}</span>
+                              <span className="text-xs text-slate-400">{fmtFecha(a.fecha)} ({a.realizadoPor})</span>
+                            </div>
+                            {a.herramientasFaltantes?.length > 0 && (
+                              <div className="mt-1 text-xs text-rose-600">
+                                Faltantes: {a.herramientasFaltantes.map((id) => herramientas.find((h) => h.id === id)?.nombre).filter(Boolean).join(", ")}
+                              </div>
+                            )}
+                            {a.observaciones && <div className="mt-1 text-xs text-slate-500">{a.observaciones}</div>}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
