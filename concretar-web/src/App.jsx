@@ -47,6 +47,7 @@ function hoyISO() {
 
 const ESTADOS_HERRAMIENTA = ["Disponible", "En Obra", "En Reparación", "Baja"];
 const ESTADOS_ITEM_COMBO = ["Entregado", "Roto", "Perdido", "Devuelto"];
+const TIPOS_CAJA = ["Electricista", "Civil", "Pintor", "Metalúrgico"];
 const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
 const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
 const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
@@ -163,10 +164,10 @@ function readFileAsDataURL(file) {
 }
 
 const BADGE_STYLES = {
-  Disponible: "border-emerald-600 text-emerald-700",
-  "En Obra": "border-amber-600 text-amber-700",
-  "En Reparación": "border-sky-600 text-sky-700",
-  Baja: "border-rose-600 text-rose-700",
+  Disponible: "border-green-600 text-green-700",
+  "En Obra": "border-blue-600 text-blue-700",
+  "En Reparación": "border-violet-600 text-violet-700",
+  Baja: "border-red-600 text-red-700",
   Entregado: "border-emerald-600 text-emerald-700",
   Roto: "border-rose-600 text-rose-700",
   Perdido: "border-rose-600 text-rose-700",
@@ -183,7 +184,6 @@ const BADGE_STYLES = {
   Finalizada: "border-emerald-600 text-emerald-700",
   Activo: "border-emerald-600 text-emerald-700",
   Licencia: "border-amber-600 text-amber-700",
-  Baja: "border-rose-600 text-rose-700",
   Presente: "border-emerald-600 text-emerald-700",
   Ausente: "border-rose-600 text-rose-700",
   Tardanza: "border-amber-600 text-amber-700",
@@ -333,12 +333,25 @@ export default function ConcretarApp() {
   const DEMO_COMBOS = [
     {
       id: 1,
+      tipo: "Electricista",
+      numero: 1,
       personaId: 2,
       fecha: "2026-06-01",
       items: [
         { nombre: "Martillo", cantidad: 1, estado: "Entregado" },
         { nombre: "Plomada", cantidad: 1, estado: "Entregado" },
         { nombre: "Tenaza", cantidad: 1, estado: "Roto" },
+      ],
+    },
+    {
+      id: 2,
+      tipo: "Civil",
+      numero: 1,
+      personaId: null,
+      fecha: "2026-07-10",
+      items: [
+        { nombre: "Cinta métrica", cantidad: 1, estado: "Entregado" },
+        { nombre: "Nivel de mano", cantidad: 1, estado: "Entregado" },
       ],
     },
   ];
@@ -1215,14 +1228,23 @@ export default function ConcretarApp() {
     updateRecord("herramientas", h.id, { estado: nuevoEstado, fechaUltimoCambioEstado: new Date().toISOString() }, setHerramientas);
   }
 
-  // ---------- Combos personales de herramientas manuales ----------
-  const emptyComboForm = { personaId: personal[0]?.id ?? "", items: [] };
+  // ---------- Caja Herramientas Personal (por rubro, con asignación separada) ----------
+  const emptyComboForm = { tipo: TIPOS_CAJA[0], items: [] };
   const [comboForm, setComboForm] = useState(emptyComboForm);
   const [comboItemDraft, setComboItemDraft] = useState({ nombre: "", cantidad: 1 });
   const [showComboForm, setShowComboForm] = useState(false);
   const [showAddChica, setShowAddChica] = useState(false);
   const [nuevaChica, setNuevaChica] = useState("");
+  const [asignandoCajaId, setAsignandoCajaId] = useState(null);
+  const [personaParaAsignar, setPersonaParaAsignar] = useState("");
 
+  function nombreCaja(combo) {
+    return `Caja ${combo.tipo} ${combo.numero}`;
+  }
+  function generarNumeroCaja(tipo) {
+    const existentes = combosHerramientas.filter((c) => c.tipo === tipo);
+    return existentes.length + 1;
+  }
   function agregarChicaCatalogo() {
     if (!nuevaChica.trim()) return;
     addRecord("catalogo_herramientas_chicas", { nombre: nuevaChica.trim() }, setCatalogoChicas);
@@ -1244,11 +1266,13 @@ export default function ConcretarApp() {
   function submitComboForm(e) {
     e.preventDefault();
     if (comboForm.items.length === 0) {
-      alert("Agregá al menos una herramienta al combo.");
+      alert("Agregá al menos una herramienta a la caja.");
       return;
     }
     addRecord("combos_herramientas", {
-      personaId: Number(comboForm.personaId),
+      tipo: comboForm.tipo,
+      numero: generarNumeroCaja(comboForm.tipo),
+      personaId: null,
       fecha: hoyISO(),
       items: comboForm.items,
     }, setCombosHerramientas);
@@ -1259,7 +1283,16 @@ export default function ConcretarApp() {
     const nuevosItems = combo.items.map((it, i) => (i === idx ? { ...it, estado: nuevoEstado } : it));
     updateRecord("combos_herramientas", combo.id, { items: nuevosItems }, setCombosHerramientas);
   }
-
+  function confirmarAsignarCaja(combo) {
+    if (!personaParaAsignar) return;
+    updateRecord("combos_herramientas", combo.id, { personaId: Number(personaParaAsignar), fechaAsignacion: hoyISO() }, setCombosHerramientas);
+    setAsignandoCajaId(null);
+    setPersonaParaAsignar("");
+  }
+  function devolverCaja(combo) {
+    if (!window.confirm(`¿Marcar "${nombreCaja(combo)}" como devuelta a depósito/oficina?`)) return;
+    updateRecord("combos_herramientas", combo.id, { personaId: null }, setCombosHerramientas);
+  }
 
   const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
   const recibirOC = (id) => updateRecord("ordenes_compra", id, { estado: "Recibida" }, setOrdenesCompra);
@@ -2394,7 +2427,7 @@ export default function ConcretarApp() {
                 onClick={() => setVistaHerramientas("combos")}
                 className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaHerramientas === "combos" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
               >
-                Combos Personales
+                Caja Herramientas Personal
               </button>
             </div>
 
@@ -2622,23 +2655,26 @@ export default function ConcretarApp() {
             {vistaHerramientas === "combos" && (
               <>
                 <div className="flex items-center justify-between">
-                  <div className="text-xs text-slate-500">Herramientas manuales chicas, entregadas como kit a un operario.</div>
+                  <div className="text-xs text-slate-500">Cajas de herramientas manuales chicas, armadas por rubro y asignadas a un operario.</div>
                   <button onClick={() => setShowComboForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
-                    <Plus size={16} /> Nuevo combo
+                    <Plus size={16} /> Nueva caja
                   </button>
                 </div>
 
                 {showComboForm && (
-                  <Panel title="Armar combo personal" action={<button onClick={() => setShowComboForm(false)}><X size={16} /></button>}>
+                  <Panel title="Armar caja de herramientas" action={<button onClick={() => setShowComboForm(false)}><X size={16} /></button>}>
                     <form className="space-y-4" onSubmit={submitComboForm}>
-                      <Field label="Asignar a">
-                        <select value={comboForm.personaId} onChange={(e) => setComboForm((f) => ({ ...f, personaId: e.target.value }))} className={inputCls}>
-                          {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
+                      <Field label="Rubro de la caja">
+                        <select value={comboForm.tipo} onChange={(e) => setComboForm((f) => ({ ...f, tipo: e.target.value }))} className={inputCls}>
+                          {TIPOS_CAJA.map((t) => <option key={t}>{t}</option>)}
                         </select>
                       </Field>
+                      <div className="text-[11px] text-slate-400">
+                        Se va a llamar <span className="font-semibold text-slate-600">"Caja {comboForm.tipo} {generarNumeroCaja(comboForm.tipo)}"</span>. Todavía no tiene a nadie asignado — eso se hace después de guardarla.
+                      </div>
 
                       <div>
-                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Herramientas del combo</div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Herramientas de la caja</div>
                         <div className="flex flex-wrap items-end gap-2">
                           <div className="flex-1 min-w-[160px]">
                             <select
@@ -2680,14 +2716,14 @@ export default function ConcretarApp() {
                         )}
                       </div>
 
-                      <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar combo</button>
+                      <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar caja</button>
                     </form>
                   </Panel>
                 )}
 
                 {combosHerramientas.length === 0 ? (
                   <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
-                    Todavía no hay combos armados.
+                    Todavía no hay cajas armadas.
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -2695,11 +2731,38 @@ export default function ConcretarApp() {
                       const persona = personal.find((p) => p.id === combo.personaId);
                       return (
                         <div key={combo.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                          <div className="mb-2 flex items-center justify-between">
-                            <span className="font-semibold text-slate-900">{persona ? nombreCompletoDe(persona) : "—"}</span>
-                            <span className="text-xs text-slate-400">Entregado el {fmtFecha(combo.fecha)}</span>
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <span className="font-semibold text-slate-900">{nombreCaja(combo)}</span>
+                              <span className="ml-2"><Badge estado={persona ? "En Obra" : "Disponible"} /></span>
+                            </div>
+                            <span className="text-xs text-slate-400">Armada el {fmtFecha(combo.fecha)}</span>
                           </div>
-                          <div className="divide-y divide-stone-50">
+
+                          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+                            {persona ? (
+                              <>
+                                <span className="text-slate-600">Asignada a <span className="font-medium text-slate-900">{nombreCompletoDe(persona)}</span></span>
+                                <button onClick={() => devolverCaja(combo)} className={btnGhost}>Devolver a depósito</button>
+                              </>
+                            ) : asignandoCajaId === combo.id ? (
+                              <>
+                                <select value={personaParaAsignar} onChange={(e) => setPersonaParaAsignar(e.target.value)} className={inputCls}>
+                                  <option value="">-- Elegir operario --</option>
+                                  {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
+                                </select>
+                                <button onClick={() => confirmarAsignarCaja(combo)} className={btnGhost}>Confirmar</button>
+                                <button onClick={() => { setAsignandoCajaId(null); setPersonaParaAsignar(""); }} className="text-xs text-slate-400 hover:underline">Cancelar</button>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-slate-400">Sin asignar — en depósito/oficina</span>
+                                <button onClick={() => setAsignandoCajaId(combo.id)} className={btnGhost}>Asignar a operario</button>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="divide-y divide-stone-50 border-t border-stone-100 pt-1">
                             {combo.items.map((it, idx) => (
                               <div key={idx} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm">
                                 <span className="text-slate-700">{it.nombre} {it.cantidad > 1 ? `x${it.cantidad}` : ""}</span>
@@ -2722,7 +2785,7 @@ export default function ConcretarApp() {
                   </div>
                 )}
                 <div className="text-[11px] text-slate-400">
-                  "Roto" = requiere devolución física para reposición. "Perdido" = se gestiona descuento o reposición con la persona.
+                  "Roto" = requiere devolución física para reposición. "Perdido" = se gestiona descuento o reposición con la persona. El remito con aprobación de logística y del encargado de obra se suma en la próxima etapa — por ahora, asignar/devolver queda registrado directo.
                 </div>
               </>
             )}
