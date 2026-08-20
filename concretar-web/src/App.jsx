@@ -1453,8 +1453,10 @@ export default function ConcretarApp() {
   const [showRemitoForm, setShowRemitoForm] = useState(false);
 
   const herramientasEnOrigenRemito = herramientas.filter((h) => h.ubicacion === remitoForm.origen);
-  const remitosPendientes = remitos.filter((r) => r.estado === "En tránsito");
-  const remitosCompletados = remitos.filter((r) => r.estado === "Recibido");
+  const remitosPendientes = remitos.filter((r) => r.estado === "En tránsito" && r.herramientaIds?.length > 0);
+  const remitosCompletados = remitos.filter((r) => r.estado === "Recibido" && r.herramientaIds?.length > 0);
+  const remitosMaterialesPendientes = remitos.filter((r) => r.estado === "En tránsito" && r.materialItems?.length > 0);
+  const remitosMaterialesCompletados = remitos.filter((r) => r.estado === "Recibido" && r.materialItems?.length > 0);
 
   function toggleHerramientaRemito(id) {
     setRemitoForm((f) => ({
@@ -1490,12 +1492,18 @@ export default function ConcretarApp() {
 
   async function confirmarRecepcionRemito(remito) {
     if (!window.confirm(`¿Confirmar la recepción del remito en "${remito.destino}"?`)) return;
-    const nuevoEstado = remito.destinoEsTaller ? "En Reparación" : remito.destino === "Oficina" ? "Disponible" : "En Obra";
-    await Promise.all(
-      remito.herramientaIds.map((id) =>
-        updateRecord("herramientas", id, { ubicacion: remito.destino, estado: nuevoEstado, fechaUltimoCambioEstado: new Date().toISOString() }, setHerramientas)
-      )
-    );
+    if (remito.pedidoMaterialId) {
+      const pedido = pedidosMateriales.find((p) => p.id === remito.pedidoMaterialId);
+      if (pedido) await recibirPedidoMaterial(pedido);
+    }
+    if (remito.herramientaIds?.length > 0) {
+      const nuevoEstado = remito.destinoEsTaller ? "En Reparación" : remito.destino === "Oficina" ? "Disponible" : "En Obra";
+      await Promise.all(
+        remito.herramientaIds.map((id) =>
+          updateRecord("herramientas", id, { ubicacion: remito.destino, estado: nuevoEstado, fechaUltimoCambioEstado: new Date().toISOString() }, setHerramientas)
+        )
+      );
+    }
     await updateRecord("remitos", remito.id, { estado: "Recibido", fechaRecepcion: hoyISO(), recibidoPor: currentRole }, setRemitos);
   }
 
@@ -1759,8 +1767,7 @@ export default function ConcretarApp() {
     setEnviandoPedido(false);
   }
 
-  async function marcarPedidoRecibido(pedido) {
-    if (!window.confirm(`¿Marcar este pedido como recibido en obra? Esto suma ${fmtARS(pedido.total)} a la curva de inversión real de la obra.`)) return;
+  async function recibirPedidoMaterial(pedido) {
     await updateRecord("pedidos_materiales", pedido.id, { estado: "Recibido" }, setPedidosMateriales);
     await addRecord("compras_facturas", {
       fecha: hoyISO(),
@@ -1774,6 +1781,67 @@ export default function ConcretarApp() {
       formalidad: "Blanco",
       cuenta: "Banco",
     }, setComprasFacturas);
+    // Actualiza el "último proveedor" de cada material del catálogo, para que la próxima sugerencia de consolidación sea más precisa.
+    if (pedido.proveedor) {
+      for (const it of pedido.items) {
+        const existente = catalogoMateriales.find((m) => m.nombre.toLowerCase() === it.material.toLowerCase() && m.categoria === it.categoria);
+        if (existente) await updateRecord("catalogo_materiales", existente.id, { ultimoProveedor: pedido.proveedor }, setCatalogoMateriales);
+      }
+    }
+  }
+  async function marcarPedidoRecibido(pedido) {
+    if (!window.confirm(`¿Marcar este pedido como recibido en obra? Esto suma ${fmtARS(pedido.total)} a la curva de inversión real de la obra.`)) return;
+    await recibirPedidoMaterial(pedido);
+  }
+
+  // ---------- Consolidación de pedidos entre obras + generación de remitos por proveedor ----------
+  const idsPedidosConRemito = new Set(remitos.filter((r) => r.pedidoMaterialId).map((r) => r.pedidoMaterialId));
+  const pedidosSinEnviar = pedidosMateriales.filter((p) => p.estado === "Pendiente" && !idsPedidosConRemito.has(p.id));
+
+  function proveedorSugerido(pedido) {
+    if (pedido.proveedor) return pedido.proveedor;
+    const conteo = {};
+    for (const it of pedido.items) {
+      const mat = catalogoMateriales.find((m) => m.nombre.toLowerCase() === it.material.toLowerCase() && m.categoria === it.categoria);
+      if (mat?.ultimoProveedor) conteo[mat.ultimoProveedor] = (conteo[mat.ultimoProveedor] || 0) + 1;
+    }
+    const entradas = Object.entries(conteo).sort((a, b) => b[1] - a[1]);
+    return entradas[0]?.[0] || null;
+  }
+
+  const gruposPorProveedor = {}; // proveedor (o "Sin proveedor") -> [pedidos]
+  pedidosSinEnviar.forEach((p) => {
+    const clave = p.proveedor || proveedorSugerido(p) || "Sin proveedor asignado";
+    if (!gruposPorProveedor[clave]) gruposPorProveedor[clave] = [];
+    gruposPorProveedor[clave].push(p);
+  });
+
+  function asignarProveedorPedido(pedido, proveedor) {
+    updateRecord("pedidos_materiales", pedido.id, { proveedor }, setPedidosMateriales);
+  }
+
+  function generarRemitoDesdePedido(pedido, proveedor) {
+    const obra = obras.find((o) => o.id === pedido.obraId);
+    if (!obra) return;
+    addRecord("remitos", {
+      fecha: hoyISO(),
+      origen: proveedor,
+      destino: obra.nombre,
+      destinoEsTaller: false,
+      destinoProveedorId: null,
+      herramientaIds: [],
+      materialItems: pedido.items,
+      pedidoMaterialId: pedido.id,
+      estado: "En tránsito",
+      creadoPor: currentRole,
+    }, setRemitos);
+  }
+
+  async function generarRemitosDelGrupo(proveedor, pedidosGrupo) {
+    for (const p of pedidosGrupo) {
+      if (!p.proveedor) await updateRecord("pedidos_materiales", p.id, { proveedor }, setPedidosMateriales);
+      generarRemitoDesdePedido({ ...p, proveedor }, proveedor);
+    }
   }
 
   const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
@@ -3659,6 +3727,15 @@ export default function ConcretarApp() {
               >
                 Catálogo y precios
               </button>
+              <button
+                onClick={() => setVistaMateriales("consolidar")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "consolidar" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Consolidar Pedidos
+                {(pedidosSinEnviar.length + remitosMaterialesPendientes.length) > 0 && (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{pedidosSinEnviar.length + remitosMaterialesPendientes.length}</span>
+                )}
+              </button>
             </div>
 
             {vistaMateriales === "presupuestos" && (
@@ -4034,6 +4111,115 @@ export default function ConcretarApp() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {vistaMateriales === "consolidar" && (
+              <>
+                <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
+                  Pedidos pendientes de todas las obras, agrupados por proveedor — así logística compra todo junto (ej: todo el cemento) en un solo viaje. El proveedor se sugiere solo según la última vez que se compró ese material; lo podés cambiar antes de generar los remitos.
+                </div>
+
+                {Object.keys(gruposPorProveedor).length === 0 ? (
+                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
+                    No hay pedidos pendientes de enviar en este momento.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {Object.entries(gruposPorProveedor).map(([proveedor, pedidosGrupo]) => {
+                      const totalGrupo = pedidosGrupo.reduce((s, p) => s + p.total, 0);
+                      const obrasInvolucradas = [...new Set(pedidosGrupo.map((p) => obras.find((o) => o.id === p.obraId)?.nombre).filter(Boolean))];
+                      return (
+                        <div key={proveedor} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Truck size={16} className="text-amber-600" />
+                              <span className="font-semibold text-slate-900">{proveedor}</span>
+                              {proveedor === "Sin proveedor asignado" && <Badge estado="Rota" />}
+                            </div>
+                            <span className="text-xs text-slate-400">{obrasInvolucradas.length} obra(s) · <span className="font-mono font-semibold text-slate-600">{fmtARS(totalGrupo)}</span></span>
+                          </div>
+
+                          <div className="space-y-2">
+                            {pedidosGrupo.map((p) => {
+                              const obra = obras.find((o) => o.id === p.obraId);
+                              return (
+                                <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-stone-50 px-3 py-2 text-sm">
+                                  <div>
+                                    <span className="font-medium text-slate-800">{obra?.nombre}</span>
+                                    <span className="ml-2 text-xs text-slate-500">{p.items.map((it) => it.material).join(", ")}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs text-slate-600">{fmtARS(p.total)}</span>
+                                    {!p.proveedor && (
+                                      <select
+                                        value=""
+                                        onChange={(e) => e.target.value && asignarProveedorPedido(p, e.target.value)}
+                                        className="rounded-md border border-stone-300 bg-white px-1.5 py-1 text-xs text-slate-600"
+                                      >
+                                        <option value="">Asignar proveedor...</option>
+                                        {proveedores.filter((pr) => pr.esTaller !== "Sí").map((pr) => <option key={pr.id} value={pr.razonSocial}>{pr.razonSocial}</option>)}
+                                      </select>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <button
+                            onClick={() => generarRemitosDelGrupo(proveedor === "Sin proveedor asignado" ? pedidosGrupo[0]?.proveedor : proveedor, pedidosGrupo)}
+                            disabled={proveedor === "Sin proveedor asignado"}
+                            className="mt-3 flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <ArrowRightLeft size={14} /> Generar remitos por obra ({pedidosGrupo.length})
+                          </button>
+                          {proveedor === "Sin proveedor asignado" && (
+                            <div className="mt-1 text-[11px] text-slate-400">Asigná un proveedor a cada pedido de este grupo antes de generar los remitos.</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {remitosMaterialesPendientes.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Remitos de materiales en tránsito</div>
+                    <div className="space-y-3">
+                      {remitosMaterialesPendientes.map((r) => (
+                        <div key={r.id} className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                              {r.origen} <ArrowRightLeft size={14} className="text-amber-600" /> {r.destino}
+                            </span>
+                            <span className="text-xs text-slate-500">Salió el {fmtFecha(r.fecha)} ({r.creadoPor})</span>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-600">{r.materialItems.map((it) => it.material).join(", ")}</div>
+                          <button onClick={() => confirmarRecepcionRemito(r)} className="mt-2 flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                            <Check size={13} /> Confirmar recepción en {r.destino}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {remitosMaterialesCompletados.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Historial de remitos de materiales recibidos</div>
+                    <div className="space-y-2">
+                      {[...remitosMaterialesCompletados].sort((a, b) => fechaLocal(b.fechaRecepcion) - fechaLocal(a.fechaRecepcion)).map((r) => (
+                        <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm">
+                          <span className="flex items-center gap-2 text-slate-700">
+                            {r.origen} <ArrowRightLeft size={13} className="text-slate-400" /> {r.destino}
+                          </span>
+                          <span className="text-xs text-slate-400">Recibido el {fmtFecha(r.fechaRecepcion)} ({r.recibidoPor})</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </>
