@@ -7,7 +7,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -304,8 +304,8 @@ export default function ConcretarApp() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const DEMO_OBRAS = [
-    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4, diaCierre: "Viernes", horaCierre: "18:00" },
-    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diaCierre: "Viernes", horaCierre: "17:30" },
+    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], horaApertura: "08:00", diaCierre: "Viernes", horaCierre: "18:00" },
+    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"], horaApertura: "07:30", diaCierre: "Viernes", horaCierre: "17:30" },
   ];
   const DEMO_PERSONAL = [
     { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
@@ -415,6 +415,11 @@ export default function ConcretarApp() {
       observaciones: "Todo en orden, semana cerrada sin novedades.",
     },
   ];
+  const DEMO_FERIADOS = [
+    { id: 1, fecha: "2026-12-25", descripcion: "Navidad" },
+    { id: 2, fecha: "2026-01-01", descripcion: "Año Nuevo" },
+    { id: 3, fecha: "2026-08-17", descripcion: "Paso a la Inmortalidad del Gral. San Martín" },
+  ];
   const DEMO_OC = [
     { id: 1, fecha: "2026-07-02", obraId: 1, proveedor: "Corralón San Martín", item: "Cemento x50, hierro 8mm x200", montoEstimado: 4200000, estado: "Recibida" },
     { id: 2, fecha: "2026-08-05", obraId: 1, proveedor: "Aberturas del Norte", item: "Ventanas de aluminio (12 unid.)", montoEstimado: 6800000, estado: "Requiere aprobación" },
@@ -461,6 +466,7 @@ export default function ConcretarApp() {
   const [proveedores, setProveedores] = useState(isSupabaseConfigured ? [] : DEMO_PROVEEDORES);
   const [remitos, setRemitos] = useState(isSupabaseConfigured ? [] : DEMO_REMITOS);
   const [auditorias, setAuditorias] = useState(isSupabaseConfigured ? [] : DEMO_AUDITORIAS);
+  const [feriados, setFeriados] = useState(isSupabaseConfigured ? [] : DEMO_FERIADOS);
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
   const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
   const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
@@ -477,12 +483,12 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
           sbSelect("catalogo_nombres_herramienta"), sbSelect("catalogo_marcas"), sbSelect("catalogo_herramientas_chicas"),
-          sbSelect("proveedores"), sbSelect("remitos"), sbSelect("auditorias_herramientas"),
+          sbSelect("proveedores"), sbSelect("remitos"), sbSelect("auditorias_herramientas"), sbSelect("feriados"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -501,6 +507,7 @@ export default function ConcretarApp() {
         setProveedores(pv);
         setRemitos(rm);
         setAuditorias(au);
+        setFeriados(fer);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -889,6 +896,7 @@ export default function ConcretarApp() {
     { id: "facturas", label: "Compras y Facturas", icon: Receipt },
     { id: "cuentas", label: "Cuentas", icon: Landmark },
     { id: "proveedores", label: "Proveedores", icon: Truck },
+    { id: "calendario", label: "Calendario", icon: CalendarDays },
   ];
 
   // ---------- Dashboard calculations ----------
@@ -924,7 +932,15 @@ export default function ConcretarApp() {
   function nombreDiaHoy() {
     return DIAS_SEMANA_JS[new Date().getDay()];
   }
+  function esFeriadoHoy() {
+    return feriados.some((f) => f.fecha === hoyISO());
+  }
+  function primerDiaLaborable(obra) {
+    const dias = obra.diasLaborables || [];
+    return DIAS_SEMANA.find((d) => dias.includes(d)) || null;
+  }
   function dentroDeVentanaCierre(obra) {
+    if (esFeriadoHoy()) return false;
     if (!obra.diaCierre || !obra.horaCierre) return false;
     if (nombreDiaHoy() !== obra.diaCierre) return false;
     const [h, m] = obra.horaCierre.split(":").map(Number);
@@ -937,7 +953,8 @@ export default function ConcretarApp() {
     return auditorias.some((a) => a.obraId === obraId && a.tipo === tipo && a.fecha === hoyISO());
   }
   const obrasEnVentanaCierre = obras.filter((o) => dentroDeVentanaCierre(o) && !auditoriaHoy(o.id, "Cierre"));
-  const obrasSinAperturaLunes = nombreDiaHoy() === "Lunes" ? obras.filter((o) => !auditoriaHoy(o.id, "Apertura")) : [];
+  // "Apertura" dispara en el primer día laborable configurado de cada obra (normalmente lunes, pero se adapta si esa obra trabaja otros días), salvo feriado.
+  const obrasSinAperturaLunes = esFeriadoHoy() ? [] : obras.filter((o) => nombreDiaHoy() === primerDiaLaborable(o) && !auditoriaHoy(o.id, "Apertura"));
   const totalAlertas =
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
     (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + obrasEnVentanaCierre.length + obrasSinAperturaLunes.length;
@@ -1454,6 +1471,51 @@ export default function ConcretarApp() {
       observaciones: obsAuditoria,
     }, setAuditorias);
     setShowAuditoriaForm(false);
+  }
+
+  // ---------- Calendario Corporativo: feriados y ficha horaria por obra ----------
+  const emptyFeriadoForm = { fecha: hoyISO(), descripcion: "" };
+  const [feriadoForm, setFeriadoForm] = useState(emptyFeriadoForm);
+  const [showFeriadoForm, setShowFeriadoForm] = useState(false);
+
+  function submitFeriadoForm(e) {
+    e.preventDefault();
+    if (!feriadoForm.descripcion.trim()) return;
+    addRecord("feriados", { fecha: feriadoForm.fecha, descripcion: feriadoForm.descripcion.trim() }, setFeriados);
+    setFeriadoForm(emptyFeriadoForm);
+    setShowFeriadoForm(false);
+  }
+  function eliminarFeriado(f) {
+    if (!window.confirm(`¿Sacar "${f.descripcion}" del calendario?`)) return;
+    deleteRecord("feriados", f.id, setFeriados);
+  }
+
+  const [editandoHorarioObraId, setEditandoHorarioObraId] = useState(null);
+  const [horarioForm, setHorarioForm] = useState({ diasLaborables: [], horaApertura: "08:00", diaCierre: "Viernes", horaCierre: "18:00" });
+
+  function abrirEditarHorario(obra) {
+    setEditandoHorarioObraId(obra.id);
+    setHorarioForm({
+      diasLaborables: obra.diasLaborables || [],
+      horaApertura: obra.horaApertura || "08:00",
+      diaCierre: obra.diaCierre || "Viernes",
+      horaCierre: obra.horaCierre || "18:00",
+    });
+  }
+  function toggleDiaLaborable(dia) {
+    setHorarioForm((f) => ({
+      ...f,
+      diasLaborables: f.diasLaborables.includes(dia) ? f.diasLaborables.filter((d) => d !== dia) : [...f.diasLaborables, dia],
+    }));
+  }
+  function guardarHorarioObra(e) {
+    e.preventDefault();
+    if (horarioForm.diasLaborables.length === 0) {
+      alert("Elegí al menos un día laborable.");
+      return;
+    }
+    updateRecord("obras", editandoHorarioObraId, { ...horarioForm }, setObras);
+    setEditandoHorarioObraId(null);
   }
 
   const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
@@ -3579,6 +3641,116 @@ export default function ConcretarApp() {
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {tab === "calendario" && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Calendario Corporativo</h2>
+
+            <Panel title="Feriados y días especiales" action={
+              <button onClick={() => setShowFeriadoForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-amber-400">
+                <Plus size={14} /> Agregar
+              </button>
+            }>
+              {showFeriadoForm && (
+                <form className="mb-4 grid grid-cols-1 gap-3 rounded-md border border-stone-200 bg-stone-50 p-3 md:grid-cols-3" onSubmit={submitFeriadoForm}>
+                  <Field label="Fecha">
+                    <input type="date" required value={feriadoForm.fecha} onChange={(e) => setFeriadoForm((f) => ({ ...f, fecha: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <div className="md:col-span-2">
+                    <Field label="Descripción">
+                      <input required value={feriadoForm.descripcion} onChange={(e) => setFeriadoForm((f) => ({ ...f, descripcion: e.target.value }))} placeholder="Ej: Feriado nacional, cierre de balance..." className={inputCls} />
+                    </Field>
+                  </div>
+                  <div className="md:col-span-3">
+                    <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
+                  </div>
+                </form>
+              )}
+              {feriados.length === 0 ? (
+                <div className="text-sm text-slate-400">Sin feriados cargados.</div>
+              ) : (
+                <div className="space-y-1">
+                  {[...feriados].sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha)).map((f) => (
+                    <div key={f.id} className="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-stone-50">
+                      <span className="flex items-center gap-2">
+                        <CalendarDays size={14} className="text-amber-600" />
+                        <span className="font-mono text-slate-500">{fmtFecha(f.fecha)}</span>
+                        <span className="text-slate-800">{f.descripcion}</span>
+                      </span>
+                      <button onClick={() => eliminarFeriado(f)} className="text-slate-400 hover:text-rose-600"><X size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="mt-3 text-[11px] text-slate-400">
+                Los días marcados acá quedan excluidos de las alarmas de auditoría semanal (cierre/apertura) de todas las obras.
+              </div>
+            </Panel>
+
+            <Panel title="Ficha horaria por obra">
+              <div className="space-y-3">
+                {obras.map((o) => (
+                  <div key={o.id} className="rounded-lg border border-stone-200 p-4">
+                    {editandoHorarioObraId === o.id ? (
+                      <form className="space-y-3" onSubmit={guardarHorarioObra}>
+                        <div className="font-semibold text-slate-900">{o.nombre}</div>
+                        <div>
+                          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Días laborables</div>
+                          <div className="flex flex-wrap gap-2">
+                            {DIAS_SEMANA.map((d) => (
+                              <button
+                                type="button"
+                                key={d}
+                                onClick={() => toggleDiaLaborable(d)}
+                                className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                                  horarioForm.diasLaborables.includes(d) ? "border-amber-500 bg-amber-50 text-amber-800" : "border-stone-300 bg-white text-slate-600 hover:bg-stone-50"
+                                }`}
+                              >
+                                {d}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                          <Field label="Hora de apertura">
+                            <input type="time" value={horarioForm.horaApertura} onChange={(e) => setHorarioForm((f) => ({ ...f, horaApertura: e.target.value }))} className={inputCls} />
+                          </Field>
+                          <Field label="Día de cierre semanal">
+                            <select value={horarioForm.diaCierre} onChange={(e) => setHorarioForm((f) => ({ ...f, diaCierre: e.target.value }))} className={inputCls}>
+                              {DIAS_SEMANA.map((d) => <option key={d}>{d}</option>)}
+                            </select>
+                          </Field>
+                          <Field label="Hora de cierre">
+                            <input type="time" value={horarioForm.horaCierre} onChange={(e) => setHorarioForm((f) => ({ ...f, horaCierre: e.target.value }))} className={inputCls} />
+                          </Field>
+                        </div>
+                        <div className="flex gap-2">
+                          <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar horario</button>
+                          <button type="button" onClick={() => setEditandoHorarioObraId(null)} className={btnGhost}>Cancelar</button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-slate-900">{o.nombre}</div>
+                          <div className="mt-1 text-sm text-slate-600">
+                            {(o.diasLaborables || []).join(", ") || <span className="text-slate-400">Sin días configurados</span>}
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            Apertura {o.horaApertura || "—"} · Cierre {o.diaCierre || "—"} {o.horaCierre || ""}
+                          </div>
+                        </div>
+                        <button onClick={() => abrirEditarHorario(o)} className={btnGhost}>
+                          <span className="flex items-center gap-1"><Pencil size={13} /> Editar horario</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Panel>
           </div>
         )}
 
