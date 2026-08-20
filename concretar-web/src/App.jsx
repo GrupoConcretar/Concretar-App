@@ -52,6 +52,13 @@ const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
 const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
 const CATEGORIAS_HERRAMIENTA = ["Herramienta Eléctrica", "Herramienta Manual", "Equipo Eléctrico", "Equipo a Combustión"];
 const SI_NO = ["No", "Sí"];
+// Letra usada en el N° de serie automático (Tipo-Marca+N°). Cambiá acá si preferís otras letras.
+const LETRA_TIPO_HERRAMIENTA = {
+  "Herramienta Eléctrica": "E",
+  "Herramienta Manual": "M",
+  "Equipo Eléctrico": "Q",
+  "Equipo a Combustión": "C",
+};
 const CATEGORIAS_PERSONAL = ["Oficial Especializado", "Oficial", "Medio Oficial", "Ayudante", "Gerente", "HyS", "Recursos Humanos", "Capataz", "Logística"];
 const TIPOS_TRABAJADOR = ["Empresa", "Tantero"];
 const ESTADOS_PERSONAL = ["Activo", "Licencia", "Baja"];
@@ -302,10 +309,10 @@ export default function ConcretarApp() {
     { id: 5, fecha: "2026-08-05", obraId: 2, nombre: "Pepito Chespirito", horas: 0, cargadoPor: "Capataz", estado: "Ausente" },
   ];
   const DEMO_HERRAMIENTAS = [
-    { id: 1, nombre: "Amoladora angular", numeroSerie: "AMO-2024-011", marca: "Makita", categoria: "Herramienta Eléctrica", ubicacion: "Depósito central", responsable: "-", estado: "Disponible", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "2 discos de corte de repuesto", observaciones: "" },
-    { id: 2, nombre: "Andamio tubular (juego x6)", numeroSerie: "AND-2023-004", marca: "", categoria: "Herramienta Manual", ubicacion: "Edificio Belgrano 450", responsable: "Pablo Robles", estado: "En Obra", maletin: "No", accesorios: "No", detalleAccesorios: "", observaciones: "Faltan 2 crucetas, revisar al devolver" },
-    { id: 3, nombre: "Rotomartillo SDS", numeroSerie: "ROT-2024-022", marca: "Bosch", categoria: "Herramienta Eléctrica", ubicacion: "Casa Quinta Yerba Buena", responsable: "Daniel Tello", estado: "En Obra", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "3 puntas SDS, 1 cincel", observaciones: "" },
-    { id: 4, nombre: "Nivel láser", numeroSerie: "NIV-2022-007", marca: "Stanley", categoria: "Equipo Eléctrico", ubicacion: "Depósito central", responsable: "-", estado: "En Reparación", maletin: "Sí", accesorios: "No", detalleAccesorios: "", observaciones: "No enciende, revisar batería" },
+    { id: 1, nombre: "Amoladora angular", numeroSerie: "E-MAK01", marca: "Makita", categoria: "Herramienta Eléctrica", ubicacion: "Oficina", estado: "Disponible", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "2 discos de corte de repuesto", observaciones: "", fechaUltimoCambioEstado: null },
+    { id: 2, nombre: "Andamio tubular (juego x6)", numeroSerie: "M-GEN01", marca: "", categoria: "Herramienta Manual", ubicacion: "Edificio Belgrano 450", estado: "En Obra", maletin: "No", accesorios: "No", detalleAccesorios: "", observaciones: "Faltan 2 crucetas, revisar al devolver", fechaUltimoCambioEstado: null },
+    { id: 3, nombre: "Rotomartillo SDS", numeroSerie: "E-BOS01", marca: "Bosch", categoria: "Herramienta Eléctrica", ubicacion: "Casa Quinta Yerba Buena", estado: "En Obra", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "3 puntas SDS, 1 cincel", observaciones: "", fechaUltimoCambioEstado: null },
+    { id: 4, nombre: "Nivel láser", numeroSerie: "Q-STA01", marca: "Stanley", categoria: "Equipo Eléctrico", ubicacion: "Oficina", estado: "En Reparación", maletin: "Sí", accesorios: "No", detalleAccesorios: "", observaciones: "No enciende, revisar batería", fechaUltimoCambioEstado: "2026-08-18T15:00:00.000Z" },
   ];
   const DEMO_COMBOS = [
     {
@@ -318,6 +325,33 @@ export default function ConcretarApp() {
         { nombre: "Tenaza", cantidad: 1, estado: "Roto" },
       ],
     },
+  ];
+  const DEMO_CATALOGO_NOMBRES = [
+    { id: 1, categoria: "Herramienta Eléctrica", nombre: "Amoladora angular" },
+    { id: 2, categoria: "Herramienta Eléctrica", nombre: "Rotomartillo SDS" },
+    { id: 3, categoria: "Herramienta Eléctrica", nombre: "Taladro percutor" },
+    { id: 4, categoria: "Herramienta Manual", nombre: "Andamio tubular (juego x6)" },
+    { id: 5, categoria: "Herramienta Manual", nombre: "Carretilla" },
+    { id: 6, categoria: "Equipo Eléctrico", nombre: "Nivel láser" },
+    { id: 7, categoria: "Equipo Eléctrico", nombre: "Soldadora" },
+    { id: 8, categoria: "Equipo a Combustión", nombre: "Generador" },
+    { id: 9, categoria: "Equipo a Combustión", nombre: "Compactadora" },
+  ];
+  const DEMO_CATALOGO_MARCAS = [
+    { id: 1, nombre: "Makita" },
+    { id: 2, nombre: "Bosch" },
+    { id: 3, nombre: "Stanley" },
+    { id: 4, nombre: "DeWalt" },
+  ];
+  const DEMO_CATALOGO_CHICAS = [
+    { id: 1, nombre: "Martillo" },
+    { id: 2, nombre: "Plomada" },
+    { id: 3, nombre: "Tenaza" },
+    { id: 4, nombre: "Destornillador Phillips" },
+    { id: 5, nombre: "Destornillador Plano" },
+    { id: 6, nombre: "Cinta métrica" },
+    { id: 7, nombre: "Nivel de mano" },
+    { id: 8, nombre: "Serrucho" },
   ];
   const DEMO_OC = [
     { id: 1, fecha: "2026-07-02", obraId: 1, proveedor: "Corralón San Martín", item: "Cemento x50, hierro 8mm x200", montoEstimado: 4200000, estado: "Recibida" },
@@ -359,6 +393,9 @@ export default function ConcretarApp() {
   const [asistencia, setAsistencia] = useState(isSupabaseConfigured ? [] : DEMO_ASISTENCIA);
   const [herramientas, setHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_HERRAMIENTAS);
   const [combosHerramientas, setCombosHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_COMBOS);
+  const [catalogoNombresHerr, setCatalogoNombresHerr] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_NOMBRES);
+  const [catalogoMarcas, setCatalogoMarcas] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_MARCAS);
+  const [catalogoChicas, setCatalogoChicas] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_CHICAS);
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
   const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
   const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
@@ -375,10 +412,11 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
+          sbSelect("catalogo_nombres_herramienta"), sbSelect("catalogo_marcas"), sbSelect("catalogo_herramientas_chicas"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -391,6 +429,9 @@ export default function ConcretarApp() {
         setTanteros(tt);
         setAvancesTanteros(av);
         setCombosHerramientas(ch);
+        setCatalogoNombresHerr(cn);
+        setCatalogoMarcas(cm);
+        setCatalogoChicas(cch);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -801,10 +842,16 @@ export default function ConcretarApp() {
 
   // ---------- Alertas globales ----------
   const herramientasAtencion = herramientas.filter((h) => h.estado === "En Reparación" || h.estado === "Baja");
+  const herramientasReparadasRecientes = herramientas.filter((h) => {
+    if (h.estado !== "Disponible" && h.estado !== "En Obra") return false;
+    if (!h.fechaUltimoCambioEstado) return false;
+    const horas = (Date.now() - new Date(h.fechaUltimoCambioEstado).getTime()) / 36e5;
+    return horas >= 0 && horas < 48;
+  });
   const ocPendientesAprobacion = ordenesCompra.filter((o) => o.estado === "Requiere aprobación");
   const hayDesvioAlerta = desvioPct > DESVIO_ALERTA_PCT;
   const asistenciasEditadas = asistencia.filter((a) => a.editado);
-  const totalAlertas = herramientasAtencion.length + ocPendientesAprobacion.length + (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length;
+  const totalAlertas = herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length + (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length;
 
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
@@ -1055,14 +1102,84 @@ export default function ConcretarApp() {
   const totalNegro = CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Negro"), 0);
 
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
+
+  // N° de serie automático: letra de tipo + 3 letras de marca + N° correlativo (ej: E-BOS01)
+  function generarNumeroSerie(categoria, marca) {
+    const letraTipo = LETRA_TIPO_HERRAMIENTA[categoria] || "X";
+    const letrasMarca = (marca || "GEN").replace(/[^a-zA-Zñ]/g, "").toUpperCase().padEnd(3, "X").slice(0, 3);
+    const prefijo = `${letraTipo}-${letrasMarca}`;
+    const existentes = herramientas.filter((h) => (h.numeroSerie || "").startsWith(prefijo));
+    const numero = String(existentes.length + 1).padStart(2, "0");
+    return `${prefijo}${numero}`;
+  }
+
   const [vistaHerramientas, setVistaHerramientas] = useState("altoValor");
+
+  // ---------- Alto Valor / Maquinaria (formulario controlado) ----------
+  const emptyHerrForm = { categoria: CATEGORIAS_HERRAMIENTA[0], nombre: "", marca: "", maletin: "No", accesorios: "No", detalleAccesorios: "", observaciones: "" };
+  const [herrForm, setHerrForm] = useState(emptyHerrForm);
+  const [showAddNombreHerr, setShowAddNombreHerr] = useState(false);
+  const [nuevoNombreHerr, setNuevoNombreHerr] = useState("");
+  const [showAddMarca, setShowAddMarca] = useState(false);
+  const [nuevaMarca, setNuevaMarca] = useState("");
+
+  const nombresDisponiblesParaCategoria = catalogoNombresHerr.filter((c) => c.categoria === herrForm.categoria);
+
+  function agregarNombreCatalogo() {
+    if (!nuevoNombreHerr.trim()) return;
+    addRecord("catalogo_nombres_herramienta", { categoria: herrForm.categoria, nombre: nuevoNombreHerr.trim() }, setCatalogoNombresHerr);
+    setHerrForm((f) => ({ ...f, nombre: nuevoNombreHerr.trim() }));
+    setNuevoNombreHerr("");
+    setShowAddNombreHerr(false);
+  }
+  function agregarMarcaCatalogo() {
+    if (!nuevaMarca.trim()) return;
+    addRecord("catalogo_marcas", { nombre: nuevaMarca.trim() }, setCatalogoMarcas);
+    setHerrForm((f) => ({ ...f, marca: nuevaMarca.trim() }));
+    setNuevaMarca("");
+    setShowAddMarca(false);
+  }
+  function submitHerrForm(e) {
+    e.preventDefault();
+    if (!herrForm.nombre) {
+      alert("Elegí (o agregá) el nombre de la herramienta.");
+      return;
+    }
+    addRecord("herramientas", {
+      nombre: herrForm.nombre,
+      numeroSerie: generarNumeroSerie(herrForm.categoria, herrForm.marca),
+      marca: herrForm.marca,
+      categoria: herrForm.categoria,
+      ubicacion: "Oficina",
+      estado: "Disponible",
+      maletin: herrForm.maletin,
+      accesorios: herrForm.accesorios,
+      detalleAccesorios: herrForm.detalleAccesorios,
+      observaciones: herrForm.observaciones,
+      fechaUltimoCambioEstado: new Date().toISOString(),
+    }, setHerramientas);
+    setHerrForm(emptyHerrForm);
+    setShowHerrForm(false);
+  }
+  function cambiarEstadoHerramienta(h, nuevoEstado) {
+    updateRecord("herramientas", h.id, { estado: nuevoEstado, fechaUltimoCambioEstado: new Date().toISOString() }, setHerramientas);
+  }
 
   // ---------- Combos personales de herramientas manuales ----------
   const emptyComboForm = { personaId: personal[0]?.id ?? "", items: [] };
   const [comboForm, setComboForm] = useState(emptyComboForm);
   const [comboItemDraft, setComboItemDraft] = useState({ nombre: "", cantidad: 1 });
   const [showComboForm, setShowComboForm] = useState(false);
+  const [showAddChica, setShowAddChica] = useState(false);
+  const [nuevaChica, setNuevaChica] = useState("");
 
+  function agregarChicaCatalogo() {
+    if (!nuevaChica.trim()) return;
+    addRecord("catalogo_herramientas_chicas", { nombre: nuevaChica.trim() }, setCatalogoChicas);
+    setComboItemDraft((d) => ({ ...d, nombre: nuevaChica.trim() }));
+    setNuevaChica("");
+    setShowAddChica(false);
+  }
   function agregarItemCombo() {
     if (!comboItemDraft.nombre.trim()) return;
     setComboForm((f) => ({
@@ -1092,7 +1209,6 @@ export default function ConcretarApp() {
     const nuevosItems = combo.items.map((it, i) => (i === idx ? { ...it, estado: nuevoEstado } : it));
     updateRecord("combos_herramientas", combo.id, { items: nuevosItems }, setCombosHerramientas);
   }
-
 
 
   const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
@@ -1247,9 +1363,25 @@ export default function ConcretarApp() {
                     </div>
                   )}
                   {herramientasAtencion.length > 0 && (
-                    <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-                      <AlertTriangle size={16} />
-                      {herramientasAtencion.length} herramienta(s) en reparación o dada(s) de baja.
+                    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <AlertTriangle size={16} />
+                        {herramientasAtencion.length} herramienta(s) en reparación o dada(s) de baja.
+                      </div>
+                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
+                        {herramientasAtencion.slice(0, 5).map((h) => <li key={h.id}>{h.nombre} ({h.numeroSerie}) — {h.estado}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {herramientasReparadasRecientes.length > 0 && (
+                    <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <CheckCircle2 size={16} />
+                        {herramientasReparadasRecientes.length} herramienta(s) reparada(s) recientemente.
+                      </div>
+                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
+                        {herramientasReparadasRecientes.slice(0, 5).map((h) => <li key={h.id}>{h.nombre} ({h.numeroSerie}) — ya disponible</li>)}
+                      </ul>
                     </div>
                   )}
                   {asistenciasEditadas.length > 0 && (
@@ -2236,65 +2368,83 @@ export default function ConcretarApp() {
 
                 {showHerrForm && (
                   <Panel title="Añadir herramienta" action={<button onClick={() => setShowHerrForm(false)}><X size={16} /></button>}>
-                    <form
-                      className="grid grid-cols-1 gap-4 md:grid-cols-3"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const f = new FormData(e.target);
-                        addRecord("herramientas", {
-                          nombre: f.get("nombre"),
-                          numeroSerie: f.get("numeroSerie"),
-                          marca: f.get("marca"),
-                          categoria: f.get("categoria"),
-                          ubicacion: f.get("ubicacion"),
-                          responsable: f.get("responsable") || "-",
-                          estado: f.get("estado"),
-                          maletin: f.get("maletin"),
-                          accesorios: f.get("accesorios"),
-                          detalleAccesorios: f.get("detalleAccesorios"),
-                          observaciones: f.get("observaciones"),
-                        }, setHerramientas);
-                        e.target.reset();
-                        setShowHerrForm(false);
-                      }}
-                    >
-                      <Field label="Nombre"><input name="nombre" required className={inputCls} /></Field>
-                      <Field label="Marca"><input name="marca" placeholder="Ej: Bosch, Makita..." className={inputCls} /></Field>
-                      <Field label="N° de serie / ID"><input name="numeroSerie" placeholder="Ej: AMO-2024-011" className={inputCls} /></Field>
+                    <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitHerrForm}>
                       <Field label="Categoría">
-                        <select name="categoria" className={inputCls}>{CATEGORIAS_HERRAMIENTA.map((c) => <option key={c}>{c}</option>)}</select>
-                      </Field>
-                      <Field label="Ubicación">
-                        <select name="ubicacion" className={inputCls}>
-                          <option>Depósito central</option>
-                          {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
+                        <select
+                          value={herrForm.categoria}
+                          onChange={(e) => setHerrForm((f) => ({ ...f, categoria: e.target.value, nombre: "" }))}
+                          className={inputCls}
+                        >
+                          {CATEGORIAS_HERRAMIENTA.map((c) => <option key={c}>{c}</option>)}
                         </select>
                       </Field>
-                      <Field label="Responsable"><input name="responsable" className={inputCls} /></Field>
-                      <Field label="Estado">
-                        <select name="estado" className={inputCls}>{ESTADOS_HERRAMIENTA.map((s) => <option key={s}>{s}</option>)}</select>
-                      </Field>
+
+                      <div>
+                        <Field label="Nombre de herramienta">
+                          <select value={herrForm.nombre} onChange={(e) => setHerrForm((f) => ({ ...f, nombre: e.target.value }))} className={inputCls}>
+                            <option value="">-- Elegir --</option>
+                            {nombresDisponiblesParaCategoria.map((c) => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                          </select>
+                        </Field>
+                        <button type="button" onClick={() => setShowAddNombreHerr((v) => !v)} className="mt-1 text-[11px] font-semibold text-amber-700 hover:underline">
+                          + Agregar nombre de herramienta
+                        </button>
+                        {showAddNombreHerr && (
+                          <div className="mt-1 flex gap-1">
+                            <input value={nuevoNombreHerr} onChange={(e) => setNuevoNombreHerr(e.target.value)} placeholder="Nombre nuevo..." className={inputCls + " flex-1"} />
+                            <button type="button" onClick={agregarNombreCatalogo} className={btnGhost}>Agregar</button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <Field label="Marca">
+                          <select value={herrForm.marca} onChange={(e) => setHerrForm((f) => ({ ...f, marca: e.target.value }))} className={inputCls}>
+                            <option value="">Sin especificar</option>
+                            {catalogoMarcas.map((m) => <option key={m.id} value={m.nombre}>{m.nombre}</option>)}
+                          </select>
+                        </Field>
+                        <button type="button" onClick={() => setShowAddMarca((v) => !v)} className="mt-1 text-[11px] font-semibold text-amber-700 hover:underline">
+                          + Añadir marca
+                        </button>
+                        {showAddMarca && (
+                          <div className="mt-1 flex gap-1">
+                            <input value={nuevaMarca} onChange={(e) => setNuevaMarca(e.target.value)} placeholder="Marca nueva..." className={inputCls + " flex-1"} />
+                            <button type="button" onClick={agregarMarcaCatalogo} className={btnGhost}>Agregar</button>
+                          </div>
+                        )}
+                      </div>
+
                       <Field label="¿Viene con maletín?">
-                        <select name="maletin" className={inputCls}>{SI_NO.map((s) => <option key={s}>{s}</option>)}</select>
+                        <select value={herrForm.maletin} onChange={(e) => setHerrForm((f) => ({ ...f, maletin: e.target.value }))} className={inputCls}>
+                          {SI_NO.map((s) => <option key={s}>{s}</option>)}
+                        </select>
                       </Field>
                       <Field label="¿Tiene accesorios?">
-                        <select name="accesorios" className={inputCls}>{SI_NO.map((s) => <option key={s}>{s}</option>)}</select>
+                        <select value={herrForm.accesorios} onChange={(e) => setHerrForm((f) => ({ ...f, accesorios: e.target.value }))} className={inputCls}>
+                          {SI_NO.map((s) => <option key={s}>{s}</option>)}
+                        </select>
                       </Field>
-                      <Field label="Detalle de accesorios"><input name="detalleAccesorios" placeholder="Ej: 3 puntas SDS, 1 cincel" className={inputCls} /></Field>
+                      <Field label="Detalle de accesorios">
+                        <input value={herrForm.detalleAccesorios} onChange={(e) => setHerrForm((f) => ({ ...f, detalleAccesorios: e.target.value }))} placeholder="Ej: 3 puntas SDS, 1 cincel" className={inputCls} />
+                      </Field>
                       <div className="md:col-span-3">
                         <Field label="Observaciones">
-                          <textarea name="observaciones" rows={2} placeholder="Ej: no enciende, revisar batería..." className={inputCls} />
+                          <textarea value={herrForm.observaciones} onChange={(e) => setHerrForm((f) => ({ ...f, observaciones: e.target.value }))} rows={2} placeholder="Ej: no enciende, revisar batería..." className={inputCls} />
                         </Field>
                       </div>
                       <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                     </form>
+                    <div className="mt-3 text-[11px] text-slate-400">
+                      Ubicación inicial: Oficina. Estado inicial: Disponible. El responsable en obra va a ser el capataz asignado (próximamente). El N° de serie se genera solo: letra del tipo + 3 letras de la marca + N° correlativo. Ej: Bosch, Herramienta Eléctrica → <span className="font-mono">E-BOS01</span>.
+                    </div>
                   </Panel>
                 )}
 
                 <div className="flex flex-wrap gap-3">
                   <select className={inputCls} value={filtroHerr.ubicacion} onChange={(e) => setFiltroHerr((f) => ({ ...f, ubicacion: e.target.value }))}>
                     <option>Todas</option>
-                    <option>Depósito central</option>
+                    <option>Oficina</option>
                     {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
                   </select>
                   <select className={inputCls} value={filtroHerr.estado} onChange={(e) => setFiltroHerr((f) => ({ ...f, estado: e.target.value }))}>
@@ -2306,7 +2456,7 @@ export default function ConcretarApp() {
                 <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      <tr><th className="px-4 py-3">Herramienta</th><th className="px-4 py-3">Marca</th><th className="px-4 py-3">N° serie</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Ubicación</th><th className="px-4 py-3">Responsable</th><th className="px-4 py-3">Estado</th></tr>
+                      <tr><th className="px-4 py-3">Herramienta</th><th className="px-4 py-3">Marca</th><th className="px-4 py-3">N° serie</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Ubicación</th><th className="px-4 py-3">Estado</th></tr>
                     </thead>
                     <tbody>
                       {herramientas
@@ -2330,11 +2480,10 @@ export default function ConcretarApp() {
                               <td className="px-4 py-3 font-mono text-xs text-slate-500">{h.numeroSerie || "—"}</td>
                               <td className="px-4 py-3 text-slate-600">{h.categoria}</td>
                               <td className="px-4 py-3 text-slate-600"><span className="inline-flex items-center gap-1"><MapPin size={13} className="text-amber-600" />{h.ubicacion}</span></td>
-                              <td className="px-4 py-3 text-slate-600">{h.responsable}</td>
                               <td className="px-4 py-3">
                                 <select
                                   value={h.estado}
-                                  onChange={(e) => updateRecord("herramientas", h.id, { estado: e.target.value }, setHerramientas)}
+                                  onChange={(e) => cambiarEstadoHerramienta(h, e.target.value)}
                                   className={`rounded-full border-2 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${BADGE_STYLES[h.estado] || "border-slate-400 text-slate-500"}`}
                                 >
                                   {ESTADOS_HERRAMIENTA.map((s) => <option key={s}>{s}</option>)}
@@ -2371,12 +2520,14 @@ export default function ConcretarApp() {
                         <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Herramientas del combo</div>
                         <div className="flex flex-wrap items-end gap-2">
                           <div className="flex-1 min-w-[160px]">
-                            <input
+                            <select
                               value={comboItemDraft.nombre}
                               onChange={(e) => setComboItemDraft((d) => ({ ...d, nombre: e.target.value }))}
-                              placeholder="Ej: Martillo"
                               className={inputCls + " w-full"}
-                            />
+                            >
+                              <option value="">-- Elegir --</option>
+                              {catalogoChicas.map((c) => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                            </select>
                           </div>
                           <input
                             type="number"
@@ -2387,6 +2538,15 @@ export default function ConcretarApp() {
                           />
                           <button type="button" onClick={agregarItemCombo} className={btnGhost}>+ Agregar</button>
                         </div>
+                        <button type="button" onClick={() => setShowAddChica((v) => !v)} className="mt-1 text-[11px] font-semibold text-amber-700 hover:underline">
+                          + Agregar nombre de herramienta
+                        </button>
+                        {showAddChica && (
+                          <div className="mt-1 flex gap-1">
+                            <input value={nuevaChica} onChange={(e) => setNuevaChica(e.target.value)} placeholder="Ej: Serrucho" className={inputCls + " flex-1"} />
+                            <button type="button" onClick={agregarChicaCatalogo} className={btnGhost}>Agregar</button>
+                          </div>
+                        )}
                         {comboForm.items.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-2">
                             {comboForm.items.map((it, idx) => (
