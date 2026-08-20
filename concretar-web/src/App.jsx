@@ -7,7 +7,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -302,8 +302,8 @@ export default function ConcretarApp() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const DEMO_OBRAS = [
-    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso" },
-    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso" },
+    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4 },
+    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null },
   ];
   const DEMO_PERSONAL = [
     { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
@@ -382,6 +382,25 @@ export default function ConcretarApp() {
     { id: 7, nombre: "Nivel de mano" },
     { id: 8, nombre: "Serrucho" },
   ];
+  const DEMO_PROVEEDORES = [
+    { id: 1, razonSocial: "Corralón San Martín", cuit: "30-12345678-9", domicilio: "Ruta 40 km 12, San Juan", contacto: "Marcos Díaz", telefono: "264-4000001", esTaller: "No" },
+    { id: 2, razonSocial: "Electromecánica Ríos", cuit: "30-98765432-1", domicilio: "Av. Libertador 850, San Juan", contacto: "Ríos Hnos.", telefono: "264-4000002", esTaller: "Sí" },
+  ];
+  const DEMO_REMITOS = [
+    {
+      id: 1,
+      fecha: "2026-08-10",
+      origen: "Edificio Belgrano 450",
+      destino: "Oficina",
+      destinoEsTaller: false,
+      destinoProveedorId: null,
+      herramientaIds: [4],
+      estado: "Recibido",
+      creadoPor: "Capataz",
+      fechaRecepcion: "2026-08-11",
+      recibidoPor: "Gerente",
+    },
+  ];
   const DEMO_OC = [
     { id: 1, fecha: "2026-07-02", obraId: 1, proveedor: "Corralón San Martín", item: "Cemento x50, hierro 8mm x200", montoEstimado: 4200000, estado: "Recibida" },
     { id: 2, fecha: "2026-08-05", obraId: 1, proveedor: "Aberturas del Norte", item: "Ventanas de aluminio (12 unid.)", montoEstimado: 6800000, estado: "Requiere aprobación" },
@@ -425,6 +444,8 @@ export default function ConcretarApp() {
   const [catalogoNombresHerr, setCatalogoNombresHerr] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_NOMBRES);
   const [catalogoMarcas, setCatalogoMarcas] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_MARCAS);
   const [catalogoChicas, setCatalogoChicas] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_CHICAS);
+  const [proveedores, setProveedores] = useState(isSupabaseConfigured ? [] : DEMO_PROVEEDORES);
+  const [remitos, setRemitos] = useState(isSupabaseConfigured ? [] : DEMO_REMITOS);
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
   const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
   const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
@@ -441,11 +462,12 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
           sbSelect("catalogo_nombres_herramienta"), sbSelect("catalogo_marcas"), sbSelect("catalogo_herramientas_chicas"),
+          sbSelect("proveedores"), sbSelect("remitos"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -461,6 +483,8 @@ export default function ConcretarApp() {
         setCatalogoNombresHerr(cn);
         setCatalogoMarcas(cm);
         setCatalogoChicas(cch);
+        setProveedores(pv);
+        setRemitos(rm);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -848,6 +872,7 @@ export default function ConcretarApp() {
     { id: "ingresos", label: "Ingresos", icon: TrendingUp },
     { id: "facturas", label: "Compras y Facturas", icon: Receipt },
     { id: "cuentas", label: "Cuentas", icon: Landmark },
+    { id: "proveedores", label: "Proveedores", icon: Truck },
   ];
 
   // ---------- Dashboard calculations ----------
@@ -1294,6 +1319,71 @@ export default function ConcretarApp() {
     updateRecord("combos_herramientas", combo.id, { personaId: null }, setCombosHerramientas);
   }
 
+  // ---------- Proveedores (incluye talleres de reparación) ----------
+  const emptyProveedorForm = { razonSocial: "", cuit: "", domicilio: "", contacto: "", telefono: "", esTaller: "No" };
+  const [proveedorForm, setProveedorForm] = useState(emptyProveedorForm);
+  const [showProveedorForm, setShowProveedorForm] = useState(false);
+  const talleres = proveedores.filter((p) => p.esTaller === "Sí");
+
+  function submitProveedorForm(e) {
+    e.preventDefault();
+    addRecord("proveedores", { ...proveedorForm }, setProveedores);
+    setProveedorForm(emptyProveedorForm);
+    setShowProveedorForm(false);
+  }
+
+  // ---------- Remitos (traslados con doble aprobación: salida + recepción) ----------
+  const emptyRemitoForm = { origen: "Oficina", destino: "", herramientaIds: [] };
+  const [remitoForm, setRemitoForm] = useState(emptyRemitoForm);
+  const [showRemitoForm, setShowRemitoForm] = useState(false);
+
+  const herramientasEnOrigenRemito = herramientas.filter((h) => h.ubicacion === remitoForm.origen && h.estado !== "Baja");
+  const remitosPendientes = remitos.filter((r) => r.estado === "En tránsito");
+  const remitosCompletados = remitos.filter((r) => r.estado === "Recibido");
+
+  function toggleHerramientaRemito(id) {
+    setRemitoForm((f) => ({
+      ...f,
+      herramientaIds: f.herramientaIds.includes(id) ? f.herramientaIds.filter((x) => x !== id) : [...f.herramientaIds, id],
+    }));
+  }
+
+  function submitRemitoForm(e) {
+    e.preventDefault();
+    if (!remitoForm.destino) {
+      alert("Elegí el destino del remito.");
+      return;
+    }
+    if (remitoForm.herramientaIds.length === 0) {
+      alert("Elegí al menos una herramienta para enviar.");
+      return;
+    }
+    const taller = talleres.find((t) => t.razonSocial === remitoForm.destino);
+    addRecord("remitos", {
+      fecha: hoyISO(),
+      origen: remitoForm.origen,
+      destino: remitoForm.destino,
+      destinoEsTaller: !!taller,
+      destinoProveedorId: taller ? taller.id : null,
+      herramientaIds: remitoForm.herramientaIds,
+      estado: "En tránsito",
+      creadoPor: currentRole,
+    }, setRemitos);
+    setRemitoForm(emptyRemitoForm);
+    setShowRemitoForm(false);
+  }
+
+  async function confirmarRecepcionRemito(remito) {
+    if (!window.confirm(`¿Confirmar la recepción del remito en "${remito.destino}"?`)) return;
+    const nuevoEstado = remito.destinoEsTaller ? "En Reparación" : remito.destino === "Oficina" ? "Disponible" : "En Obra";
+    await Promise.all(
+      remito.herramientaIds.map((id) =>
+        updateRecord("herramientas", id, { ubicacion: remito.destino, estado: nuevoEstado, fechaUltimoCambioEstado: new Date().toISOString() }, setHerramientas)
+      )
+    );
+    await updateRecord("remitos", remito.id, { estado: "Recibido", fechaRecepcion: hoyISO(), recibidoPor: currentRole }, setRemitos);
+  }
+
   const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
   const recibirOC = (id) => updateRecord("ordenes_compra", id, { estado: "Recibida" }, setOrdenesCompra);
 
@@ -1549,6 +1639,7 @@ export default function ConcretarApp() {
                       meses: Number(f.get("meses")) || 1,
                       inicio: f.get("inicio"),
                       estado: "En curso",
+                      encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
                     }, setObras);
                     e.target.reset();
                     setShowObraForm(false);
@@ -1559,31 +1650,47 @@ export default function ConcretarApp() {
                   <Field label="Presupuesto (ARS)"><input name="presupuesto" type="number" required className={inputCls} /></Field>
                   <Field label="Fecha de inicio"><input name="inicio" type="date" required className={inputCls} /></Field>
                   <Field label="Duración (meses)"><input name="meses" type="number" min="1" required className={inputCls} /></Field>
+                  <Field label="Encargado de obra">
+                    <select name="encargadoId" className={inputCls}>
+                      <option value="">Sin asignar</option>
+                      {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
+                    </select>
+                  </Field>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
+                <div className="mt-3 text-[11px] text-slate-400">
+                  El encargado de obra aprueba la recepción de los remitos que le lleguen a esta obra. Gerencia siempre puede aprobar cualquier remito, sea cual sea el encargado.
+                </div>
               </Panel>
             )}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {obras.map((o) => (
-                <div key={o.id} className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="font-bold text-slate-900">{o.nombre}</div>
-                      <div className="text-sm text-slate-500">{o.cliente}</div>
+              {obras.map((o) => {
+                const encargado = personal.find((p) => p.id === o.encargadoId);
+                return (
+                  <div key={o.id} className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="font-bold text-slate-900">{o.nombre}</div>
+                        <div className="text-sm text-slate-500">{o.cliente}</div>
+                      </div>
+                      <Badge estado={o.estado} />
                     </div>
-                    <Badge estado={o.estado} />
+                    <div className="mt-3 flex justify-between text-sm">
+                      <span className="text-slate-500">Presupuesto</span>
+                      <span className="font-mono font-semibold">{fmtARS(o.presupuesto)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Duración</span>
+                      <span>{o.meses} meses desde {fmtFecha(o.inicio)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Encargado</span>
+                      <span>{encargado ? nombreCompletoDe(encargado) : <span className="text-slate-400">Sin asignar</span>}</span>
+                    </div>
                   </div>
-                  <div className="mt-3 flex justify-between text-sm">
-                    <span className="text-slate-500">Presupuesto</span>
-                    <span className="font-mono font-semibold">{fmtARS(o.presupuesto)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Duración</span>
-                    <span>{o.meses} meses desde {fmtFecha(o.inicio)}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -2429,6 +2536,15 @@ export default function ConcretarApp() {
               >
                 Caja Herramientas Personal
               </button>
+              <button
+                onClick={() => setVistaHerramientas("remitos")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold ${vistaHerramientas === "remitos" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Remitos
+                {remitosPendientes.length > 0 && (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{remitosPendientes.length}</span>
+                )}
+              </button>
             </div>
 
             {vistaHerramientas === "altoValor" && !viewingHerramienta && (
@@ -2785,8 +2901,116 @@ export default function ConcretarApp() {
                   </div>
                 )}
                 <div className="text-[11px] text-slate-400">
-                  "Roto" = requiere devolución física para reposición. "Perdido" = se gestiona descuento o reposición con la persona. El remito con aprobación de logística y del encargado de obra se suma en la próxima etapa — por ahora, asignar/devolver queda registrado directo.
+                  "Roto" = requiere devolución física para reposición. "Perdido" = se gestiona descuento o reposición con la persona. Las cajas se asignan/devuelven directo por ahora; el traslado formal con remito es para las herramientas de Alto Valor, en la pestaña "Remitos".
                 </div>
+              </>
+            )}
+
+            {vistaHerramientas === "remitos" && (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-slate-500">Traslados de herramientas de Alto Valor entre Oficina, obras y talleres — con aprobación de salida y de recepción.</div>
+                  <button onClick={() => setShowRemitoForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                    <Plus size={16} /> Nuevo remito
+                  </button>
+                </div>
+
+                {showRemitoForm && (
+                  <Panel title="Generar remito de salida" action={<button onClick={() => setShowRemitoForm(false)}><X size={16} /></button>}>
+                    <form className="space-y-4" onSubmit={submitRemitoForm}>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <Field label="Origen">
+                          <select
+                            value={remitoForm.origen}
+                            onChange={(e) => setRemitoForm((f) => ({ ...f, origen: e.target.value, herramientaIds: [] }))}
+                            className={inputCls}
+                          >
+                            <option>Oficina</option>
+                            {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
+                          </select>
+                        </Field>
+                        <Field label="Destino">
+                          <select value={remitoForm.destino} onChange={(e) => setRemitoForm((f) => ({ ...f, destino: e.target.value }))} className={inputCls}>
+                            <option value="">-- Elegir --</option>
+                            <option>Oficina</option>
+                            <optgroup label="Obras">
+                              {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
+                            </optgroup>
+                            {talleres.length > 0 && (
+                              <optgroup label="Talleres de reparación">
+                                {talleres.map((t) => <option key={t.id}>{t.razonSocial}</option>)}
+                              </optgroup>
+                            )}
+                          </select>
+                        </Field>
+                      </div>
+
+                      <div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Herramientas en "{remitoForm.origen}" para enviar</div>
+                        {herramientasEnOrigenRemito.length === 0 ? (
+                          <div className="rounded-md border border-dashed border-stone-300 p-3 text-xs text-slate-500">No hay herramientas registradas en esa ubicación.</div>
+                        ) : (
+                          <div className="max-h-52 space-y-1 overflow-y-auto rounded-md border border-stone-200 p-2">
+                            {herramientasEnOrigenRemito.map((h) => (
+                              <label key={h.id} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-stone-50">
+                                <input type="checkbox" checked={remitoForm.herramientaIds.includes(h.id)} onChange={() => toggleHerramientaRemito(h.id)} className="h-3.5 w-3.5" />
+                                <CategoriaHerrIcon categoria={h.categoria} />
+                                {h.nombre} <span className="font-mono text-xs text-slate-400">({h.numeroSerie || "s/n"})</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Confirmar salida</button>
+                    </form>
+                    <div className="mt-3 text-[11px] text-slate-400">
+                      Al confirmar, el remito queda "En tránsito". La herramienta cambia de ubicación recién cuando el destino confirma la recepción.
+                    </div>
+                  </Panel>
+                )}
+
+                <div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pendientes de recepción</div>
+                  {remitosPendientes.length === 0 ? (
+                    <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-6 text-center text-sm text-slate-500">No hay remitos en tránsito.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {remitosPendientes.map((r) => (
+                        <div key={r.id} className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                              {r.origen} <ArrowRightLeft size={14} className="text-amber-600" /> {r.destino}
+                            </span>
+                            <span className="text-xs text-slate-500">Salió el {fmtFecha(r.fecha)} ({r.creadoPor})</span>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-600">
+                            {r.herramientaIds.map((id) => herramientas.find((h) => h.id === id)?.nombre).filter(Boolean).join(", ")}
+                          </div>
+                          <button onClick={() => confirmarRecepcionRemito(r)} className="mt-2 flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                            <Check size={13} /> Confirmar recepción en {r.destino}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {remitosCompletados.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Historial de remitos recibidos</div>
+                    <div className="space-y-2">
+                      {[...remitosCompletados].sort((a, b) => fechaLocal(b.fechaRecepcion) - fechaLocal(a.fechaRecepcion)).map((r) => (
+                        <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm">
+                          <span className="flex items-center gap-2 text-slate-700">
+                            {r.origen} <ArrowRightLeft size={13} className="text-slate-400" /> {r.destino}
+                          </span>
+                          <span className="text-xs text-slate-400">Recibido el {fmtFecha(r.fechaRecepcion)} ({r.recibidoPor})</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -3073,6 +3297,71 @@ export default function ConcretarApp() {
             <div className="text-[11px] text-slate-400">
               Saldo = Ingresos − Compras/Facturas de cada cuenta y formalidad. Un saldo negativo significa que se cargaron más gastos que ingresos en esa combinación.
             </div>
+          </div>
+        )}
+
+        {tab === "proveedores" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Proveedores</h2>
+              <button onClick={() => setShowProveedorForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                <Plus size={16} /> Nuevo proveedor
+              </button>
+            </div>
+            <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
+              Los talleres de reparación también se cargan acá (marcando "¿Es taller de reparación?" en Sí) — así aparecen como destino posible en los remitos de Herramientas.
+            </div>
+
+            {showProveedorForm && (
+              <Panel title="Añadir proveedor" action={<button onClick={() => setShowProveedorForm(false)}><X size={16} /></button>}>
+                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitProveedorForm}>
+                  <Field label="Razón social">
+                    <input value={proveedorForm.razonSocial} onChange={(e) => setProveedorForm((f) => ({ ...f, razonSocial: e.target.value }))} required className={inputCls} />
+                  </Field>
+                  <Field label="CUIT">
+                    <input value={proveedorForm.cuit} onChange={(e) => setProveedorForm((f) => ({ ...f, cuit: e.target.value }))} placeholder="30-12345678-9" className={inputCls} />
+                  </Field>
+                  <Field label="Domicilio">
+                    <input value={proveedorForm.domicilio} onChange={(e) => setProveedorForm((f) => ({ ...f, domicilio: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <Field label="Contacto">
+                    <input value={proveedorForm.contacto} onChange={(e) => setProveedorForm((f) => ({ ...f, contacto: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <Field label="Teléfono">
+                    <input value={proveedorForm.telefono} onChange={(e) => setProveedorForm((f) => ({ ...f, telefono: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <Field label="¿Es taller de reparación?">
+                    <select value={proveedorForm.esTaller} onChange={(e) => setProveedorForm((f) => ({ ...f, esTaller: e.target.value }))} className={inputCls}>
+                      {SI_NO.map((s) => <option key={s}>{s}</option>)}
+                    </select>
+                  </Field>
+                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                </form>
+              </Panel>
+            )}
+
+            {proveedores.length === 0 ? (
+              <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay proveedores cargados.</div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <tr><th className="px-4 py-3">Razón social</th><th className="px-4 py-3">CUIT</th><th className="px-4 py-3">Contacto</th><th className="px-4 py-3">Teléfono</th><th className="px-4 py-3">Tipo</th></tr>
+                  </thead>
+                  <tbody>
+                    {proveedores.map((p) => (
+                      <tr key={p.id} className="border-t border-stone-100">
+                        <td className="px-4 py-3 font-medium text-slate-900">{p.razonSocial}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-slate-500">{p.cuit || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{p.contacto || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{p.telefono || "—"}</td>
+                        <td className="px-4 py-3">{p.esTaller === "Sí" ? <Badge estado="En Reparación" /> : <span className="text-xs text-slate-400">Proveedor</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
