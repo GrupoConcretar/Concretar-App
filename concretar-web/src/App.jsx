@@ -7,7 +7,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote
+  Landmark, Smartphone, Banknote, Briefcase, Info
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -45,11 +45,13 @@ function hoyISO() {
   return `${y}-${m}-${day}`;
 }
 
-const ESTADOS_HERRAMIENTA = ["Disponible", "En uso", "Mantenimiento", "Perdida"];
+const ESTADOS_HERRAMIENTA = ["Disponible", "En Obra", "En Reparación", "Baja"];
+const ESTADOS_ITEM_COMBO = ["Entregado", "Roto", "Perdido", "Devuelto"];
 const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
 const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
 const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
-const CATEGORIAS_HERRAMIENTA = ["Eléctrica", "Manual", "Estructura", "Medición", "Seguridad", "Otro"];
+const CATEGORIAS_HERRAMIENTA = ["Herramienta Eléctrica", "Herramienta Manual", "Equipo Eléctrico", "Equipo a Combustión"];
+const SI_NO = ["No", "Sí"];
 const CATEGORIAS_PERSONAL = ["Oficial Especializado", "Oficial", "Medio Oficial", "Ayudante", "Gerente", "HyS", "Recursos Humanos", "Capataz", "Logística"];
 const TIPOS_TRABAJADOR = ["Empresa", "Tantero"];
 const ESTADOS_PERSONAL = ["Activo", "Licencia", "Baja"];
@@ -149,9 +151,13 @@ function readFileAsDataURL(file) {
 
 const BADGE_STYLES = {
   Disponible: "border-emerald-600 text-emerald-700",
-  "En uso": "border-amber-600 text-amber-700",
-  Mantenimiento: "border-slate-400 text-slate-500",
-  Perdida: "border-rose-600 text-rose-700",
+  "En Obra": "border-amber-600 text-amber-700",
+  "En Reparación": "border-sky-600 text-sky-700",
+  Baja: "border-rose-600 text-rose-700",
+  Entregado: "border-emerald-600 text-emerald-700",
+  Roto: "border-rose-600 text-rose-700",
+  Perdido: "border-rose-600 text-rose-700",
+  Devuelto: "border-slate-400 text-slate-500",
   Pendiente: "border-slate-400 text-slate-500",
   "Requiere aprobación": "border-rose-600 text-rose-700",
   Aprobada: "border-amber-600 text-amber-700",
@@ -296,10 +302,22 @@ export default function ConcretarApp() {
     { id: 5, fecha: "2026-08-05", obraId: 2, nombre: "Pepito Chespirito", horas: 0, cargadoPor: "Capataz", estado: "Ausente" },
   ];
   const DEMO_HERRAMIENTAS = [
-    { id: 1, nombre: "Amoladora angular", categoria: "Eléctrica", ubicacion: "Depósito central", responsable: "-", estado: "Disponible" },
-    { id: 2, nombre: "Andamio tubular (juego x6)", categoria: "Estructura", ubicacion: "Edificio Belgrano 450", responsable: "Pablo Robles", estado: "En uso" },
-    { id: 3, nombre: "Rotomartillo SDS", categoria: "Eléctrica", ubicacion: "Casa Quinta Yerba Buena", responsable: "Daniel Tello", estado: "En uso" },
-    { id: 4, nombre: "Nivel láser", categoria: "Medición", ubicacion: "Depósito central", responsable: "-", estado: "Mantenimiento" },
+    { id: 1, nombre: "Amoladora angular", numeroSerie: "AMO-2024-011", marca: "Makita", categoria: "Herramienta Eléctrica", ubicacion: "Depósito central", responsable: "-", estado: "Disponible", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "2 discos de corte de repuesto", observaciones: "" },
+    { id: 2, nombre: "Andamio tubular (juego x6)", numeroSerie: "AND-2023-004", marca: "", categoria: "Herramienta Manual", ubicacion: "Edificio Belgrano 450", responsable: "Pablo Robles", estado: "En Obra", maletin: "No", accesorios: "No", detalleAccesorios: "", observaciones: "Faltan 2 crucetas, revisar al devolver" },
+    { id: 3, nombre: "Rotomartillo SDS", numeroSerie: "ROT-2024-022", marca: "Bosch", categoria: "Herramienta Eléctrica", ubicacion: "Casa Quinta Yerba Buena", responsable: "Daniel Tello", estado: "En Obra", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "3 puntas SDS, 1 cincel", observaciones: "" },
+    { id: 4, nombre: "Nivel láser", numeroSerie: "NIV-2022-007", marca: "Stanley", categoria: "Equipo Eléctrico", ubicacion: "Depósito central", responsable: "-", estado: "En Reparación", maletin: "Sí", accesorios: "No", detalleAccesorios: "", observaciones: "No enciende, revisar batería" },
+  ];
+  const DEMO_COMBOS = [
+    {
+      id: 1,
+      personaId: 2,
+      fecha: "2026-06-01",
+      items: [
+        { nombre: "Martillo", cantidad: 1, estado: "Entregado" },
+        { nombre: "Plomada", cantidad: 1, estado: "Entregado" },
+        { nombre: "Tenaza", cantidad: 1, estado: "Roto" },
+      ],
+    },
   ];
   const DEMO_OC = [
     { id: 1, fecha: "2026-07-02", obraId: 1, proveedor: "Corralón San Martín", item: "Cemento x50, hierro 8mm x200", montoEstimado: 4200000, estado: "Recibida" },
@@ -340,6 +358,7 @@ export default function ConcretarApp() {
   const [costosCategoria, setCostosCategoria] = useState(isSupabaseConfigured ? [] : DEMO_COSTOS);
   const [asistencia, setAsistencia] = useState(isSupabaseConfigured ? [] : DEMO_ASISTENCIA);
   const [herramientas, setHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_HERRAMIENTAS);
+  const [combosHerramientas, setCombosHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_COMBOS);
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
   const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
   const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
@@ -356,10 +375,10 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
-        const [o, p, cc, a, h, oc, cf, ing, tt, av] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
-          sbSelect("tanteros"), sbSelect("avances_tanteros"),
+          sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -371,6 +390,7 @@ export default function ConcretarApp() {
         setIngresos(ing);
         setTanteros(tt);
         setAvancesTanteros(av);
+        setCombosHerramientas(ch);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -777,10 +797,10 @@ export default function ConcretarApp() {
   const puntoActual = chartData[idxActual] || { Planificado: 0, Real: 0 };
   const desvioAbs = puntoActual.Real - puntoActual.Planificado;
   const desvioPct = puntoActual.Planificado ? (desvioAbs / puntoActual.Planificado) * 100 : 0;
-  const herramientasEnUso = obraSel ? herramientas.filter((h) => h.ubicacion === obraSel.nombre && h.estado === "En uso").length : 0;
+  const herramientasEnUso = obraSel ? herramientas.filter((h) => h.ubicacion === obraSel.nombre && h.estado === "En Obra").length : 0;
 
   // ---------- Alertas globales ----------
-  const herramientasAtencion = herramientas.filter((h) => h.estado === "Mantenimiento" || h.estado === "Perdida");
+  const herramientasAtencion = herramientas.filter((h) => h.estado === "En Reparación" || h.estado === "Baja");
   const ocPendientesAprobacion = ordenesCompra.filter((o) => o.estado === "Requiere aprobación");
   const hayDesvioAlerta = desvioPct > DESVIO_ALERTA_PCT;
   const asistenciasEditadas = asistencia.filter((a) => a.editado);
@@ -1035,6 +1055,45 @@ export default function ConcretarApp() {
   const totalNegro = CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Negro"), 0);
 
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
+  const [vistaHerramientas, setVistaHerramientas] = useState("altoValor");
+
+  // ---------- Combos personales de herramientas manuales ----------
+  const emptyComboForm = { personaId: personal[0]?.id ?? "", items: [] };
+  const [comboForm, setComboForm] = useState(emptyComboForm);
+  const [comboItemDraft, setComboItemDraft] = useState({ nombre: "", cantidad: 1 });
+  const [showComboForm, setShowComboForm] = useState(false);
+
+  function agregarItemCombo() {
+    if (!comboItemDraft.nombre.trim()) return;
+    setComboForm((f) => ({
+      ...f,
+      items: [...f.items, { nombre: comboItemDraft.nombre.trim(), cantidad: Number(comboItemDraft.cantidad) || 1, estado: "Entregado" }],
+    }));
+    setComboItemDraft({ nombre: "", cantidad: 1 });
+  }
+  function quitarItemComboDraft(idx) {
+    setComboForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
+  }
+  function submitComboForm(e) {
+    e.preventDefault();
+    if (comboForm.items.length === 0) {
+      alert("Agregá al menos una herramienta al combo.");
+      return;
+    }
+    addRecord("combos_herramientas", {
+      personaId: Number(comboForm.personaId),
+      fecha: hoyISO(),
+      items: comboForm.items,
+    }, setCombosHerramientas);
+    setComboForm(emptyComboForm);
+    setShowComboForm(false);
+  }
+  function actualizarItemCombo(combo, idx, nuevoEstado) {
+    const nuevosItems = combo.items.map((it, i) => (i === idx ? { ...it, estado: nuevoEstado } : it));
+    updateRecord("combos_herramientas", combo.id, { items: nuevosItems }, setCombosHerramientas);
+  }
+
+
 
   const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
   const recibirOC = (id) => updateRecord("ordenes_compra", id, { estado: "Recibida" }, setOrdenesCompra);
@@ -1190,7 +1249,7 @@ export default function ConcretarApp() {
                   {herramientasAtencion.length > 0 && (
                     <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-700">
                       <AlertTriangle size={16} />
-                      {herramientasAtencion.length} herramienta(s) en mantenimiento o perdidas.
+                      {herramientasAtencion.length} herramienta(s) en reparación o dada(s) de baja.
                     </div>
                   )}
                   {asistenciasEditadas.length > 0 && (
@@ -2140,92 +2199,252 @@ export default function ConcretarApp() {
 
         {tab === "herramientas" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Herramientas</h2>
-              <button onClick={() => setShowHerrForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
-                <Plus size={16} /> Nueva herramienta
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Herramientas</h2>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setVistaHerramientas("altoValor")}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaHerramientas === "altoValor" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Alto Valor / Maquinaria
+              </button>
+              <button
+                onClick={() => setVistaHerramientas("combos")}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaHerramientas === "combos" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Combos Personales
               </button>
             </div>
 
-            {herramientasAtencion.length > 0 && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                <div className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> Requieren atención</div>
-                <ul className="ml-6 list-disc space-y-0.5">
-                  {herramientasAtencion.map((h) => <li key={h.id}>{h.nombre} — {h.estado} ({h.ubicacion})</li>)}
-                </ul>
-              </div>
+            {vistaHerramientas === "altoValor" && (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-slate-500">Maquinaria y herramientas de alto valor, controladas de forma individual por número de serie.</div>
+                  <button onClick={() => setShowHerrForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                    <Plus size={16} /> Nueva herramienta
+                  </button>
+                </div>
+
+                {herramientasAtencion.length > 0 && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <div className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> Requieren atención</div>
+                    <ul className="ml-6 list-disc space-y-0.5">
+                      {herramientasAtencion.map((h) => <li key={h.id}>{h.nombre} — {h.estado} ({h.ubicacion})</li>)}
+                    </ul>
+                  </div>
+                )}
+
+                {showHerrForm && (
+                  <Panel title="Añadir herramienta" action={<button onClick={() => setShowHerrForm(false)}><X size={16} /></button>}>
+                    <form
+                      className="grid grid-cols-1 gap-4 md:grid-cols-3"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const f = new FormData(e.target);
+                        addRecord("herramientas", {
+                          nombre: f.get("nombre"),
+                          numeroSerie: f.get("numeroSerie"),
+                          marca: f.get("marca"),
+                          categoria: f.get("categoria"),
+                          ubicacion: f.get("ubicacion"),
+                          responsable: f.get("responsable") || "-",
+                          estado: f.get("estado"),
+                          maletin: f.get("maletin"),
+                          accesorios: f.get("accesorios"),
+                          detalleAccesorios: f.get("detalleAccesorios"),
+                          observaciones: f.get("observaciones"),
+                        }, setHerramientas);
+                        e.target.reset();
+                        setShowHerrForm(false);
+                      }}
+                    >
+                      <Field label="Nombre"><input name="nombre" required className={inputCls} /></Field>
+                      <Field label="Marca"><input name="marca" placeholder="Ej: Bosch, Makita..." className={inputCls} /></Field>
+                      <Field label="N° de serie / ID"><input name="numeroSerie" placeholder="Ej: AMO-2024-011" className={inputCls} /></Field>
+                      <Field label="Categoría">
+                        <select name="categoria" className={inputCls}>{CATEGORIAS_HERRAMIENTA.map((c) => <option key={c}>{c}</option>)}</select>
+                      </Field>
+                      <Field label="Ubicación">
+                        <select name="ubicacion" className={inputCls}>
+                          <option>Depósito central</option>
+                          {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Responsable"><input name="responsable" className={inputCls} /></Field>
+                      <Field label="Estado">
+                        <select name="estado" className={inputCls}>{ESTADOS_HERRAMIENTA.map((s) => <option key={s}>{s}</option>)}</select>
+                      </Field>
+                      <Field label="¿Viene con maletín?">
+                        <select name="maletin" className={inputCls}>{SI_NO.map((s) => <option key={s}>{s}</option>)}</select>
+                      </Field>
+                      <Field label="¿Tiene accesorios?">
+                        <select name="accesorios" className={inputCls}>{SI_NO.map((s) => <option key={s}>{s}</option>)}</select>
+                      </Field>
+                      <Field label="Detalle de accesorios"><input name="detalleAccesorios" placeholder="Ej: 3 puntas SDS, 1 cincel" className={inputCls} /></Field>
+                      <div className="md:col-span-3">
+                        <Field label="Observaciones">
+                          <textarea name="observaciones" rows={2} placeholder="Ej: no enciende, revisar batería..." className={inputCls} />
+                        </Field>
+                      </div>
+                      <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                    </form>
+                  </Panel>
+                )}
+
+                <div className="flex flex-wrap gap-3">
+                  <select className={inputCls} value={filtroHerr.ubicacion} onChange={(e) => setFiltroHerr((f) => ({ ...f, ubicacion: e.target.value }))}>
+                    <option>Todas</option>
+                    <option>Depósito central</option>
+                    {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
+                  </select>
+                  <select className={inputCls} value={filtroHerr.estado} onChange={(e) => setFiltroHerr((f) => ({ ...f, estado: e.target.value }))}>
+                    <option>Todos</option>
+                    {ESTADOS_HERRAMIENTA.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+
+                <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      <tr><th className="px-4 py-3">Herramienta</th><th className="px-4 py-3">Marca</th><th className="px-4 py-3">N° serie</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Ubicación</th><th className="px-4 py-3">Responsable</th><th className="px-4 py-3">Estado</th></tr>
+                    </thead>
+                    <tbody>
+                      {herramientas
+                        .filter((h) => filtroHerr.ubicacion === "Todas" || h.ubicacion === filtroHerr.ubicacion)
+                        .filter((h) => filtroHerr.estado === "Todos" || h.estado === filtroHerr.estado)
+                        .map((h) => {
+                          const infoExtra = [
+                            h.accesorios === "Sí" && h.detalleAccesorios ? `Accesorios: ${h.detalleAccesorios}` : null,
+                            h.observaciones ? `Obs: ${h.observaciones}` : null,
+                          ].filter(Boolean).join(" · ");
+                          return (
+                            <tr key={h.id} className="border-t border-stone-100">
+                              <td className="px-4 py-3 font-medium text-slate-900">
+                                <span className="flex items-center gap-1.5">
+                                  {h.nombre}
+                                  {h.maletin === "Sí" && <span title="Viene con maletín"><Briefcase size={12} className="text-slate-400" /></span>}
+                                  {infoExtra && <span title={infoExtra}><Info size={12} className="text-sky-500" /></span>}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{h.marca || "—"}</td>
+                              <td className="px-4 py-3 font-mono text-xs text-slate-500">{h.numeroSerie || "—"}</td>
+                              <td className="px-4 py-3 text-slate-600">{h.categoria}</td>
+                              <td className="px-4 py-3 text-slate-600"><span className="inline-flex items-center gap-1"><MapPin size={13} className="text-amber-600" />{h.ubicacion}</span></td>
+                              <td className="px-4 py-3 text-slate-600">{h.responsable}</td>
+                              <td className="px-4 py-3">
+                                <select
+                                  value={h.estado}
+                                  onChange={(e) => updateRecord("herramientas", h.id, { estado: e.target.value }, setHerramientas)}
+                                  className={`rounded-full border-2 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${BADGE_STYLES[h.estado] || "border-slate-400 text-slate-500"}`}
+                                >
+                                  {ESTADOS_HERRAMIENTA.map((s) => <option key={s}>{s}</option>)}
+                                </select>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
 
-            {showHerrForm && (
-              <Panel title="Añadir herramienta" action={<button onClick={() => setShowHerrForm(false)}><X size={16} /></button>}>
-                <form
-                  className="grid grid-cols-1 gap-4 md:grid-cols-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const f = new FormData(e.target);
-                    addRecord("herramientas", {
-                      nombre: f.get("nombre"),
-                      categoria: f.get("categoria"),
-                      ubicacion: f.get("ubicacion"),
-                      responsable: f.get("responsable") || "-",
-                      estado: f.get("estado"),
-                    }, setHerramientas);
-                    e.target.reset();
-                    setShowHerrForm(false);
-                  }}
-                >
-                  <Field label="Nombre"><input name="nombre" required className={inputCls} /></Field>
-                  <Field label="Categoría">
-                    <select name="categoria" className={inputCls}>{CATEGORIAS_HERRAMIENTA.map((c) => <option key={c}>{c}</option>)}</select>
-                  </Field>
-                  <Field label="Ubicación">
-                    <select name="ubicacion" className={inputCls}>
-                      <option>Depósito central</option>
-                      {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Responsable"><input name="responsable" className={inputCls} /></Field>
-                  <Field label="Estado">
-                    <select name="estado" className={inputCls}>{ESTADOS_HERRAMIENTA.map((s) => <option key={s}>{s}</option>)}</select>
-                  </Field>
-                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
-                </form>
-              </Panel>
+            {vistaHerramientas === "combos" && (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-slate-500">Herramientas manuales chicas, entregadas como kit a un operario.</div>
+                  <button onClick={() => setShowComboForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                    <Plus size={16} /> Nuevo combo
+                  </button>
+                </div>
+
+                {showComboForm && (
+                  <Panel title="Armar combo personal" action={<button onClick={() => setShowComboForm(false)}><X size={16} /></button>}>
+                    <form className="space-y-4" onSubmit={submitComboForm}>
+                      <Field label="Asignar a">
+                        <select value={comboForm.personaId} onChange={(e) => setComboForm((f) => ({ ...f, personaId: e.target.value }))} className={inputCls}>
+                          {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
+                        </select>
+                      </Field>
+
+                      <div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Herramientas del combo</div>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <div className="flex-1 min-w-[160px]">
+                            <input
+                              value={comboItemDraft.nombre}
+                              onChange={(e) => setComboItemDraft((d) => ({ ...d, nombre: e.target.value }))}
+                              placeholder="Ej: Martillo"
+                              className={inputCls + " w-full"}
+                            />
+                          </div>
+                          <input
+                            type="number"
+                            min="1"
+                            value={comboItemDraft.cantidad}
+                            onChange={(e) => setComboItemDraft((d) => ({ ...d, cantidad: e.target.value }))}
+                            className={inputCls + " w-20"}
+                          />
+                          <button type="button" onClick={agregarItemCombo} className={btnGhost}>+ Agregar</button>
+                        </div>
+                        {comboForm.items.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {comboForm.items.map((it, idx) => (
+                              <span key={idx} className="flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">
+                                {it.nombre} {it.cantidad > 1 ? `x${it.cantidad}` : ""}
+                                <button type="button" onClick={() => quitarItemComboDraft(idx)} className="text-amber-600 hover:text-amber-900"><X size={12} /></button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar combo</button>
+                    </form>
+                  </Panel>
+                )}
+
+                {combosHerramientas.length === 0 ? (
+                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
+                    Todavía no hay combos armados.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {combosHerramientas.map((combo) => {
+                      const persona = personal.find((p) => p.id === combo.personaId);
+                      return (
+                        <div key={combo.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="font-semibold text-slate-900">{persona ? nombreCompletoDe(persona) : "—"}</span>
+                            <span className="text-xs text-slate-400">Entregado el {fmtFecha(combo.fecha)}</span>
+                          </div>
+                          <div className="divide-y divide-stone-50">
+                            {combo.items.map((it, idx) => (
+                              <div key={idx} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm">
+                                <span className="text-slate-700">{it.nombre} {it.cantidad > 1 ? `x${it.cantidad}` : ""}</span>
+                                <div className="flex items-center gap-2">
+                                  <Badge estado={it.estado} />
+                                  <select
+                                    value={it.estado}
+                                    onChange={(e) => actualizarItemCombo(combo, idx, e.target.value)}
+                                    className="rounded-md border border-stone-300 bg-white px-1.5 py-1 text-xs text-slate-600"
+                                  >
+                                    {ESTADOS_ITEM_COMBO.map((s) => <option key={s}>{s}</option>)}
+                                  </select>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="text-[11px] text-slate-400">
+                  "Roto" = requiere devolución física para reposición. "Perdido" = se gestiona descuento o reposición con la persona.
+                </div>
+              </>
             )}
-
-            <div className="flex flex-wrap gap-3">
-              <select className={inputCls} value={filtroHerr.ubicacion} onChange={(e) => setFiltroHerr((f) => ({ ...f, ubicacion: e.target.value }))}>
-                <option>Todas</option>
-                <option>Depósito central</option>
-                {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
-              </select>
-              <select className={inputCls} value={filtroHerr.estado} onChange={(e) => setFiltroHerr((f) => ({ ...f, estado: e.target.value }))}>
-                <option>Todos</option>
-                {ESTADOS_HERRAMIENTA.map((s) => <option key={s}>{s}</option>)}
-              </select>
-            </div>
-
-            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-4 py-3">Herramienta</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Ubicación</th><th className="px-4 py-3">Responsable</th><th className="px-4 py-3">Estado</th></tr>
-                </thead>
-                <tbody>
-                  {herramientas
-                    .filter((h) => filtroHerr.ubicacion === "Todas" || h.ubicacion === filtroHerr.ubicacion)
-                    .filter((h) => filtroHerr.estado === "Todos" || h.estado === filtroHerr.estado)
-                    .map((h) => (
-                      <tr key={h.id} className="border-t border-stone-100">
-                        <td className="px-4 py-3 font-medium text-slate-900">{h.nombre}</td>
-                        <td className="px-4 py-3 text-slate-600">{h.categoria}</td>
-                        <td className="px-4 py-3 text-slate-600"><span className="inline-flex items-center gap-1"><MapPin size={13} className="text-amber-600" />{h.ubicacion}</span></td>
-                        <td className="px-4 py-3 text-slate-600">{h.responsable}</td>
-                        <td className="px-4 py-3"><Badge estado={h.estado} /></td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
           </div>
         )}
 
