@@ -7,7 +7,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -77,6 +77,12 @@ const ICONO_ESPECIALIDAD = {
   "Plomería": Droplet,
   Carpintero: Hammer,
   Hierrero: Flame,
+};
+const ICONO_CATEGORIA_HERR = {
+  "Herramienta Eléctrica": Zap,
+  "Herramienta Manual": Hammer,
+  "Equipo Eléctrico": Wrench,
+  "Equipo a Combustión": Flame,
 };
 const ESTADOS_ASISTENCIA = ["Presente", "Ausente", "Tardanza"];
 const UMBRAL_APROBACION_OC = 3000000;
@@ -210,6 +216,16 @@ function CuentaIcon({ cuenta, size = 13 }) {
   if (!IconComp) return null;
   return (
     <span className="inline-flex items-center text-slate-500">
+      <IconComp size={size} />
+    </span>
+  );
+}
+
+function CategoriaHerrIcon({ categoria, size = 13 }) {
+  const IconComp = ICONO_CATEGORIA_HERR[categoria];
+  if (!IconComp) return null;
+  return (
+    <span title={categoria} className="inline-flex items-center text-slate-500">
       <IconComp size={size} />
     </span>
   );
@@ -1114,6 +1130,8 @@ export default function ConcretarApp() {
   }
 
   const [vistaHerramientas, setVistaHerramientas] = useState("altoValor");
+  const [viewingHerramientaId, setViewingHerramientaId] = useState(null);
+  const viewingHerramienta = herramientas.find((h) => h.id === viewingHerramientaId) || null;
 
   // ---------- Alto Valor / Maquinaria (formulario controlado) ----------
   const emptyHerrForm = { categoria: CATEGORIAS_HERRAMIENTA[0], nombre: "", marca: "", maletin: "No", accesorios: "No", detalleAccesorios: "", observaciones: "" };
@@ -1139,27 +1157,59 @@ export default function ConcretarApp() {
     setNuevaMarca("");
     setShowAddMarca(false);
   }
+  const [editingHerramientaId, setEditingHerramientaId] = useState(null);
+
+  function cancelHerrForm() {
+    setHerrForm(emptyHerrForm);
+    setEditingHerramientaId(null);
+    setShowHerrForm(false);
+  }
+  function startAddHerramienta() {
+    setHerrForm(emptyHerrForm);
+    setEditingHerramientaId(null);
+    setShowHerrForm((v) => !v);
+  }
+  function startEditHerramienta(h) {
+    setHerrForm({
+      categoria: h.categoria || CATEGORIAS_HERRAMIENTA[0],
+      nombre: h.nombre || "",
+      marca: h.marca || "",
+      maletin: h.maletin || "No",
+      accesorios: h.accesorios || "No",
+      detalleAccesorios: h.detalleAccesorios || "",
+      observaciones: h.observaciones || "",
+    });
+    setEditingHerramientaId(h.id);
+    setShowHerrForm(true);
+    setViewingHerramientaId(null);
+  }
   function submitHerrForm(e) {
     e.preventDefault();
     if (!herrForm.nombre) {
       alert("Elegí (o agregá) el nombre de la herramienta.");
       return;
     }
-    addRecord("herramientas", {
+    const payload = {
       nombre: herrForm.nombre,
-      numeroSerie: generarNumeroSerie(herrForm.categoria, herrForm.marca),
       marca: herrForm.marca,
       categoria: herrForm.categoria,
-      ubicacion: "Oficina",
-      estado: "Disponible",
       maletin: herrForm.maletin,
       accesorios: herrForm.accesorios,
       detalleAccesorios: herrForm.detalleAccesorios,
       observaciones: herrForm.observaciones,
-      fechaUltimoCambioEstado: new Date().toISOString(),
-    }, setHerramientas);
-    setHerrForm(emptyHerrForm);
-    setShowHerrForm(false);
+    };
+    if (editingHerramientaId) {
+      updateRecord("herramientas", editingHerramientaId, payload, setHerramientas);
+    } else {
+      addRecord("herramientas", {
+        ...payload,
+        numeroSerie: generarNumeroSerie(herrForm.categoria, herrForm.marca),
+        ubicacion: "Oficina",
+        estado: "Disponible",
+        fechaUltimoCambioEstado: new Date().toISOString(),
+      }, setHerramientas);
+    }
+    cancelHerrForm();
   }
   function cambiarEstadoHerramienta(h, nuevoEstado) {
     updateRecord("herramientas", h.id, { estado: nuevoEstado, fechaUltimoCambioEstado: new Date().toISOString() }, setHerramientas);
@@ -2348,11 +2398,11 @@ export default function ConcretarApp() {
               </button>
             </div>
 
-            {vistaHerramientas === "altoValor" && (
+            {vistaHerramientas === "altoValor" && !viewingHerramienta && (
               <>
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-slate-500">Maquinaria y herramientas de alto valor, controladas de forma individual por número de serie.</div>
-                  <button onClick={() => setShowHerrForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                  <button onClick={startAddHerramienta} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                     <Plus size={16} /> Nueva herramienta
                   </button>
                 </div>
@@ -2367,7 +2417,7 @@ export default function ConcretarApp() {
                 )}
 
                 {showHerrForm && (
-                  <Panel title="Añadir herramienta" action={<button onClick={() => setShowHerrForm(false)}><X size={16} /></button>}>
+                  <Panel title={editingHerramientaId ? "Editar herramienta" : "Añadir herramienta"} action={<button onClick={cancelHerrForm}><X size={16} /></button>}>
                     <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitHerrForm}>
                       <Field label="Categoría">
                         <select
@@ -2433,11 +2483,18 @@ export default function ConcretarApp() {
                           <textarea value={herrForm.observaciones} onChange={(e) => setHerrForm((f) => ({ ...f, observaciones: e.target.value }))} rows={2} placeholder="Ej: no enciende, revisar batería..." className={inputCls} />
                         </Field>
                       </div>
-                      <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                      <div className="flex items-end gap-2">
+                        <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+                          {editingHerramientaId ? "Guardar cambios" : "Guardar"}
+                        </button>
+                        {editingHerramientaId && <button type="button" onClick={cancelHerrForm} className={btnGhost}>Cancelar</button>}
+                      </div>
                     </form>
-                    <div className="mt-3 text-[11px] text-slate-400">
-                      Ubicación inicial: Oficina. Estado inicial: Disponible. El responsable en obra va a ser el capataz asignado (próximamente). El N° de serie se genera solo: letra del tipo + 3 letras de la marca + N° correlativo. Ej: Bosch, Herramienta Eléctrica → <span className="font-mono">E-BOS01</span>.
-                    </div>
+                    {!editingHerramientaId && (
+                      <div className="mt-3 text-[11px] text-slate-400">
+                        Ubicación inicial: Oficina. Estado inicial: Disponible. El responsable en obra va a ser el capataz asignado (próximamente). El N° de serie se genera solo: letra del tipo + 3 letras de la marca + N° correlativo. Ej: Bosch, Herramienta Eléctrica → <span className="font-mono">E-BOS01</span>.
+                      </div>
+                    )}
                   </Panel>
                 )}
 
@@ -2454,37 +2511,49 @@ export default function ConcretarApp() {
                 </div>
 
                 <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      <tr><th className="px-4 py-3">Herramienta</th><th className="px-4 py-3">Marca</th><th className="px-4 py-3">N° serie</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Ubicación</th><th className="px-4 py-3">Estado</th></tr>
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-stone-50 text-[9px] font-semibold uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-2 py-1.5"></th>
+                        <th className="px-2 py-1.5">Herramienta</th>
+                        <th className="px-2 py-1.5">Ubicación</th>
+                        <th className="px-2 py-1.5">Estado</th>
+                      </tr>
                     </thead>
                     <tbody>
                       {herramientas
                         .filter((h) => filtroHerr.ubicacion === "Todas" || h.ubicacion === filtroHerr.ubicacion)
                         .filter((h) => filtroHerr.estado === "Todos" || h.estado === filtroHerr.estado)
+                        .sort((a, b) => {
+                          if (a.ubicacion === "Oficina" && b.ubicacion !== "Oficina") return 1;
+                          if (a.ubicacion !== "Oficina" && b.ubicacion === "Oficina") return -1;
+                          return (a.ubicacion || "").localeCompare(b.ubicacion || "");
+                        })
                         .map((h) => {
                           const infoExtra = [
+                            h.marca ? `Marca: ${h.marca}` : null,
+                            h.numeroSerie ? `N° serie: ${h.numeroSerie}` : null,
                             h.accesorios === "Sí" && h.detalleAccesorios ? `Accesorios: ${h.detalleAccesorios}` : null,
                             h.observaciones ? `Obs: ${h.observaciones}` : null,
                           ].filter(Boolean).join(" · ");
                           return (
                             <tr key={h.id} className="border-t border-stone-100">
-                              <td className="px-4 py-3 font-medium text-slate-900">
-                                <span className="flex items-center gap-1.5">
+                              <td className="px-2 py-1"><CategoriaHerrIcon categoria={h.categoria} /></td>
+                              <td className="px-2 py-1">
+                                <button onClick={() => setViewingHerramientaId(h.id)} className="flex items-center gap-1 font-medium text-slate-900 underline decoration-dotted hover:text-amber-600">
                                   {h.nombre}
-                                  {h.maletin === "Sí" && <span title="Viene con maletín"><Briefcase size={12} className="text-slate-400" /></span>}
-                                  {infoExtra && <span title={infoExtra}><Info size={12} className="text-sky-500" /></span>}
-                                </span>
+                                  {h.maletin === "Sí" && <span title="Viene con maletín"><Briefcase size={11} className="text-slate-400" /></span>}
+                                  {infoExtra && <span title={infoExtra}><Info size={11} className="text-sky-500" /></span>}
+                                </button>
                               </td>
-                              <td className="px-4 py-3 text-slate-600">{h.marca || "—"}</td>
-                              <td className="px-4 py-3 font-mono text-xs text-slate-500">{h.numeroSerie || "—"}</td>
-                              <td className="px-4 py-3 text-slate-600">{h.categoria}</td>
-                              <td className="px-4 py-3 text-slate-600"><span className="inline-flex items-center gap-1"><MapPin size={13} className="text-amber-600" />{h.ubicacion}</span></td>
-                              <td className="px-4 py-3">
+                              <td className="px-2 py-1 text-slate-600">
+                                <span className="inline-flex items-center gap-1"><MapPin size={11} className="text-amber-600" />{h.ubicacion}</span>
+                              </td>
+                              <td className="px-2 py-1">
                                 <select
                                   value={h.estado}
                                   onChange={(e) => cambiarEstadoHerramienta(h, e.target.value)}
-                                  className={`rounded-full border-2 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${BADGE_STYLES[h.estado] || "border-slate-400 text-slate-500"}`}
+                                  className={`rounded-full border-2 bg-white px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest ${BADGE_STYLES[h.estado] || "border-slate-400 text-slate-500"}`}
                                 >
                                   {ESTADOS_HERRAMIENTA.map((s) => <option key={s}>{s}</option>)}
                                 </select>
@@ -2496,6 +2565,58 @@ export default function ConcretarApp() {
                   </table>
                 </div>
               </>
+            )}
+
+            {vistaHerramientas === "altoValor" && viewingHerramienta && (
+              <div className="space-y-4">
+                <button onClick={() => setViewingHerramientaId(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
+                  ← Volver a Herramientas
+                </button>
+
+                <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-stone-100 text-slate-500">
+                        <CategoriaHerrIcon categoria={viewingHerramienta.categoria} size={18} />
+                      </span>
+                      <div>
+                        <div className="text-xl font-bold text-slate-900">{viewingHerramienta.nombre}</div>
+                        <div className="text-sm text-slate-500">{viewingHerramienta.categoria}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => startEditHerramienta(viewingHerramienta)} className={btnGhost}>
+                        <span className="flex items-center gap-1"><Pencil size={13} /> Editar</span>
+                      </button>
+                      <select
+                        value={viewingHerramienta.estado}
+                        onChange={(e) => cambiarEstadoHerramienta(viewingHerramienta, e.target.value)}
+                        className={`rounded-full border-2 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${BADGE_STYLES[viewingHerramienta.estado] || "border-slate-400 text-slate-500"}`}
+                      >
+                        {ESTADOS_HERRAMIENTA.map((s) => <option key={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 md:grid-cols-3">
+                    <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Marca</div><div className="text-slate-800">{viewingHerramienta.marca || "—"}</div></div>
+                    <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">N° de serie / ID</div><div className="font-mono text-slate-800">{viewingHerramienta.numeroSerie || "—"}</div></div>
+                    <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ubicación</div><div className="text-slate-800">{viewingHerramienta.ubicacion}</div></div>
+                    <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">¿Viene con maletín?</div><div className="text-slate-800">{viewingHerramienta.maletin || "No"}</div></div>
+                    <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">¿Tiene accesorios?</div><div className="text-slate-800">{viewingHerramienta.accesorios || "No"}</div></div>
+                    {viewingHerramienta.accesorios === "Sí" && (
+                      <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Detalle de accesorios</div><div className="text-slate-800">{viewingHerramienta.detalleAccesorios || "—"}</div></div>
+                    )}
+                  </div>
+
+                  {viewingHerramienta.observaciones && (
+                    <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide"><AlertTriangle size={13} /> Observaciones</div>
+                      {viewingHerramienta.observaciones}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
             {vistaHerramientas === "combos" && (
