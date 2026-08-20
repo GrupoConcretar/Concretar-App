@@ -45,7 +45,7 @@ function hoyISO() {
   return `${y}-${m}-${day}`;
 }
 
-const ESTADOS_HERRAMIENTA = ["Disponible", "En Obra", "En Reparación", "Baja"];
+const ESTADOS_HERRAMIENTA = ["Disponible", "En Obra", "En Reparación", "Mal Estado", "Rota"];
 const ESTADOS_ITEM_COMBO = ["Entregado", "Roto", "Perdido", "Devuelto"];
 const TIPOS_CAJA = ["Electricista", "Civil", "Pintor", "Metalúrgico"];
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -167,8 +167,10 @@ function readFileAsDataURL(file) {
 
 const BADGE_STYLES = {
   Disponible: "border-green-600 text-green-700",
-  "En Obra": "border-blue-600 text-blue-700",
-  "En Reparación": "border-orange-600 text-orange-700",
+  "En Obra": "border-amber-800 text-amber-900",
+  "En Reparación": "border-cyan-500 text-cyan-600",
+  "Mal Estado": "border-yellow-500 text-yellow-700",
+  Rota: "border-red-600 text-red-700",
   Baja: "border-red-600 text-red-700",
   Entregado: "border-emerald-600 text-emerald-700",
   Roto: "border-rose-600 text-rose-700",
@@ -329,8 +331,8 @@ export default function ConcretarApp() {
   const DEMO_HERRAMIENTAS = [
     { id: 1, nombre: "Amoladora angular", numeroSerie: "E-MAK01", marca: "Makita", categoria: "Herramienta Eléctrica", ubicacion: "Oficina", estado: "Disponible", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "2 discos de corte de repuesto", observaciones: "", fechaUltimoCambioEstado: null },
     { id: 2, nombre: "Andamio tubular (juego x6)", numeroSerie: "M-GEN01", marca: "", categoria: "Herramienta Manual", ubicacion: "Edificio Belgrano 450", estado: "En Obra", maletin: "No", accesorios: "No", detalleAccesorios: "", observaciones: "Faltan 2 crucetas, revisar al devolver", fechaUltimoCambioEstado: null },
-    { id: 3, nombre: "Rotomartillo SDS", numeroSerie: "E-BOS01", marca: "Bosch", categoria: "Herramienta Eléctrica", ubicacion: "Casa Quinta Yerba Buena", estado: "En Obra", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "3 puntas SDS, 1 cincel", observaciones: "", fechaUltimoCambioEstado: null },
-    { id: 4, nombre: "Nivel láser", numeroSerie: "Q-STA01", marca: "Stanley", categoria: "Equipo Eléctrico", ubicacion: "Oficina", estado: "En Reparación", maletin: "Sí", accesorios: "No", detalleAccesorios: "", observaciones: "No enciende, revisar batería", fechaUltimoCambioEstado: "2026-08-18T15:00:00.000Z" },
+    { id: 3, nombre: "Rotomartillo SDS", numeroSerie: "E-BOS01", marca: "Bosch", categoria: "Herramienta Eléctrica", ubicacion: "Casa Quinta Yerba Buena", estado: "Mal Estado", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "3 puntas SDS, 1 cincel", observaciones: "Pierde potencia, revisar antes de que se rompa del todo", fechaUltimoCambioEstado: null },
+    { id: 4, nombre: "Nivel láser", numeroSerie: "Q-STA01", marca: "Stanley", categoria: "Equipo Eléctrico", ubicacion: "Electromecánica Ríos", estado: "En Reparación", maletin: "Sí", accesorios: "No", detalleAccesorios: "", observaciones: "No enciende, revisar batería", fechaUltimoCambioEstado: "2026-08-18T15:00:00.000Z" },
   ];
   const DEMO_COMBOS = [
     {
@@ -921,7 +923,7 @@ export default function ConcretarApp() {
   const herramientasEnUso = obraSel ? herramientas.filter((h) => h.ubicacion === obraSel.nombre && h.estado === "En Obra").length : 0;
 
   // ---------- Alertas globales ----------
-  const herramientasAtencion = herramientas.filter((h) => h.estado === "En Reparación" || h.estado === "Baja");
+  const herramientasAtencion = herramientas.filter((h) => h.estado === "Mal Estado" || h.estado === "Rota");
   const herramientasReparadasRecientes = herramientas.filter((h) => {
     if (h.estado !== "Disponible" && h.estado !== "En Obra") return false;
     if (!h.fechaUltimoCambioEstado) return false;
@@ -1400,7 +1402,7 @@ export default function ConcretarApp() {
   const [remitoForm, setRemitoForm] = useState(emptyRemitoForm);
   const [showRemitoForm, setShowRemitoForm] = useState(false);
 
-  const herramientasEnOrigenRemito = herramientas.filter((h) => h.ubicacion === remitoForm.origen && h.estado !== "Baja");
+  const herramientasEnOrigenRemito = herramientas.filter((h) => h.ubicacion === remitoForm.origen);
   const remitosPendientes = remitos.filter((r) => r.estado === "En tránsito");
   const remitosCompletados = remitos.filter((r) => r.estado === "Recibido");
 
@@ -1684,7 +1686,7 @@ export default function ConcretarApp() {
                     <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                       <div className="flex items-center gap-2 font-semibold">
                         <AlertTriangle size={16} />
-                        {herramientasAtencion.length} herramienta(s) en reparación o dada(s) de baja.
+                        {herramientasAtencion.length} herramienta(s) en mal estado o rota(s) — mandar a reparar.
                       </div>
                       <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
                         {herramientasAtencion.slice(0, 5).map((h) => <li key={h.id}>{h.nombre} ({h.numeroSerie}) — {h.estado}</li>)}
