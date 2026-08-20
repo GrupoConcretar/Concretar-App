@@ -444,10 +444,11 @@ export default function ConcretarApp() {
     { id: 4, categoria: "Materiales", subcategoria: "Plomería", tipo: "Grifería", nombre: "Grifería FV monocomando", unidad: "Unidad", ultimoPrecio: 35000, ultimoProveedor: "Corralón San Martín" },
   ];
   const DEMO_PRESUPUESTO_MATERIALES = [
-    { id: 1, obraId: 1, categoria: "Materiales", subcategoria: "Civil", tipo: "Hierros Nervurados", material: "Hierro fi 10mm", unidad: "Barra", cantidad: 150, precioUnitario: 12000, total: 1800000, fechaNecesaria: "2026-09-20", observaciones: "", origen: "Excel" },
-    { id: 2, obraId: 1, categoria: "Materiales", subcategoria: "Civil", tipo: "", material: "Cemento", unidad: "Bolsa", cantidad: 200, precioUnitario: 8500, total: 1700000, fechaNecesaria: "2026-09-15", observaciones: "", origen: "Excel" },
-    { id: 3, obraId: 1, categoria: "Materiales", subcategoria: "Electricidad", tipo: "Daisa", material: "Caño Daisa 3/4", unidad: "Metro", cantidad: 300, precioUnitario: 450, total: 135000, fechaNecesaria: "2026-10-05", observaciones: "", origen: "Excel" },
+    { id: 1, obraId: 1, categoria: "Materiales", subcategoria: "Civil", tipo: "Hierros Nervurados", material: "Hierro fi 10mm", unidad: "Barra", cantidad: 150, precioUnitario: 12000, total: 1800000, fechaNecesaria: "2026-09-20", observaciones: "", origen: "Excel", pedidoId: null },
+    { id: 2, obraId: 1, categoria: "Materiales", subcategoria: "Civil", tipo: "", material: "Cemento", unidad: "Bolsa", cantidad: 200, precioUnitario: 8500, total: 1700000, fechaNecesaria: "2026-09-15", observaciones: "", origen: "Excel", pedidoId: null },
+    { id: 3, obraId: 1, categoria: "Materiales", subcategoria: "Electricidad", tipo: "Daisa", material: "Caño Daisa 3/4", unidad: "Metro", cantidad: 300, precioUnitario: 450, total: 135000, fechaNecesaria: "2026-10-05", observaciones: "", origen: "Excel", pedidoId: null },
   ];
+  const DEMO_PEDIDOS_MATERIALES = [];
   const DEMO_OC = [
     { id: 1, fecha: "2026-07-02", obraId: 1, proveedor: "Corralón San Martín", item: "Cemento x50, hierro 8mm x200", montoEstimado: 4200000, estado: "Recibida" },
     { id: 2, fecha: "2026-08-05", obraId: 1, proveedor: "Aberturas del Norte", item: "Ventanas de aluminio (12 unid.)", montoEstimado: 6800000, estado: "Requiere aprobación" },
@@ -499,6 +500,7 @@ export default function ConcretarApp() {
   const [tiposMaterial, setTiposMaterial] = useState(isSupabaseConfigured ? [] : DEMO_TIPOS_MATERIAL);
   const [catalogoMateriales, setCatalogoMateriales] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_MATERIALES);
   const [presupuestoMateriales, setPresupuestoMateriales] = useState(isSupabaseConfigured ? [] : DEMO_PRESUPUESTO_MATERIALES);
+  const [pedidosMateriales, setPedidosMateriales] = useState(isSupabaseConfigured ? [] : DEMO_PEDIDOS_MATERIALES);
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
   const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
   const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
@@ -515,13 +517,14 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, sm, tm, cma, pma] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, sm, tm, cma, pma, ped] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
           sbSelect("catalogo_nombres_herramienta"), sbSelect("catalogo_marcas"), sbSelect("catalogo_herramientas_chicas"),
           sbSelect("proveedores"), sbSelect("remitos"), sbSelect("auditorias_herramientas"), sbSelect("feriados"),
           sbSelect("subcategorias_material"), sbSelect("tipos_material"), sbSelect("catalogo_materiales"), sbSelect("presupuesto_materiales"),
+          sbSelect("pedidos_materiales"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -545,6 +548,7 @@ export default function ConcretarApp() {
         setTiposMaterial(tm);
         setCatalogoMateriales(cma);
         setPresupuestoMateriales(pma);
+        setPedidosMateriales(ped);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -562,11 +566,15 @@ export default function ConcretarApp() {
       try {
         const row = await sbInsert(table, obj);
         setter((prev) => [...prev, row]);
+        return row;
       } catch (err) {
         alert("No se pudo guardar: " + err.message);
+        return null;
       }
     } else {
-      setter((prev) => [...prev, { ...obj, id: genId() }]);
+      const row = { ...obj, id: genId() };
+      setter((prev) => [...prev, row]);
+      return row;
     }
   }
 
@@ -993,9 +1001,18 @@ export default function ConcretarApp() {
   const obrasEnVentanaCierre = obras.filter((o) => dentroDeVentanaCierre(o) && !auditoriaHoy(o.id, "Cierre"));
   // "Apertura" dispara en el primer día laborable configurado de cada obra (normalmente lunes, pero se adapta si esa obra trabaja otros días), salvo feriado.
   const obrasSinAperturaLunes = esFeriadoHoy() ? [] : obras.filter((o) => nombreDiaHoy() === primerDiaLaborable(o) && !auditoriaHoy(o.id, "Apertura"));
+
+  // Alarmas previas de materiales: según la "Fecha Necesaria" del presupuesto importado.
+  function diasHasta(fechaStr) {
+    return Math.round((fechaLocal(fechaStr) - fechaLocal(hoyISO())) / 86400000);
+  }
+  const materialesVencidos = presupuestoMateriales.filter((m) => !m.pedidoId && m.fechaNecesaria && diasHasta(m.fechaNecesaria) < 0);
+  const materialesProximos = presupuestoMateriales.filter((m) => !m.pedidoId && m.fechaNecesaria && diasHasta(m.fechaNecesaria) >= 0 && diasHasta(m.fechaNecesaria) <= 7);
+
   const totalAlertas =
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
-    (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + obrasEnVentanaCierre.length + obrasSinAperturaLunes.length;
+    (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + obrasEnVentanaCierre.length + obrasSinAperturaLunes.length +
+    materialesVencidos.length + materialesProximos.length;
 
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
@@ -1676,6 +1693,90 @@ export default function ConcretarApp() {
     deleteRecord("presupuesto_materiales", id, setPresupuestoMateriales);
   }
 
+  // ---------- Pedidos de materiales (armados desde el presupuesto + ítems manuales) ----------
+  const [seleccionPresupuesto, setSeleccionPresupuesto] = useState([]);
+  const [showPedidoForm, setShowPedidoForm] = useState(false);
+  const [pedidoItems, setPedidoItems] = useState([]);
+  const [pedidoProveedor, setPedidoProveedor] = useState("");
+  const [itemManualDraft, setItemManualDraft] = useState({ categoria: "Materiales", subcategoria: "", tipo: "", material: "", unidad: "", cantidad: 1, precioUnitario: 0 });
+  const [enviandoPedido, setEnviandoPedido] = useState(false);
+
+  function toggleSeleccionPresupuesto(id) {
+    setSeleccionPresupuesto((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function abrirArmadoPedido() {
+    const items = presupuestoMateriales
+      .filter((m) => seleccionPresupuesto.includes(m.id))
+      .map((m) => ({
+        presupuestoId: m.id, categoria: m.categoria, subcategoria: m.subcategoria, tipo: m.tipo,
+        material: m.material, unidad: m.unidad, cantidad: m.cantidad, precioUnitario: m.precioUnitario,
+      }));
+    setPedidoItems(items);
+    setPedidoProveedor("");
+    setShowPedidoForm(true);
+  }
+
+  function actualizarCantidadPedido(idx, campo, valor) {
+    setPedidoItems((items) => items.map((it, i) => (i === idx ? { ...it, [campo]: valor } : it)));
+  }
+  function quitarItemPedido(idx) {
+    setPedidoItems((items) => items.filter((_, i) => i !== idx));
+  }
+  function agregarItemManualPedido() {
+    if (!itemManualDraft.material.trim()) return;
+    setPedidoItems((items) => [...items, { presupuestoId: null, ...itemManualDraft, material: itemManualDraft.material.trim() }]);
+    setItemManualDraft({ categoria: "Materiales", subcategoria: "", tipo: "", material: "", unidad: "", cantidad: 1, precioUnitario: 0 });
+  }
+
+  async function confirmarPedido() {
+    if (pedidoItems.length === 0) {
+      alert("Agregá al menos un ítem al pedido.");
+      return;
+    }
+    setEnviandoPedido(true);
+    const itemsFinales = pedidoItems.map((it) => ({ ...it, total: (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0) }));
+    const totalPedido = itemsFinales.reduce((s, it) => s + it.total, 0);
+    const pedidoCreado = await addRecord("pedidos_materiales", {
+      obraId: Number(obraPresupuestoId),
+      fecha: hoyISO(),
+      proveedor: pedidoProveedor,
+      estado: "Pendiente",
+      items: itemsFinales,
+      total: totalPedido,
+    }, setPedidosMateriales);
+    // Las líneas del presupuesto que se usaron quedan marcadas como "ya pedidas"
+    if (pedidoCreado) {
+      for (const it of itemsFinales) {
+        if (it.presupuestoId) {
+          await updateRecord("presupuesto_materiales", it.presupuestoId, { pedidoId: pedidoCreado.id }, setPresupuestoMateriales);
+        }
+      }
+    }
+    setSeleccionPresupuesto([]);
+    setPedidoItems([]);
+    setPedidoProveedor("");
+    setShowPedidoForm(false);
+    setEnviandoPedido(false);
+  }
+
+  async function marcarPedidoRecibido(pedido) {
+    if (!window.confirm(`¿Marcar este pedido como recibido en obra? Esto suma ${fmtARS(pedido.total)} a la curva de inversión real de la obra.`)) return;
+    await updateRecord("pedidos_materiales", pedido.id, { estado: "Recibido" }, setPedidosMateriales);
+    await addRecord("compras_facturas", {
+      fecha: hoyISO(),
+      obraId: pedido.obraId,
+      ordenCompraId: null,
+      proveedor: pedido.proveedor || "Sin especificar",
+      categoria: "Materiales",
+      monto: pedido.total,
+      comprobante: "",
+      estado: "Pendiente",
+      formalidad: "Blanco",
+      cuenta: "Banco",
+    }, setComprasFacturas);
+  }
+
   const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
   const recibirOC = (id) => updateRecord("ordenes_compra", id, { estado: "Recibida" }, setOrdenesCompra);
 
@@ -1871,6 +1972,40 @@ export default function ConcretarApp() {
                       </button>
                     </div>
                   ))}
+                  {materialesVencidos.length > 0 && (
+                    <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <Package size={16} />
+                        {materialesVencidos.length} material(es) con fecha necesaria vencida — sin pedir todavía.
+                      </div>
+                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
+                        {materialesVencidos.slice(0, 5).map((m) => (
+                          <li key={m.id}>
+                            <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(m.obraId); }} className="underline hover:no-underline">
+                              {m.material} — {obras.find((o) => o.id === m.obraId)?.nombre} (necesitaba el {fmtFecha(m.fechaNecesaria)})
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {materialesProximos.length > 0 && (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <Package size={16} />
+                        {materialesProximos.length} material(es) necesarios en los próximos 7 días.
+                      </div>
+                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
+                        {materialesProximos.slice(0, 5).map((m) => (
+                          <li key={m.id}>
+                            <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(m.obraId); }} className="underline hover:no-underline">
+                              {m.material} — {obras.find((o) => o.id === m.obraId)?.nombre} (en {diasHasta(m.fechaNecesaria)} día{diasHasta(m.fechaNecesaria) === 1 ? "" : "s"})
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {asistenciasEditadas.length > 0 && (
                     <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
                       <div className="flex items-center gap-2 font-semibold">
@@ -3512,9 +3647,12 @@ export default function ConcretarApp() {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setVistaMateriales("presupuestos")}
-                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "presupuestos" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "presupuestos" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
               >
                 Presupuestos por Obra
+                {(materialesVencidos.length + materialesProximos.length) > 0 && (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{materialesVencidos.length + materialesProximos.length}</span>
+                )}
               </button>
               <button
                 onClick={() => setVistaMateriales("catalogo")}
@@ -3588,43 +3726,197 @@ export default function ConcretarApp() {
                 {(() => {
                   const lineasObra = presupuestoMateriales.filter((m) => m.obraId === Number(obraPresupuestoId));
                   const totalObra = lineasObra.reduce((s, m) => s + (m.total || 0), 0);
-                  return lineasObra.length === 0 ? (
-                    <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
-                      Todavía no hay presupuesto importado para esta obra.
-                    </div>
-                  ) : (
+                  const pedidosObra = pedidosMateriales.filter((p) => p.obraId === Number(obraPresupuestoId));
+                  return (
                     <>
-                      <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total presupuestado (sin IVA)</div>
-                        <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalObra)}</div>
-                      </div>
-                      <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                        <table className="w-full text-left text-sm">
-                          <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            <tr>
-                              <th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Sub-categoría</th><th className="px-4 py-3">Tipo</th><th className="px-4 py-3">Material</th>
-                              <th className="px-4 py-3">Unidad</th><th className="px-4 py-3 text-right">Cantidad</th><th className="px-4 py-3 text-right">P. Unitario</th>
-                              <th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3">Fecha necesaria</th><th className="px-4 py-3"></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {lineasObra.map((m) => (
-                              <tr key={m.id} className="border-t border-stone-100">
-                                <td className="px-4 py-2.5 text-slate-600">{m.categoria}</td>
-                                <td className="px-4 py-2.5 text-slate-600">{m.subcategoria || "—"}</td>
-                                <td className="px-4 py-2.5 text-slate-600">{m.tipo || "—"}</td>
-                                <td className="px-4 py-2.5 font-medium text-slate-900">{m.material}</td>
-                                <td className="px-4 py-2.5 text-slate-600">{m.unidad}</td>
-                                <td className="px-4 py-2.5 text-right font-mono">{m.cantidad}</td>
-                                <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
-                                <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.total)}</td>
-                                <td className="px-4 py-2.5 text-slate-600">{m.fechaNecesaria ? fmtFecha(m.fechaNecesaria) : "—"}</td>
-                                <td className="px-4 py-2.5"><button onClick={() => eliminarLineaPresupuesto(m.id)} className="text-slate-400 hover:text-rose-600"><X size={14} /></button></td>
-                              </tr>
+                      {lineasObra.length === 0 ? (
+                        <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
+                          Todavía no hay presupuesto importado para esta obra.
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total presupuestado (sin IVA)</div>
+                              <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalObra)}</div>
+                            </div>
+                            {seleccionPresupuesto.length > 0 && (
+                              <button onClick={abrirArmadoPedido} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                                <ShoppingCart size={16} /> Armar pedido con {seleccionPresupuesto.length} ítem(s)
+                              </button>
+                            )}
+                          </div>
+                          <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                            <table className="w-full text-left text-sm">
+                              <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                <tr>
+                                  <th className="px-3 py-3"></th>
+                                  <th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Sub-categoría</th><th className="px-4 py-3">Tipo</th><th className="px-4 py-3">Material</th>
+                                  <th className="px-4 py-3">Unidad</th><th className="px-4 py-3 text-right">Cantidad</th><th className="px-4 py-3 text-right">P. Unitario</th>
+                                  <th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3">Fecha necesaria</th><th className="px-4 py-3"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {lineasObra.map((m) => {
+                                  const dias = m.fechaNecesaria ? diasHasta(m.fechaNecesaria) : null;
+                                  const urgencia = dias === null ? "" : dias < 0 ? "font-semibold text-rose-600" : dias <= 7 ? "font-semibold text-amber-700" : "text-slate-600";
+                                  const yaPedido = !!m.pedidoId;
+                                  return (
+                                    <tr key={m.id} className={`border-t border-stone-100 ${yaPedido ? "opacity-50" : ""}`}>
+                                      <td className="px-3 py-2.5">
+                                        {yaPedido ? (
+                                          <span title="Ya está en un pedido"><ShoppingCart size={13} className="text-slate-400" /></span>
+                                        ) : (
+                                          <input type="checkbox" checked={seleccionPresupuesto.includes(m.id)} onChange={() => toggleSeleccionPresupuesto(m.id)} className="h-3.5 w-3.5" />
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-2.5 text-slate-600">{m.categoria}</td>
+                                      <td className="px-4 py-2.5 text-slate-600">{m.subcategoria || "—"}</td>
+                                      <td className="px-4 py-2.5 text-slate-600">{m.tipo || "—"}</td>
+                                      <td className="px-4 py-2.5 font-medium text-slate-900">{m.material}</td>
+                                      <td className="px-4 py-2.5 text-slate-600">{m.unidad}</td>
+                                      <td className="px-4 py-2.5 text-right font-mono">{m.cantidad}</td>
+                                      <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
+                                      <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.total)}</td>
+                                      <td className={`px-4 py-2.5 ${urgencia}`}>
+                                        {m.fechaNecesaria ? fmtFecha(m.fechaNecesaria) : "—"}
+                                        {dias !== null && dias < 0 && !yaPedido && <span className="ml-1 text-[10px] uppercase">Vencido</span>}
+                                      </td>
+                                      <td className="px-4 py-2.5">{!yaPedido && <button onClick={() => eliminarLineaPresupuesto(m.id)} className="text-slate-400 hover:text-rose-600"><X size={14} /></button>}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+
+                      {showPedidoForm && (
+                        <Panel title="Armar pedido" action={<button onClick={() => setShowPedidoForm(false)}><X size={16} /></button>}>
+                          <div className="mb-4 max-w-xs">
+                            <Field label="Proveedor (opcional)">
+                              <select value={pedidoProveedor} onChange={(e) => setPedidoProveedor(e.target.value)} className={inputCls}>
+                                <option value="">Sin especificar</option>
+                                {proveedores.filter((p) => p.esTaller !== "Sí").map((p) => <option key={p.id} value={p.razonSocial}>{p.razonSocial}</option>)}
+                              </select>
+                            </Field>
+                          </div>
+
+                          <div className="overflow-x-auto rounded-md border border-stone-200">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                <tr>
+                                  <th className="px-2 py-2">Material</th><th className="px-2 py-2">Unidad</th>
+                                  <th className="px-2 py-2 text-right">Cantidad</th><th className="px-2 py-2 text-right">P. Unitario</th>
+                                  <th className="px-2 py-2 text-right">Total</th><th className="px-2 py-2"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pedidoItems.map((it, idx) => (
+                                  <tr key={idx} className="border-t border-stone-100">
+                                    <td className="px-2 py-1.5 font-medium text-slate-800">
+                                      {it.material}
+                                      {!it.presupuestoId && <span className="ml-1 rounded bg-sky-100 px-1 text-[9px] font-semibold text-sky-700">MANUAL</span>}
+                                    </td>
+                                    <td className="px-2 py-1.5">{it.unidad}</td>
+                                    <td className="px-2 py-1.5 text-right">
+                                      <input type="number" value={it.cantidad} onChange={(e) => actualizarCantidadPedido(idx, "cantidad", Number(e.target.value))} className="w-20 rounded border border-stone-300 px-1.5 py-1 text-right" />
+                                    </td>
+                                    <td className="px-2 py-1.5 text-right">
+                                      <input type="number" value={it.precioUnitario} onChange={(e) => actualizarCantidadPedido(idx, "precioUnitario", Number(e.target.value))} className="w-24 rounded border border-stone-300 px-1.5 py-1 text-right" />
+                                    </td>
+                                    <td className="px-2 py-1.5 text-right font-mono">{fmtARS((Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0))}</td>
+                                    <td className="px-2 py-1.5"><button onClick={() => quitarItemPedido(idx)} className="text-slate-400 hover:text-rose-600"><X size={13} /></button></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="mt-3 flex items-end gap-2 rounded-md border border-dashed border-stone-300 p-3">
+                            <div className="w-28">
+                              <Field label="Categoría">
+                                <select value={itemManualDraft.categoria} onChange={(e) => setItemManualDraft((d) => ({ ...d, categoria: e.target.value, subcategoria: "", tipo: "" }))} className={inputCls}>
+                                  {CATEGORIAS_PEDIDO.map((c) => <option key={c}>{c}</option>)}
+                                </select>
+                              </Field>
+                            </div>
+                            <div className="w-32">
+                              <Field label="Sub-categoría">
+                                <select value={itemManualDraft.subcategoria} onChange={(e) => setItemManualDraft((d) => ({ ...d, subcategoria: e.target.value, tipo: "" }))} className={inputCls}>
+                                  <option value="">--</option>
+                                  {subcategoriasMat.filter((s) => s.categoria === itemManualDraft.categoria).map((s) => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+                                </select>
+                              </Field>
+                            </div>
+                            <div className="w-32">
+                              <Field label="Tipo">
+                                <select value={itemManualDraft.tipo} onChange={(e) => setItemManualDraft((d) => ({ ...d, tipo: e.target.value }))} className={inputCls}>
+                                  <option value="">--</option>
+                                  {tiposMaterial.filter((t) => t.categoria === itemManualDraft.categoria && t.subcategoria === itemManualDraft.subcategoria).map((t) => <option key={t.id} value={t.nombre}>{t.nombre}</option>)}
+                                </select>
+                              </Field>
+                            </div>
+                            <div className="flex-1 min-w-[140px]">
+                              <Field label="Material">
+                                <input value={itemManualDraft.material} onChange={(e) => setItemManualDraft((d) => ({ ...d, material: e.target.value }))} placeholder="Nombre..." className={inputCls} />
+                              </Field>
+                            </div>
+                            <div className="w-20">
+                              <Field label="Unidad">
+                                <input value={itemManualDraft.unidad} onChange={(e) => setItemManualDraft((d) => ({ ...d, unidad: e.target.value }))} className={inputCls} />
+                              </Field>
+                            </div>
+                            <div className="w-20">
+                              <Field label="Cant.">
+                                <input type="number" value={itemManualDraft.cantidad} onChange={(e) => setItemManualDraft((d) => ({ ...d, cantidad: Number(e.target.value) }))} className={inputCls} />
+                              </Field>
+                            </div>
+                            <div className="w-28">
+                              <Field label="P. Unitario">
+                                <input type="number" value={itemManualDraft.precioUnitario} onChange={(e) => setItemManualDraft((d) => ({ ...d, precioUnitario: Number(e.target.value) }))} className={inputCls} />
+                              </Field>
+                            </div>
+                            <button type="button" onClick={agregarItemManualPedido} className={btnGhost}>+ Agregar</button>
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-400">Esto es para algo que no estaba en el presupuesto original — se agrega igual, a mano.</div>
+
+                          <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
+                            <div className="font-mono text-lg font-bold text-slate-900">
+                              Total: {fmtARS(pedidoItems.reduce((s, it) => s + (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0), 0))}
+                            </div>
+                            <button disabled={enviandoPedido} onClick={confirmarPedido} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+                              {enviandoPedido ? "Guardando..." : "Confirmar pedido"}
+                            </button>
+                          </div>
+                        </Panel>
+                      )}
+
+                      {pedidosObra.length > 0 && (
+                        <div>
+                          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pedidos de esta obra</div>
+                          <div className="space-y-3">
+                            {[...pedidosObra].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((p) => (
+                              <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <span className="font-semibold text-slate-900">{p.proveedor || "Proveedor sin especificar"}</span>
+                                    <span className="ml-2"><Badge estado={p.estado === "Recibido" ? "Recibida" : "Pendiente"} /></span>
+                                  </div>
+                                  <span className="text-xs text-slate-400">{fmtFecha(p.fecha)} · {p.items.length} ítem(s) · <span className="font-mono font-semibold text-slate-600">{fmtARS(p.total)}</span></span>
+                                </div>
+                                <div className="mt-2 text-xs text-slate-500">{p.items.map((it) => it.material).join(", ")}</div>
+                                {p.estado !== "Recibido" && (
+                                  <button onClick={() => marcarPedidoRecibido(p)} className="mt-2 flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                                    <Check size={13} /> Marcar como recibido en obra
+                                  </button>
+                                )}
+                              </div>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
+                          </div>
+                        </div>
+                      )}
                     </>
                   );
                 })()}
