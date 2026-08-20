@@ -442,10 +442,13 @@ export default function ConcretarApp() {
     { id: 3, categoria: "Materiales", subcategoria: "Electricidad", tipo: "Daisa", nombre: "Caño Daisa 3/4", unidad: "Metro", ultimoPrecio: 450, ultimoProveedor: "Electromecánica Ríos" },
     { id: 4, categoria: "Materiales", subcategoria: "Plomería", tipo: "Grifería", nombre: "Grifería FV monocomando", unidad: "Unidad", ultimoPrecio: 35000, ultimoProveedor: "Corralón San Martín" },
   ];
+  const DEMO_PRESUPUESTO_GENERAL = [
+    { id: 1, obraId: 1, totalManoObra: 16800869, totalEquipos: 873612.6, totalMateriales: 12187643.87, precioTotalSinIva: 43793871.95, precioTotalConIva: 52990585.06, fechaImportacion: "2026-08-01" },
+  ];
   const DEMO_PRESUPUESTO_MATERIALES = [
-    { id: 1, obraId: 1, categoria: "Materiales", subcategoria: "Civil", tipo: "Hierros Nervurados", material: "Hierro fi 10mm", unidad: "Barra", cantidad: 150, precioUnitario: 12000, total: 1800000, fechaNecesaria: "2026-09-20", observaciones: "", origen: "Excel", pedidoId: null },
-    { id: 2, obraId: 1, categoria: "Materiales", subcategoria: "Civil", tipo: "", material: "Cemento", unidad: "Bolsa", cantidad: 200, precioUnitario: 8500, total: 1700000, fechaNecesaria: "2026-09-15", observaciones: "", origen: "Excel", pedidoId: null },
-    { id: 3, obraId: 1, categoria: "Materiales", subcategoria: "Electricidad", tipo: "Daisa", material: "Caño Daisa 3/4", unidad: "Metro", cantidad: 300, precioUnitario: 450, total: 135000, fechaNecesaria: "2026-10-05", observaciones: "", origen: "Excel", pedidoId: null },
+    { id: 1, obraId: 1, categoria: "Materiales", subcategoria: "Materiales Civiles", tipo: "", material: "Cemento x 25kg", unidad: "und.", cantidad: 30, precioUnitario: 5775, total: 173250, observaciones: "", origen: "Excel", pedidoId: null },
+    { id: 2, obraId: 1, categoria: "Materiales", subcategoria: "Materiales Civiles", tipo: "", material: "Barra hierro 8mm", unidad: "und.", cantidad: 5, precioUnitario: 8085, total: 40425, observaciones: "", origen: "Excel", pedidoId: null },
+    { id: 3, obraId: 1, categoria: "Equipos", subcategoria: "", tipo: "", material: "Contenedor", unidad: "und.", cantidad: 2, precioUnitario: 150000, total: 300000, observaciones: "", origen: "Excel", pedidoId: null },
   ];
   const DEMO_PEDIDOS_MATERIALES = [];
   const DEMO_OC = [
@@ -498,6 +501,7 @@ export default function ConcretarApp() {
   const [subcategoriasMat, setSubcategoriasMat] = useState(isSupabaseConfigured ? [] : DEMO_SUBCATEGORIAS_MAT);
   const [tiposMaterial, setTiposMaterial] = useState(isSupabaseConfigured ? [] : DEMO_TIPOS_MATERIAL);
   const [catalogoMateriales, setCatalogoMateriales] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_MATERIALES);
+  const [presupuestoGeneral, setPresupuestoGeneral] = useState(isSupabaseConfigured ? [] : DEMO_PRESUPUESTO_GENERAL);
   const [presupuestoMateriales, setPresupuestoMateriales] = useState(isSupabaseConfigured ? [] : DEMO_PRESUPUESTO_MATERIALES);
   const [pedidosMateriales, setPedidosMateriales] = useState(isSupabaseConfigured ? [] : DEMO_PEDIDOS_MATERIALES);
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
@@ -516,14 +520,14 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, sm, tm, cma, pma, ped] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, sm, tm, cma, pma, ped, pg] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
           sbSelect("catalogo_nombres_herramienta"), sbSelect("catalogo_marcas"), sbSelect("catalogo_herramientas_chicas"),
           sbSelect("proveedores"), sbSelect("remitos"), sbSelect("auditorias_herramientas"), sbSelect("feriados"),
           sbSelect("subcategorias_material"), sbSelect("tipos_material"), sbSelect("catalogo_materiales"), sbSelect("presupuesto_materiales"),
-          sbSelect("pedidos_materiales"),
+          sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -548,6 +552,7 @@ export default function ConcretarApp() {
         setCatalogoMateriales(cma);
         setPresupuestoMateriales(pma);
         setPedidosMateriales(ped);
+        setPresupuestoGeneral(pg);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -1005,8 +1010,8 @@ export default function ConcretarApp() {
   function diasHasta(fechaStr) {
     return Math.round((fechaLocal(fechaStr) - fechaLocal(hoyISO())) / 86400000);
   }
-  const materialesVencidos = presupuestoMateriales.filter((m) => !m.pedidoId && m.fechaNecesaria && diasHasta(m.fechaNecesaria) < 0);
-  const materialesProximos = presupuestoMateriales.filter((m) => !m.pedidoId && m.fechaNecesaria && diasHasta(m.fechaNecesaria) >= 0 && diasHasta(m.fechaNecesaria) <= 7);
+  const materialesVencidos = pedidosMateriales.filter((p) => p.estado === "Pendiente" && p.fechaNecesaria && diasHasta(p.fechaNecesaria) < 0);
+  const materialesProximos = pedidosMateriales.filter((p) => p.estado === "Pendiente" && p.fechaNecesaria && diasHasta(p.fechaNecesaria) >= 0 && diasHasta(p.fechaNecesaria) <= 2);
 
   const totalAlertas =
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
@@ -1598,6 +1603,7 @@ export default function ConcretarApp() {
   const [nuevoTipo, setNuevoTipo] = useState("");
   const [obraPresupuestoId, setObraPresupuestoId] = useState(obras[0]?.id ?? "");
   const [filasImportadas, setFilasImportadas] = useState([]);
+  const [resumenImportado, setResumenImportado] = useState(null);
   const [archivoNombre, setArchivoNombre] = useState("");
   const [importando, setImportando] = useState(false);
   const fileInputRef = useRef(null);
@@ -1613,13 +1619,88 @@ export default function ConcretarApp() {
     setNuevoTipo("");
   }
 
-  function normalizarFechaExcel(val) {
-    if (!val) return "";
-    if (val instanceof Date) {
-      const y = val.getFullYear(), m = String(val.getMonth() + 1).padStart(2, "0"), d = String(val.getDate()).padStart(2, "0");
-      return `${y}-${m}-${d}`;
+  // ---------- Lector de la Planilla Interna de Costeo (estructura real de Concretar) ----------
+  function buscarFilaYCol(rows, texto, desde = 0) {
+    const t = texto.toUpperCase();
+    for (let i = desde; i < rows.length; i++) {
+      for (let j = 0; j < rows[i].length; j++) {
+        if (typeof rows[i][j] === "string" && rows[i][j].toUpperCase().includes(t)) return [i, j];
+      }
     }
-    return String(val).trim();
+    return [-1, -1];
+  }
+  function numeroDespuesDe(rows, texto, desde = 0) {
+    const [fila, col] = buscarFilaYCol(rows, texto, desde);
+    if (fila < 0) return { valor: 0, fila };
+    for (let j = col + 1; j < rows[fila].length; j++) {
+      if (typeof rows[fila][j] === "number") return { valor: rows[fila][j], fila };
+    }
+    return { valor: 0, fila };
+  }
+  function buscarHeaderItem(rows, desde) {
+    for (let i = desde; i < rows.length; i++) {
+      if (rows[i].some((v) => String(v).trim().toUpperCase() === "ITEM")) return i;
+    }
+    return -1;
+  }
+  function mapaColumnas(headerRow) {
+    const mapa = {};
+    (headerRow || []).forEach((val, idx) => {
+      const t = String(val || "").toUpperCase().trim();
+      if (t.includes("DESCRIP")) mapa.descripcion = idx;
+      else if (t.includes("CANT")) mapa.cantidad = idx;
+      else if (t.startsWith("UM")) mapa.unidad = idx;
+      else if (t.includes("P/UNIT") || t.includes("COSTO UNIT")) mapa.precio = idx;
+      else if (t.includes("P/TOTAL") || t.includes("COSTO TOTAL")) mapa.total = idx;
+    });
+    return mapa;
+  }
+  function leerItemsSeccion(rows, filaHeader, filaFin, categoria) {
+    if (filaHeader < 0 || filaFin < 0) return [];
+    const mapa = mapaColumnas(rows[filaHeader]);
+    const items = [];
+    let subcategoriaActual = "";
+    for (let i = filaHeader + 1; i < filaFin; i++) {
+      const fila = rows[i];
+      const desc = mapa.descripcion !== undefined ? String(fila[mapa.descripcion] || "").trim() : "";
+      if (!desc) continue;
+      const precioRaw = mapa.precio !== undefined ? fila[mapa.precio] : 0;
+      const precio = typeof precioRaw === "number" ? precioRaw : 0;
+      const cantRaw = mapa.cantidad !== undefined ? fila[mapa.cantidad] : "";
+      const sinCantidad = cantRaw === "" || cantRaw === null || cantRaw === undefined;
+      if (precio === 0) {
+        if (sinCantidad) subcategoriaActual = desc; // renglón "título" que agrupa el rubro siguiente
+        continue; // sin precio cargado, no es un ítem pedible todavía
+      }
+      const cantidad = typeof cantRaw === "number" ? cantRaw : 0;
+      const unidad = mapa.unidad !== undefined ? String(fila[mapa.unidad] || "").trim() : "";
+      const totalRaw = mapa.total !== undefined ? fila[mapa.total] : null;
+      const total = typeof totalRaw === "number" ? totalRaw : cantidad * precio;
+      items.push({ categoria, subcategoria: subcategoriaActual, tipo: "", material: desc, unidad, cantidad, precioUnitario: precio, total });
+    }
+    return items;
+  }
+  function parsePresupuestoGeneral(workbook) {
+    const nombreHoja = workbook.SheetNames.includes("Planilla final") ? "Planilla final" : workbook.SheetNames[0];
+    const sheet = workbook.Sheets[nombreHoja];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+
+    const { valor: totalManoObra, fila: filaSubtotalMO } = numeroDespuesDe(rows, "SUBTOTAL M.O.");
+    const [filaInicioEquipos] = buscarFilaYCol(rows, "EQUIPOS/OTROS", filaSubtotalMO + 1);
+    const filaHeaderEquipos = buscarHeaderItem(rows, filaInicioEquipos);
+    const { valor: totalEquipos, fila: filaSubtotalEquipos } = numeroDespuesDe(rows, "SUBTOTAL EQUIPOS", filaHeaderEquipos);
+    const filaHeaderMateriales = buscarHeaderItem(rows, filaSubtotalEquipos);
+    const { valor: totalMateriales, fila: filaSubtotalMateriales } = numeroDespuesDe(rows, "SUBTOTAL MATERIALES", filaHeaderMateriales);
+    const { valor: precioTotalSinIva, fila: filaPrecioSinIva } = numeroDespuesDe(rows, "PRECIO TOTAL $ SIN IVA", filaSubtotalMateriales);
+    const { valor: precioTotalConIva } = numeroDespuesDe(rows, "PRECIO TOTAL $ CON IVA", filaPrecioSinIva);
+
+    const itemsEquipos = leerItemsSeccion(rows, filaHeaderEquipos, filaSubtotalEquipos, "Equipos");
+    const itemsMateriales = leerItemsSeccion(rows, filaHeaderMateriales, filaSubtotalMateriales, "Materiales");
+
+    return {
+      resumen: { totalManoObra, totalEquipos, totalMateriales, precioTotalSinIva, precioTotalConIva },
+      items: [...itemsEquipos, ...itemsMateriales],
+    };
   }
 
   function handleExcelUpload(e) {
@@ -1631,32 +1712,14 @@ export default function ConcretarApp() {
       try {
         const data = new Uint8Array(evt.target.result);
         const wb = XLSX.read(data, { type: "array", cellDates: true });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { range: 2, defval: "" });
-        const parsed = rows
-          .filter((r) => r["Material"] && String(r["Material"]).trim())
-          .map((r) => {
-            const cantidad = Number(r["Cantidad"]) || 0;
-            const precioUnitario = Number(r["Precio Unitario (sin IVA)"]) || 0;
-            return {
-              categoria: String(r["Categoría"] || "Materiales").trim(),
-              subcategoria: String(r["Sub-categoría"] || "").trim(),
-              tipo: String(r["Tipo"] || "").trim(),
-              material: String(r["Material"]).trim(),
-              unidad: String(r["Unidad"] || "").trim(),
-              cantidad,
-              precioUnitario,
-              total: Number(r["Total"]) || cantidad * precioUnitario,
-              fechaNecesaria: normalizarFechaExcel(r["Fecha Necesaria"]),
-              observaciones: String(r["Observaciones"] || "").trim(),
-            };
-          });
-        if (parsed.length === 0) {
-          alert('No se encontraron filas con "Material" completo. Revisá que uses la plantilla (encabezados en la fila 3).');
+        const { resumen, items } = parsePresupuestoGeneral(wb);
+        if (items.length === 0) {
+          alert("No se pudo leer ningún ítem de Equipos o Materiales. Revisá que sea la Planilla Interna de Costeo (hoja \"Planilla final\").");
         }
-        setFilasImportadas(parsed);
+        setResumenImportado(resumen);
+        setFilasImportadas(items);
       } catch (err) {
-        alert("No se pudo leer el archivo. Revisá que sea un .xlsx con el formato de la plantilla.");
+        alert("No se pudo leer el archivo. Revisá que sea la Planilla Interna de Costeo en formato .xlsx.");
       }
     };
     reader.readAsArrayBuffer(file);
@@ -1665,25 +1728,36 @@ export default function ConcretarApp() {
   async function confirmarImportacion() {
     if (filasImportadas.length === 0 || !obraPresupuestoId) return;
     setImportando(true);
+    // Presupuesto general de la obra (referencia para comparar presupuestado vs. real)
+    const existentePG = presupuestoGeneral.find((p) => p.obraId === Number(obraPresupuestoId));
+    if (existentePG) {
+      await updateRecord("presupuesto_general", existentePG.id, { ...resumenImportado, fechaImportacion: hoyISO() }, setPresupuestoGeneral);
+    } else {
+      await addRecord("presupuesto_general", { obraId: Number(obraPresupuestoId), ...resumenImportado, fechaImportacion: hoyISO() }, setPresupuestoGeneral);
+    }
     for (const f of filasImportadas) {
       await addRecord("presupuesto_materiales", { obraId: Number(obraPresupuestoId), ...f, origen: "Excel" }, setPresupuestoMateriales);
+      // Da de alta la sub-categoría detectada en el catálogo, si todavía no existía.
+      if (f.subcategoria && !subcategoriasMat.some((s) => s.categoria === f.categoria && s.nombre === f.subcategoria)) {
+        await addRecord("subcategorias_material", { categoria: f.categoria, nombre: f.subcategoria }, setSubcategoriasMat);
+      }
       const existente = catalogoMateriales.find((m) => m.nombre.toLowerCase() === f.material.toLowerCase() && m.categoria === f.categoria);
       if (existente) {
         if (f.precioUnitario > 0) {
           await updateRecord("catalogo_materiales", existente.id, {
             ultimoPrecio: f.precioUnitario,
             subcategoria: f.subcategoria || existente.subcategoria,
-            tipo: f.tipo || existente.tipo,
             unidad: f.unidad || existente.unidad,
           }, setCatalogoMateriales);
         }
       } else {
         await addRecord("catalogo_materiales", {
-          categoria: f.categoria, subcategoria: f.subcategoria, tipo: f.tipo, nombre: f.material, unidad: f.unidad, ultimoPrecio: f.precioUnitario, ultimoProveedor: null,
+          categoria: f.categoria, subcategoria: f.subcategoria, tipo: "", nombre: f.material, unidad: f.unidad, ultimoPrecio: f.precioUnitario, ultimoProveedor: null,
         }, setCatalogoMateriales);
       }
     }
     setFilasImportadas([]);
+    setResumenImportado(null);
     setArchivoNombre("");
     if (fileInputRef.current) fileInputRef.current.value = "";
     setImportando(false);
@@ -1705,6 +1779,7 @@ export default function ConcretarApp() {
   const [showPedidoForm, setShowPedidoForm] = useState(false);
   const [pedidoItems, setPedidoItems] = useState([]);
   const [pedidoProveedor, setPedidoProveedor] = useState("");
+  const [pedidoFechaNecesaria, setPedidoFechaNecesaria] = useState("");
   const [itemManualDraft, setItemManualDraft] = useState({ categoria: "Materiales", subcategoria: "", tipo: "", material: "", unidad: "", cantidad: 1, precioUnitario: 0 });
   const [enviandoPedido, setEnviandoPedido] = useState(false);
 
@@ -1713,14 +1788,21 @@ export default function ConcretarApp() {
   }
 
   function abrirArmadoPedido() {
-    const items = presupuestoMateriales
-      .filter((m) => seleccionPresupuesto.includes(m.id))
-      .map((m) => ({
-        presupuestoId: m.id, categoria: m.categoria, subcategoria: m.subcategoria, tipo: m.tipo,
-        material: m.material, unidad: m.unidad, cantidad: m.cantidad, precioUnitario: m.precioUnitario,
-      }));
+    const seleccionadas = presupuestoMateriales.filter((m) => seleccionPresupuesto.includes(m.id));
+    const items = seleccionadas.map((m) => ({
+      presupuestoId: m.id, categoria: m.categoria, subcategoria: m.subcategoria, tipo: m.tipo,
+      material: m.material, unidad: m.unidad, cantidad: m.cantidad, precioUnitario: m.precioUnitario,
+    }));
+    // Sugiere el proveedor más repetido según el catálogo (última vez que se compró ese material).
+    const conteo = {};
+    seleccionadas.forEach((m) => {
+      const enCatalogo = catalogoMateriales.find((c) => c.nombre.toLowerCase() === m.material.toLowerCase() && c.categoria === m.categoria);
+      if (enCatalogo?.ultimoProveedor) conteo[enCatalogo.ultimoProveedor] = (conteo[enCatalogo.ultimoProveedor] || 0) + 1;
+    });
+    const sugerido = Object.entries(conteo).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
     setPedidoItems(items);
-    setPedidoProveedor("");
+    setPedidoProveedor(sugerido);
+    setPedidoFechaNecesaria("");
     setShowPedidoForm(true);
   }
 
@@ -1741,12 +1823,17 @@ export default function ConcretarApp() {
       alert("Agregá al menos un ítem al pedido.");
       return;
     }
+    if (!pedidoFechaNecesaria) {
+      alert("Elegí para cuándo lo necesitás.");
+      return;
+    }
     setEnviandoPedido(true);
     const itemsFinales = pedidoItems.map((it) => ({ ...it, total: (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0) }));
     const totalPedido = itemsFinales.reduce((s, it) => s + it.total, 0);
     const pedidoCreado = await addRecord("pedidos_materiales", {
       obraId: Number(obraPresupuestoId),
       fecha: hoyISO(),
+      fechaNecesaria: pedidoFechaNecesaria,
       proveedor: pedidoProveedor,
       estado: "Pendiente",
       items: itemsFinales,
@@ -1763,6 +1850,7 @@ export default function ConcretarApp() {
     setSeleccionPresupuesto([]);
     setPedidoItems([]);
     setPedidoProveedor("");
+    setPedidoFechaNecesaria("");
     setShowPedidoForm(false);
     setEnviandoPedido(false);
   }
@@ -2043,13 +2131,13 @@ export default function ConcretarApp() {
                     <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
                       <div className="flex items-center gap-2 font-semibold">
                         <Package size={16} />
-                        {materialesVencidos.length} material(es) con fecha necesaria vencida — sin pedir todavía.
+                        {materialesVencidos.length} pedido(s) con fecha necesaria vencida — sin recibir todavía.
                       </div>
                       <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
-                        {materialesVencidos.slice(0, 5).map((m) => (
-                          <li key={m.id}>
-                            <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(m.obraId); }} className="underline hover:no-underline">
-                              {m.material} — {obras.find((o) => o.id === m.obraId)?.nombre} (necesitaba el {fmtFecha(m.fechaNecesaria)})
+                        {materialesVencidos.slice(0, 5).map((p) => (
+                          <li key={p.id}>
+                            <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="underline hover:no-underline">
+                              {p.items.map((it) => it.material).join(", ")} — {obras.find((o) => o.id === p.obraId)?.nombre} (necesitaba el {fmtFecha(p.fechaNecesaria)})
                             </button>
                           </li>
                         ))}
@@ -2060,13 +2148,13 @@ export default function ConcretarApp() {
                     <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                       <div className="flex items-center gap-2 font-semibold">
                         <Package size={16} />
-                        {materialesProximos.length} material(es) necesarios en los próximos 7 días.
+                        {materialesProximos.length} pedido(s) necesarios en los próximos 2 días.
                       </div>
                       <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
-                        {materialesProximos.slice(0, 5).map((m) => (
-                          <li key={m.id}>
-                            <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(m.obraId); }} className="underline hover:no-underline">
-                              {m.material} — {obras.find((o) => o.id === m.obraId)?.nombre} (en {diasHasta(m.fechaNecesaria)} día{diasHasta(m.fechaNecesaria) === 1 ? "" : "s"})
+                        {materialesProximos.slice(0, 5).map((p) => (
+                          <li key={p.id}>
+                            <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="underline hover:no-underline">
+                              {p.items.map((it) => it.material).join(", ")} — {obras.find((o) => o.id === p.obraId)?.nombre} (en {diasHasta(p.fechaNecesaria)} día{diasHasta(p.fechaNecesaria) === 1 ? "" : "s"})
                             </button>
                           </li>
                         ))}
@@ -3756,21 +3844,46 @@ export default function ConcretarApp() {
                 </div>
 
                 <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-                  Usá la plantilla (columnas: Categoría, Sub-categoría, Tipo, Material, Unidad, Cantidad, Precio Unitario sin IVA, Total, Fecha Necesaria, Observaciones — encabezados en la fila 3). Lo que importés queda como presupuesto base de esa obra; después se puede armar el pedido real ajustando cantidades, en la próxima etapa.
+                  Subí la Planilla Interna para Costeo tal cual la usás (hoja "Planilla final"). La app lee sola las secciones de Mano de Obra, Equipos/Otros y Materiales, agrupando por rubro según los títulos que ya usás adentro de la planilla (Materiales Civiles, Daisa, etc.). Cuando armés el pedido real, ahí elegís la fecha en que lo necesitás — 2 días antes te avisa en el Dashboard.
                 </div>
 
                 {filasImportadas.length > 0 && (
                   <Panel
-                    title={`Vista previa — ${filasImportadas.length} fila(s) para "${obras.find((o) => o.id === Number(obraPresupuestoId))?.nombre}"`}
+                    title={`Vista previa — Planilla Interna para "${obras.find((o) => o.id === Number(obraPresupuestoId))?.nombre}"`}
                     action={<button onClick={cancelarImportacion}><X size={16} /></button>}
                   >
+                    {resumenImportado && (
+                      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        <div className="rounded-md border border-stone-200 bg-stone-50 p-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Mano de Obra</div>
+                          <div className="font-mono font-bold text-slate-900">{fmtARS(resumenImportado.totalManoObra)}</div>
+                        </div>
+                        <div className="rounded-md border border-stone-200 bg-stone-50 p-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Equipos</div>
+                          <div className="font-mono font-bold text-slate-900">{fmtARS(resumenImportado.totalEquipos)}</div>
+                        </div>
+                        <div className="rounded-md border border-stone-200 bg-stone-50 p-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Materiales</div>
+                          <div className="font-mono font-bold text-slate-900">{fmtARS(resumenImportado.totalMateriales)}</div>
+                        </div>
+                        <div className="rounded-md border border-amber-300 bg-amber-50 p-3">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Precio total sin IVA</div>
+                          <div className="font-mono font-bold text-slate-900">{fmtARS(resumenImportado.precioTotalSinIva)}</div>
+                        </div>
+                        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 sm:col-span-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Precio total con IVA</div>
+                          <div className="font-mono font-bold text-slate-900">{fmtARS(resumenImportado.precioTotalConIva)}</div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="mb-2 text-[11px] text-slate-400">{filasImportadas.length} ítem(s) de Equipos y Materiales detectados (Mano de Obra queda como referencia, no se pide a proveedores):</div>
                     <div className="max-h-72 overflow-y-auto rounded-md border border-stone-200">
                       <table className="w-full text-left text-xs">
                         <thead className="sticky top-0 bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                           <tr>
-                            <th className="px-2 py-2">Categ.</th><th className="px-2 py-2">Sub-categ.</th><th className="px-2 py-2">Tipo</th><th className="px-2 py-2">Material</th>
+                            <th className="px-2 py-2">Categ.</th><th className="px-2 py-2">Sub-categoría (rubro)</th><th className="px-2 py-2">Material</th>
                             <th className="px-2 py-2">Unidad</th><th className="px-2 py-2 text-right">Cant.</th><th className="px-2 py-2 text-right">P. Unit.</th>
-                            <th className="px-2 py-2 text-right">Total</th><th className="px-2 py-2">Fecha</th>
+                            <th className="px-2 py-2 text-right">Total</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3778,13 +3891,11 @@ export default function ConcretarApp() {
                             <tr key={i} className="border-t border-stone-100">
                               <td className="px-2 py-1.5">{f.categoria}</td>
                               <td className="px-2 py-1.5">{f.subcategoria || "—"}</td>
-                              <td className="px-2 py-1.5">{f.tipo || "—"}</td>
                               <td className="px-2 py-1.5 font-medium text-slate-800">{f.material}</td>
                               <td className="px-2 py-1.5">{f.unidad}</td>
                               <td className="px-2 py-1.5 text-right font-mono">{f.cantidad}</td>
                               <td className="px-2 py-1.5 text-right font-mono">{fmtARS(f.precioUnitario)}</td>
                               <td className="px-2 py-1.5 text-right font-mono">{fmtARS(f.total)}</td>
-                              <td className="px-2 py-1.5">{f.fechaNecesaria ? fmtFecha(f.fechaNecesaria) : "—"}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -3803,8 +3914,44 @@ export default function ConcretarApp() {
                   const lineasObra = presupuestoMateriales.filter((m) => m.obraId === Number(obraPresupuestoId));
                   const totalObra = lineasObra.reduce((s, m) => s + (m.total || 0), 0);
                   const pedidosObra = pedidosMateriales.filter((p) => p.obraId === Number(obraPresupuestoId));
+                  const pg = presupuestoGeneral.find((p) => p.obraId === Number(obraPresupuestoId));
+                  const gastoRealObra = comprasFacturas.filter((c) => c.obraId === Number(obraPresupuestoId)).reduce((s, c) => s + (c.monto || 0), 0);
                   return (
                     <>
+                      {pg && (
+                        <Panel title="Presupuestado vs. Real">
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div>
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Mano de Obra (pres.)</div>
+                              <div className="font-mono font-semibold text-slate-700">{fmtARS(pg.totalManoObra)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Equipos + Materiales (pres.)</div>
+                              <div className="font-mono font-semibold text-slate-700">{fmtARS(pg.totalEquipos + pg.totalMateriales)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total presupuestado sin IVA</div>
+                              <div className="font-mono font-bold text-slate-900">{fmtARS(pg.precioTotalSinIva)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Gastado real hasta hoy</div>
+                              <div className={`font-mono font-bold ${gastoRealObra > pg.precioTotalSinIva ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(gastoRealObra)}</div>
+                            </div>
+                          </div>
+                          <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-100">
+                            <div
+                              className={`h-full ${gastoRealObra > pg.precioTotalSinIva ? "bg-rose-500" : "bg-emerald-500"}`}
+                              style={{ width: `${Math.min(100, (gastoRealObra / (pg.precioTotalSinIva || 1)) * 100)}%` }}
+                            />
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-400">
+                            {gastoRealObra > pg.precioTotalSinIva
+                              ? `Superó el presupuesto por ${fmtARS(gastoRealObra - pg.precioTotalSinIva)}.`
+                              : `Queda ${fmtARS(pg.precioTotalSinIva - gastoRealObra)} disponible sobre lo presupuestado.`}
+                          </div>
+                        </Panel>
+                      )}
+
                       {lineasObra.length === 0 ? (
                         <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
                           Todavía no hay presupuesto importado para esta obra.
@@ -3813,7 +3960,7 @@ export default function ConcretarApp() {
                         <>
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total presupuestado (sin IVA)</div>
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Equipos + Materiales importados (sin IVA)</div>
                               <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalObra)}</div>
                             </div>
                             {seleccionPresupuesto.length > 0 && (
@@ -3827,15 +3974,13 @@ export default function ConcretarApp() {
                               <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                 <tr>
                                   <th className="px-3 py-3"></th>
-                                  <th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Sub-categoría</th><th className="px-4 py-3">Tipo</th><th className="px-4 py-3">Material</th>
+                                  <th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Sub-categoría (rubro)</th><th className="px-4 py-3">Material</th>
                                   <th className="px-4 py-3">Unidad</th><th className="px-4 py-3 text-right">Cantidad</th><th className="px-4 py-3 text-right">P. Unitario</th>
-                                  <th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3">Fecha necesaria</th><th className="px-4 py-3"></th>
+                                  <th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3"></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {lineasObra.map((m) => {
-                                  const dias = m.fechaNecesaria ? diasHasta(m.fechaNecesaria) : null;
-                                  const urgencia = dias === null ? "" : dias < 0 ? "font-semibold text-rose-600" : dias <= 7 ? "font-semibold text-amber-700" : "text-slate-600";
                                   const yaPedido = !!m.pedidoId;
                                   return (
                                     <tr key={m.id} className={`border-t border-stone-100 ${yaPedido ? "opacity-50" : ""}`}>
@@ -3848,16 +3993,11 @@ export default function ConcretarApp() {
                                       </td>
                                       <td className="px-4 py-2.5 text-slate-600">{m.categoria}</td>
                                       <td className="px-4 py-2.5 text-slate-600">{m.subcategoria || "—"}</td>
-                                      <td className="px-4 py-2.5 text-slate-600">{m.tipo || "—"}</td>
                                       <td className="px-4 py-2.5 font-medium text-slate-900">{m.material}</td>
                                       <td className="px-4 py-2.5 text-slate-600">{m.unidad}</td>
                                       <td className="px-4 py-2.5 text-right font-mono">{m.cantidad}</td>
                                       <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
                                       <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.total)}</td>
-                                      <td className={`px-4 py-2.5 ${urgencia}`}>
-                                        {m.fechaNecesaria ? fmtFecha(m.fechaNecesaria) : "—"}
-                                        {dias !== null && dias < 0 && !yaPedido && <span className="ml-1 text-[10px] uppercase">Vencido</span>}
-                                      </td>
                                       <td className="px-4 py-2.5">{!yaPedido && <button onClick={() => eliminarLineaPresupuesto(m.id)} className="text-slate-400 hover:text-rose-600"><X size={14} /></button>}</td>
                                     </tr>
                                   );
@@ -3870,12 +4010,23 @@ export default function ConcretarApp() {
 
                       {showPedidoForm && (
                         <Panel title="Armar pedido" action={<button onClick={() => setShowPedidoForm(false)}><X size={16} /></button>}>
-                          <div className="mb-4 max-w-xs">
-                            <Field label="Proveedor (opcional)">
-                              <select value={pedidoProveedor} onChange={(e) => setPedidoProveedor(e.target.value)} className={inputCls}>
-                                <option value="">Sin especificar</option>
-                                {proveedores.filter((p) => p.esTaller !== "Sí").map((p) => <option key={p.id} value={p.razonSocial}>{p.razonSocial}</option>)}
-                              </select>
+                          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-md">
+                            <div>
+                              <Field label="Proveedor">
+                                <select value={pedidoProveedor} onChange={(e) => setPedidoProveedor(e.target.value)} className={inputCls}>
+                                  <option value="">Sin especificar</option>
+                                  {pedidoProveedor && !proveedores.some((p) => p.razonSocial === pedidoProveedor) && (
+                                    <option value={pedidoProveedor}>{pedidoProveedor} (sugerido)</option>
+                                  )}
+                                  {proveedores.filter((p) => p.esTaller !== "Sí").map((p) => <option key={p.id} value={p.razonSocial}>{p.razonSocial}</option>)}
+                                </select>
+                              </Field>
+                              {pedidoProveedor && (
+                                <div className="mt-1 text-[11px] text-slate-400">Sugerido según la última compra — cambialo si conseguiste mejor precio.</div>
+                              )}
+                            </div>
+                            <Field label="¿Cuándo lo necesitás?">
+                              <input type="date" required value={pedidoFechaNecesaria} onChange={(e) => setPedidoFechaNecesaria(e.target.value)} className={inputCls} />
                             </Field>
                           </div>
 
@@ -3973,23 +4124,33 @@ export default function ConcretarApp() {
                         <div>
                           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pedidos de esta obra</div>
                           <div className="space-y-3">
-                            {[...pedidosObra].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((p) => (
-                              <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div>
-                                    <span className="font-semibold text-slate-900">{p.proveedor || "Proveedor sin especificar"}</span>
-                                    <span className="ml-2"><Badge estado={p.estado === "Recibido" ? "Recibida" : "Pendiente"} /></span>
+                            {[...pedidosObra].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((p) => {
+                              const dias = p.fechaNecesaria ? diasHasta(p.fechaNecesaria) : null;
+                              const urgencia = p.estado === "Recibido" || dias === null ? "text-slate-400" : dias < 0 ? "font-semibold text-rose-600" : dias <= 2 ? "font-semibold text-amber-700" : "text-slate-500";
+                              return (
+                                <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                      <span className="font-semibold text-slate-900">{p.proveedor || "Proveedor sin especificar"}</span>
+                                      <span className="ml-2"><Badge estado={p.estado === "Recibido" ? "Recibida" : "Pendiente"} /></span>
+                                    </div>
+                                    <span className="text-xs text-slate-400">{fmtFecha(p.fecha)} · {p.items.length} ítem(s) · <span className="font-mono font-semibold text-slate-600">{fmtARS(p.total)}</span></span>
                                   </div>
-                                  <span className="text-xs text-slate-400">{fmtFecha(p.fecha)} · {p.items.length} ítem(s) · <span className="font-mono font-semibold text-slate-600">{fmtARS(p.total)}</span></span>
+                                  <div className="mt-2 text-xs text-slate-500">{p.items.map((it) => it.material).join(", ")}</div>
+                                  {p.fechaNecesaria && (
+                                    <div className={`mt-1 text-xs ${urgencia}`}>
+                                      Necesario para el {fmtFecha(p.fechaNecesaria)}
+                                      {p.estado !== "Recibido" && dias !== null && dias < 0 && " — VENCIDO"}
+                                    </div>
+                                  )}
+                                  {p.estado !== "Recibido" && (
+                                    <button onClick={() => marcarPedidoRecibido(p)} className="mt-2 flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                                      <Check size={13} /> Marcar como recibido en obra
+                                    </button>
+                                  )}
                                 </div>
-                                <div className="mt-2 text-xs text-slate-500">{p.items.map((it) => it.material).join(", ")}</div>
-                                {p.estado !== "Recibido" && (
-                                  <button onClick={() => marcarPedidoRecibido(p)} className="mt-2 flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-                                    <Check size={13} /> Marcar como recibido en obra
-                                  </button>
-                                )}
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
