@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { createClient } from "@supabase/supabase-js";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -47,12 +47,14 @@ function hoyISO() {
 }
 
 const ESTADOS_HERRAMIENTA = ["Disponible", "En Obra", "En Reparación", "Mal Estado", "Rota"];
+const ESTADOS_OBRA = ["En curso", "Pausada", "Finalizada"];
 const ESTADOS_ITEM_COMBO = ["Entregado", "Roto", "Perdido", "Devuelto"];
 const TIPOS_CAJA = ["Electricista", "Civil", "Pintor", "Metalúrgico"];
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const DIAS_SEMANA_JS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
 const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
+const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
 const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
 const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Otros"];
 const CATEGORIAS_HERRAMIENTA = ["Herramienta Eléctrica", "Herramienta Manual", "Equipo Eléctrico", "Equipo a Combustión"];
@@ -179,6 +181,10 @@ const BADGE_STYLES = {
   Perdido: "border-rose-600 text-rose-700",
   Devuelto: "border-slate-400 text-slate-500",
   Pendiente: "border-slate-400 text-slate-500",
+  Solicitado: "border-sky-600 text-sky-700",
+  Aprobado: "border-emerald-600 text-emerald-700",
+  Rechazado: "border-rose-600 text-rose-700",
+  Facturado: "border-indigo-600 text-indigo-700",
   "Requiere aprobación": "border-rose-600 text-rose-700",
   Aprobada: "border-amber-600 text-amber-700",
   Recibida: "border-emerald-600 text-emerald-700",
@@ -187,6 +193,8 @@ const BADGE_STYLES = {
   Blanco: "border-sky-600 text-sky-700",
   Negro: "border-slate-600 text-slate-700",
   "En curso": "border-amber-600 text-amber-700",
+  Pausada: "border-slate-400 text-slate-500",
+  Finalizada: "border-emerald-600 text-emerald-700",
   Finalizada: "border-emerald-600 text-emerald-700",
   Activo: "border-emerald-600 text-emerald-700",
   Licencia: "border-amber-600 text-amber-700",
@@ -248,6 +256,33 @@ function Field({ label, children }) {
 
 const inputCls = "rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30";
 const btnGhost = "rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-stone-100";
+
+// Campo de plata: mientras escribís va agregando puntos de miles y ",00" de decimales
+// en vivo (1 -> 1,00 -> 10 -> 10,00 -> 1000 -> 1.000,00), como en una caja registradora.
+// Funciona tanto con formularios controlados (value+onChange) como con FormData (name).
+function MoneyInput({ name, value, onChange, className, placeholder, required }) {
+  const [raw, setRaw] = useState(value !== undefined && value !== null && value !== "" ? String(Math.round(Number(value))) : "");
+  function handleChange(e) {
+    const digitos = e.target.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+    setRaw(digitos);
+    if (onChange) onChange(digitos === "" ? 0 : parseInt(digitos, 10));
+  }
+  const num = raw === "" ? 0 : parseInt(raw, 10);
+  const display = raw === "" ? "" : new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+  return (
+    <>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={display}
+        onChange={handleChange}
+        placeholder={placeholder || "0,00"}
+        className={className || inputCls}
+      />
+      {name && <input type="hidden" name={name} value={num} required={required} />}
+    </>
+  );
+}
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
 
 function PhotoInput({ label, value, onChange }) {
@@ -304,12 +339,12 @@ function monthsBetween(d1, d2) {
 }
 
 export default function ConcretarApp() {
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTab] = useState("general");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const DEMO_OBRAS = [
-    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], horaApertura: "08:00", diaCierre: "Viernes", horaCierre: "18:00" },
-    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"], horaApertura: "07:30", diaCierre: "Viernes", horaCierre: "17:30" },
+    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", clienteId: 1, presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], horaApertura: "08:00", diaCierre: "Viernes", horaCierre: "18:00" },
+    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", clienteId: 2, presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"], horaApertura: "07:30", diaCierre: "Viernes", horaCierre: "17:30" },
   ];
   const DEMO_PERSONAL = [
     { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
@@ -394,6 +429,10 @@ export default function ConcretarApp() {
     { id: 1, razonSocial: "Corralón San Martín", cuit: "30-12345678-9", domicilio: "Ruta 40 km 12, San Juan", contacto: "Marcos Díaz", telefono: "264-4000001", esTaller: "No" },
     { id: 2, razonSocial: "Electromecánica Ríos", cuit: "30-98765432-1", domicilio: "Av. Libertador 850, San Juan", contacto: "Ríos Hnos.", telefono: "264-4000002", esTaller: "Sí" },
   ];
+  const DEMO_CLIENTES = [
+    { id: 1, razonSocial: "Consorcio Belgrano SA", cuit: "30-55566677-8", domicilio: "Belgrano 450, San Juan", contacto: "Adm. Belgrano", telefono: "264-4100001" },
+    { id: 2, razonSocial: "Fam. Ledesma", cuit: "", domicilio: "Yerba Buena, San Juan", contacto: "Roberto Ledesma", telefono: "264-4100002" },
+  ];
   const DEMO_REMITOS = [
     {
       id: 1,
@@ -451,6 +490,7 @@ export default function ConcretarApp() {
     { id: 3, obraId: 1, categoria: "Equipos", subcategoria: "", tipo: "", material: "Contenedor", unidad: "und.", cantidad: 2, precioUnitario: 150000, total: 300000, observaciones: "", origen: "Excel", pedidoId: null },
   ];
   const DEMO_PEDIDOS_MATERIALES = [];
+  const DEMO_STOCK_MATERIALES = [];
   const DEMO_OC = [
     { id: 1, fecha: "2026-07-02", obraId: 1, proveedor: "Corralón San Martín", item: "Cemento x50, hierro 8mm x200", montoEstimado: 4200000, estado: "Recibida" },
     { id: 2, fecha: "2026-08-05", obraId: 1, proveedor: "Aberturas del Norte", item: "Ventanas de aluminio (12 unid.)", montoEstimado: 6800000, estado: "Requiere aprobación" },
@@ -495,6 +535,7 @@ export default function ConcretarApp() {
   const [catalogoMarcas, setCatalogoMarcas] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_MARCAS);
   const [catalogoChicas, setCatalogoChicas] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_CHICAS);
   const [proveedores, setProveedores] = useState(isSupabaseConfigured ? [] : DEMO_PROVEEDORES);
+  const [clientes, setClientes] = useState(isSupabaseConfigured ? [] : DEMO_CLIENTES);
   const [remitos, setRemitos] = useState(isSupabaseConfigured ? [] : DEMO_REMITOS);
   const [auditorias, setAuditorias] = useState(isSupabaseConfigured ? [] : DEMO_AUDITORIAS);
   const [feriados, setFeriados] = useState(isSupabaseConfigured ? [] : DEMO_FERIADOS);
@@ -504,6 +545,7 @@ export default function ConcretarApp() {
   const [presupuestoGeneral, setPresupuestoGeneral] = useState(isSupabaseConfigured ? [] : DEMO_PRESUPUESTO_GENERAL);
   const [presupuestoMateriales, setPresupuestoMateriales] = useState(isSupabaseConfigured ? [] : DEMO_PRESUPUESTO_MATERIALES);
   const [pedidosMateriales, setPedidosMateriales] = useState(isSupabaseConfigured ? [] : DEMO_PEDIDOS_MATERIALES);
+  const [stockMateriales, setStockMateriales] = useState(isSupabaseConfigured ? [] : DEMO_STOCK_MATERIALES);
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
   const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
   const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
@@ -520,14 +562,14 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, sm, tm, cma, pma, ped, pg] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
           sbSelect("catalogo_nombres_herramienta"), sbSelect("catalogo_marcas"), sbSelect("catalogo_herramientas_chicas"),
-          sbSelect("proveedores"), sbSelect("remitos"), sbSelect("auditorias_herramientas"), sbSelect("feriados"),
+          sbSelect("proveedores"), sbSelect("remitos"), sbSelect("auditorias_herramientas"), sbSelect("feriados"), sbSelect("clientes"),
           sbSelect("subcategorias_material"), sbSelect("tipos_material"), sbSelect("catalogo_materiales"), sbSelect("presupuesto_materiales"),
-          sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"),
+          sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -544,6 +586,7 @@ export default function ConcretarApp() {
         setCatalogoMarcas(cm);
         setCatalogoChicas(cch);
         setProveedores(pv);
+        setClientes(cli);
         setRemitos(rm);
         setAuditorias(au);
         setFeriados(fer);
@@ -553,6 +596,7 @@ export default function ConcretarApp() {
         setPresupuestoMateriales(pma);
         setPedidosMateriales(ped);
         setPresupuestoGeneral(pg);
+        setStockMateriales(stk);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -662,13 +706,35 @@ export default function ConcretarApp() {
   function obraActualDe(p) {
     if (p.tipoTrabajador === "Tantero") {
       const grupo = tanteros.find((t) => (t.integrantes || []).includes(p.id));
-      return grupo ? obras.find((o) => o.id === grupo.obraId) || null : null;
+      if (!grupo) return null;
+      const obraGrupo = obras.find((o) => o.id === grupo.obraId);
+      return obraGrupo?.estado === "En curso" ? obraGrupo : null;
     }
     const registros = asistencia
       .filter((a) => a.nombre === nombreCompletoDe(p))
       .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
     if (registros.length === 0) return null;
-    return obras.find((o) => o.id === registros[0].obraId) || null;
+    const obraReciente = obras.find((o) => o.id === registros[0].obraId);
+    return obraReciente?.estado === "En curso" ? obraReciente : null;
+  }
+  function ultimaFechaActividad(p) {
+    const registros = asistencia.filter((a) => a.nombre === nombreCompletoDe(p)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+    return registros[0]?.fecha || null;
+  }
+  // Personal activo, de obra (no Gerencia/RRHH/Logística que trabaja "de todos lados"),
+  // sin ninguna asistencia registrada en los últimos 5 días — candidato a dar de baja.
+  const personalSinObra5Dias = personal.filter((p) => {
+    if (p.estado !== "Activo") return false;
+    if (CATEGORIAS_CENTRO_GENERAL.includes(p.categoria)) return false;
+    if (p.tipoTrabajador === "Tantero") return false; // se rastrean por grupo, no por asistencia diaria
+    const ultima = ultimaFechaActividad(p);
+    if (!ultima) return false;
+    const dias = Math.round((fechaLocal(hoyISO()) - fechaLocal(ultima)) / 86400000);
+    return dias >= 5;
+  });
+  function darDeBajaPersonal(p) {
+    if (!window.confirm(`¿Dar de baja a ${nombreCompletoDe(p)}? Va a dejar de aparecer como personal activo.`)) return;
+    updateRecord("personal", p.id, { estado: "Baja" }, setPersonal);
   }
 
   // ---------- Agrupación para "Personal/Cuadrillas" ----------
@@ -934,7 +1000,7 @@ export default function ConcretarApp() {
   }
 
   const NAV = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "general", label: "General", icon: LayoutDashboard },
     { id: "obras", label: "Obras", icon: Building2 },
     { id: "personal", label: "Personal/Cuadrillas", icon: Users },
     { id: "asistencia", label: "Asistencia", icon: ClipboardCheck },
@@ -945,7 +1011,7 @@ export default function ConcretarApp() {
     { id: "ingresos", label: "Ingresos", icon: TrendingUp },
     { id: "facturas", label: "Compras y Facturas", icon: Receipt },
     { id: "cuentas", label: "Cuentas", icon: Landmark },
-    { id: "proveedores", label: "Proveedores", icon: Truck },
+    { id: "proveedores", label: "Clientes/Proveedores", icon: Truck },
     { id: "calendario", label: "Calendario", icon: CalendarDays },
   ];
 
@@ -1010,16 +1076,116 @@ export default function ConcretarApp() {
   function diasHasta(fechaStr) {
     return Math.round((fechaLocal(fechaStr) - fechaLocal(hoyISO())) / 86400000);
   }
-  const materialesVencidos = pedidosMateriales.filter((p) => p.estado === "Pendiente" && p.fechaNecesaria && diasHasta(p.fechaNecesaria) < 0);
-  const materialesProximos = pedidosMateriales.filter((p) => p.estado === "Pendiente" && p.fechaNecesaria && diasHasta(p.fechaNecesaria) >= 0 && diasHasta(p.fechaNecesaria) <= 2);
+  const pedidoEnCurso = (p) => p.estado === "Solicitado" || p.estado === "Aprobado";
+  const materialesVencidos = pedidosMateriales.filter((p) => pedidoEnCurso(p) && p.fechaNecesaria && diasHasta(p.fechaNecesaria) < 0);
+  const materialesProximos = pedidosMateriales.filter((p) => pedidoEnCurso(p) && p.fechaNecesaria && diasHasta(p.fechaNecesaria) >= 0 && diasHasta(p.fechaNecesaria) <= 2);
+  const pedidosPorAprobar = pedidosMateriales.filter((p) => p.estado === "Solicitado");
 
   const totalAlertas =
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
     (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + obrasEnVentanaCierre.length + obrasSinAperturaLunes.length +
-    materialesVencidos.length + materialesProximos.length;
+    materialesVencidos.length + materialesProximos.length + pedidosPorAprobar.length + personalSinObra5Dias.length;
 
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
+  const [resumenObraImportado, setResumenObraImportado] = useState(null);
+  const [itemsObraImportados, setItemsObraImportados] = useState([]);
+  const [archivoObraNombre, setArchivoObraNombre] = useState("");
+  const [creandoObra, setCreandoObra] = useState(false);
+  const obraFileInputRef = useRef(null);
+
+  function handleExcelUploadNuevaObra(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setArchivoObraNombre(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: "array", cellDates: true });
+        const { resumen, items } = parsePresupuestoGeneral(wb);
+        if (items.length === 0) {
+          alert("No se pudo leer ningún ítem de Equipos, Herramientas o Materiales. Revisá que sea la Planilla Interna de Costeo.");
+        }
+        setResumenObraImportado(resumen);
+        setItemsObraImportados(items);
+      } catch (err) {
+        alert("No se pudo leer el archivo. Revisá que sea la Planilla Interna de Costeo en formato .xlsx.");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  function quitarExcelNuevaObra() {
+    setResumenObraImportado(null);
+    setItemsObraImportados([]);
+    setArchivoObraNombre("");
+    if (obraFileInputRef.current) obraFileInputRef.current.value = "";
+  }
+  async function submitNuevaObra(e) {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    setCreandoObra(true);
+    const nuevaObra = await addRecord("obras", {
+      nombre: f.get("nombre"),
+      clienteId: f.get("clienteId") ? Number(f.get("clienteId")) : null,
+      cliente: clientes.find((c) => c.id === Number(f.get("clienteId")))?.razonSocial || "",
+      presupuesto: Number(f.get("presupuesto")) || resumenObraImportado?.precioTotalConIva || 0,
+      meses: Number(f.get("meses")) || 1,
+      inicio: f.get("inicio"),
+      estado: "En curso",
+      encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
+      diaCierre: f.get("diaCierre"),
+      horaCierre: f.get("horaCierre"),
+    }, setObras);
+    if (nuevaObra && resumenObraImportado) {
+      await addRecord("presupuesto_general", { obraId: nuevaObra.id, ...resumenObraImportado, fechaImportacion: hoyISO() }, setPresupuestoGeneral);
+      for (const it of itemsObraImportados) {
+        await addRecord("presupuesto_materiales", { obraId: nuevaObra.id, ...it, origen: "Excel" }, setPresupuestoMateriales);
+        if (it.subcategoria && !subcategoriasMat.some((s) => s.categoria === it.categoria && s.nombre === it.subcategoria)) {
+          await addRecord("subcategorias_material", { categoria: it.categoria, nombre: it.subcategoria }, setSubcategoriasMat);
+        }
+        const existente = catalogoMateriales.find((m) => m.nombre.toLowerCase() === it.material.toLowerCase() && m.categoria === it.categoria);
+        if (existente) {
+          if (it.precioUnitario > 0) await updateRecord("catalogo_materiales", existente.id, { ultimoPrecio: it.precioUnitario, subcategoria: it.subcategoria || existente.subcategoria, unidad: it.unidad || existente.unidad }, setCatalogoMateriales);
+        } else {
+          await addRecord("catalogo_materiales", { categoria: it.categoria, subcategoria: it.subcategoria, tipo: "", nombre: it.material, unidad: it.unidad, ultimoPrecio: it.precioUnitario, ultimoProveedor: null }, setCatalogoMateriales);
+        }
+      }
+    }
+    e.target.reset();
+    quitarExcelNuevaObra();
+    setCreandoObra(false);
+    setShowObraForm(false);
+  }
+  function cambiarEstadoObra(obra, nuevoEstado) {
+    if ((nuevoEstado === "Pausada" || nuevoEstado === "Finalizada") && !window.confirm(`¿${nuevoEstado === "Pausada" ? "Pausar" : "Finalizar"} "${obra.nombre}"? El personal que estaba afectado queda liberado para asignarse a otra obra.`)) return;
+    updateRecord("obras", obra.id, { estado: nuevoEstado }, setObras);
+  }
+  const [editandoObraId, setEditandoObraId] = useState(null);
+  const [viewingObraId, setViewingObraId] = useState(null);
+  function abrirObra(obra) {
+    setViewingObraId(obra.id);
+    setSelectedObraId(obra.id);
+    setEditandoObraId(null);
+  }
+  function iniciarEdicionObra(obra) {
+    setEditandoObraId(obra.id);
+    setShowObraForm(false);
+    setViewingObraId(null);
+  }
+  function guardarEdicionObra(e, obra) {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const nuevoClienteId = f.get("clienteId") ? Number(f.get("clienteId")) : null;
+    updateRecord("obras", obra.id, {
+      nombre: f.get("nombre"),
+      clienteId: nuevoClienteId,
+      cliente: clientes.find((c) => c.id === nuevoClienteId)?.razonSocial || obra.cliente,
+      presupuesto: Number(f.get("presupuesto")) || obra.presupuesto,
+      encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
+    }, setObras);
+    setEditandoObraId(null);
+  }
   const [showHerrForm, setShowHerrForm] = useState(false);
   const [showOcForm, setShowOcForm] = useState(false);
   const [showFacturaForm, setShowFacturaForm] = useState(false);
@@ -1451,6 +1617,34 @@ export default function ConcretarApp() {
     setProveedorForm(emptyProveedorForm);
     setShowProveedorForm(false);
   }
+  function balanceProveedor(prov) {
+    const facturas = comprasFacturas.filter((c) => c.proveedor === prov.razonSocial);
+    const totalFacturado = facturas.reduce((s, c) => s + (c.monto || 0), 0);
+    const totalPagado = facturas.filter((c) => c.estado === "Pagada").reduce((s, c) => s + (c.monto || 0), 0);
+    return { totalFacturado, totalPagado, saldo: totalFacturado - totalPagado, facturasPendientes: facturas.filter((c) => c.estado !== "Pagada") };
+  }
+  function marcarFacturaPagada(factura) {
+    updateRecord("compras_facturas", factura.id, { estado: "Pagada" }, setComprasFacturas);
+  }
+
+  // ---------- Clientes ----------
+  const emptyClienteForm = { razonSocial: "", cuit: "", domicilio: "", contacto: "", telefono: "" };
+  const [clienteForm, setClienteForm] = useState(emptyClienteForm);
+  const [showClienteForm, setShowClienteForm] = useState(false);
+  const [vistaClientesProveedores, setVistaClientesProveedores] = useState("clientes");
+
+  function submitClienteForm(e) {
+    e.preventDefault();
+    addRecord("clientes", { ...clienteForm }, setClientes);
+    setClienteForm(emptyClienteForm);
+    setShowClienteForm(false);
+  }
+  function balanceCliente(cli) {
+    const obrasCliente = obras.filter((o) => o.clienteId === cli.id);
+    const totalAcordado = obrasCliente.reduce((s, o) => s + (o.presupuesto || 0), 0);
+    const totalCobrado = ingresos.filter((i) => obrasCliente.some((o) => o.id === i.obraId)).reduce((s, i) => s + (i.monto || 0), 0);
+    return { obrasCliente, totalAcordado, totalCobrado, saldo: totalAcordado - totalCobrado };
+  }
 
   // ---------- Remitos (traslados con doble aprobación: salida + recepción) ----------
   const emptyRemitoForm = { origen: "Oficina", destino: "", herramientaIds: [] };
@@ -1496,11 +1690,12 @@ export default function ConcretarApp() {
   }
 
   async function confirmarRecepcionRemito(remito) {
-    if (!window.confirm(`¿Confirmar la recepción del remito en "${remito.destino}"?`)) return;
-    if (remito.pedidoMaterialId) {
-      const pedido = pedidosMateriales.find((p) => p.id === remito.pedidoMaterialId);
-      if (pedido) await recibirPedidoMaterial(pedido);
+    // Los remitos de materiales pueden entregarse parciales (una parte a la obra, el resto a stock) — abren un formulario.
+    if (remito.materialItems?.length > 0) {
+      abrirRecepcionMaterial(remito);
+      return;
     }
+    if (!window.confirm(`¿Confirmar la recepción del remito en "${remito.destino}"?`)) return;
     if (remito.herramientaIds?.length > 0) {
       const nuevoEstado = remito.destinoEsTaller ? "En Reparación" : remito.destino === "Oficina" ? "Disponible" : "En Obra";
       await Promise.all(
@@ -1510,6 +1705,106 @@ export default function ConcretarApp() {
       );
     }
     await updateRecord("remitos", remito.id, { estado: "Recibido", fechaRecepcion: hoyISO(), recibidoPor: currentRole }, setRemitos);
+  }
+
+  // ---------- Recepción parcial de materiales: parte a la obra, parte a Stock general de la empresa ----------
+  const [recibiendoRemitoId, setRecibiendoRemitoId] = useState(null);
+  const [cantidadesRecepcion, setCantidadesRecepcion] = useState([]);
+  const [guardandoRecepcion, setGuardandoRecepcion] = useState(false);
+
+  function abrirRecepcionMaterial(remito) {
+    setRecibiendoRemitoId(remito.id);
+    setCantidadesRecepcion(remito.materialItems.map((it) => it.cantidad)); // por defecto: entra todo a la obra
+  }
+  function actualizarCantidadRecepcion(idx, valor, cantidadMaxima) {
+    const num = Math.max(0, Math.min(Number(valor) || 0, cantidadMaxima));
+    setCantidadesRecepcion((arr) => arr.map((v, i) => (i === idx ? num : v)));
+  }
+  async function confirmarRecepcionMaterialConDivision(remito) {
+    setGuardandoRecepcion(true);
+    const pedido = remito.pedidoMaterialId ? pedidosMateriales.find((p) => p.id === remito.pedidoMaterialId) : null;
+
+    for (let i = 0; i < remito.materialItems.length; i++) {
+      const it = remito.materialItems[i];
+      const cantidadAObra = cantidadesRecepcion[i] ?? it.cantidad;
+      const cantidadAStock = Math.max(0, it.cantidad - cantidadAObra);
+      const precio = it.precioUnitario || 0;
+
+      if (cantidadAObra > 0) {
+        await addRecord("compras_facturas", {
+          fecha: hoyISO(),
+          obraId: remito.destinoObraId ?? pedido?.obraId ?? null,
+          ordenCompraId: null,
+          proveedor: remito.origen,
+          categoria: it.categoria || "Materiales",
+          monto: cantidadAObra * precio,
+          comprobante: pedido?.comprobante || "",
+          estado: "Pendiente",
+          formalidad: "Blanco",
+          cuenta: "Banco",
+        }, setComprasFacturas);
+      }
+      if (cantidadAStock > 0) {
+        const facturaGeneral = await addRecord("compras_facturas", {
+          fecha: hoyISO(),
+          obraId: null,
+          ordenCompraId: null,
+          proveedor: remito.origen,
+          categoria: it.categoria || "Materiales",
+          monto: cantidadAStock * precio,
+          comprobante: pedido?.comprobante || "",
+          estado: "Pendiente",
+          formalidad: "Blanco",
+          cuenta: "Banco",
+        }, setComprasFacturas);
+        const loteExistente = stockMateriales.find((s) => s.material.toLowerCase() === it.material.toLowerCase() && s.categoria === it.categoria && s.precioUnitario === precio);
+        if (loteExistente) {
+          await updateRecord("stock_materiales", loteExistente.id, { cantidad: loteExistente.cantidad + cantidadAStock }, setStockMateriales);
+        } else {
+          await addRecord("stock_materiales", {
+            material: it.material, categoria: it.categoria || "Materiales", subcategoria: it.subcategoria || "",
+            unidad: it.unidad, cantidad: cantidadAStock, precioUnitario: precio,
+            facturaGeneralId: facturaGeneral?.id ?? null, fechaIngreso: hoyISO(),
+          }, setStockMateriales);
+        }
+      }
+    }
+
+    if (pedido) await updateRecord("pedidos_materiales", pedido.id, { estado: "Recibido" }, setPedidosMateriales);
+    await updateRecord("remitos", remito.id, { estado: "Recibido", fechaRecepcion: hoyISO(), recibidoPor: currentRole }, setRemitos);
+    setRecibiendoRemitoId(null);
+    setGuardandoRecepcion(false);
+  }
+
+  // ---------- Stock general de materiales (lo que no entró completo a una obra) ----------
+  const [asignandoStockId, setAsignandoStockId] = useState(null);
+  const [obraParaStock, setObraParaStock] = useState("");
+  const [cantidadParaStock, setCantidadParaStock] = useState(1);
+
+  async function asignarStockAObra(lote) {
+    const cantidad = Math.max(0, Math.min(Number(cantidadParaStock) || 0, lote.cantidad));
+    if (cantidad <= 0 || !obraParaStock) return;
+    const monto = cantidad * lote.precioUnitario;
+    await updateRecord("stock_materiales", lote.id, { cantidad: lote.cantidad - cantidad }, setStockMateriales);
+    if (lote.facturaGeneralId) {
+      const facturaGeneral = comprasFacturas.find((c) => c.id === lote.facturaGeneralId);
+      if (facturaGeneral) await updateRecord("compras_facturas", facturaGeneral.id, { monto: Math.max(0, facturaGeneral.monto - monto) }, setComprasFacturas);
+    }
+    await addRecord("compras_facturas", {
+      fecha: hoyISO(),
+      obraId: Number(obraParaStock),
+      ordenCompraId: null,
+      proveedor: "Stock interno",
+      categoria: lote.categoria || "Materiales",
+      monto,
+      comprobante: "Reasignado desde stock",
+      estado: "Pendiente",
+      formalidad: "Blanco",
+      cuenta: "Banco",
+    }, setComprasFacturas);
+    setAsignandoStockId(null);
+    setObraParaStock("");
+    setCantidadParaStock(1);
   }
 
   // ---------- Auditoría semanal de herramientas: formulario ----------
@@ -1691,15 +1986,37 @@ export default function ConcretarApp() {
     const { valor: totalEquipos, fila: filaSubtotalEquipos } = numeroDespuesDe(rows, "SUBTOTAL EQUIPOS", filaHeaderEquipos);
     const filaHeaderMateriales = buscarHeaderItem(rows, filaSubtotalEquipos);
     const { valor: totalMateriales, fila: filaSubtotalMateriales } = numeroDespuesDe(rows, "SUBTOTAL MATERIALES", filaHeaderMateriales);
-    const { valor: precioTotalSinIva, fila: filaPrecioSinIva } = numeroDespuesDe(rows, "PRECIO TOTAL $ SIN IVA", filaSubtotalMateriales);
-    const { valor: precioTotalConIva } = numeroDespuesDe(rows, "PRECIO TOTAL $ CON IVA", filaPrecioSinIva);
+
+    // Sección opcional "Herramientas" — no todos los presupuestos la tienen. Si no aparece, se sigue de largo sin error.
+    const [filaSubtotalHerr, colSubtotalHerr] = buscarFilaYCol(rows, "SUBTOTAL HERRAMIENTAS", filaSubtotalMateriales);
+    let itemsHerramientas = [];
+    let totalHerramientas = 0;
+    if (filaSubtotalHerr >= 0) {
+      // Busca el header ITEM más cercano ANTES de ese subtotal (puede estar antes o después de Materiales).
+      let filaHeaderHerr = -1;
+      for (let i = filaSubtotalHerr - 1; i >= 0; i--) {
+        if (rows[i].some((v) => String(v).trim().toUpperCase() === "ITEM")) { filaHeaderHerr = i; break; }
+      }
+      const r = numeroDespuesDe(rows, "SUBTOTAL HERRAMIENTAS", filaSubtotalMateriales);
+      totalHerramientas = r.valor;
+      itemsHerramientas = leerItemsSeccion(rows, filaHeaderHerr, filaSubtotalHerr, "Herramientas");
+    }
+
+    // La cascada de Impuestos/Ganancia/IVA es opcional (obra "en negro" sin factura puede no tenerla).
+    const filaDesdeParaCascada = Math.max(filaSubtotalMateriales, filaSubtotalHerr);
+    const { valor: precioTotalSinIvaRaw, fila: filaPrecioSinIva } = numeroDespuesDe(rows, "PRECIO TOTAL $ SIN IVA", filaDesdeParaCascada);
+    const { valor: precioTotalConIvaRaw } = numeroDespuesDe(rows, "PRECIO TOTAL $ CON IVA", filaPrecioSinIva >= 0 ? filaPrecioSinIva : filaDesdeParaCascada);
+    const subtotal123 = totalManoObra + totalEquipos + totalMateriales + totalHerramientas;
+    // Si no se encontró la cascada de IVA (obra en negro), el total es directo la suma de las 3-4 secciones.
+    const precioTotalSinIva = precioTotalSinIvaRaw || subtotal123;
+    const precioTotalConIva = precioTotalConIvaRaw || precioTotalSinIva;
 
     const itemsEquipos = leerItemsSeccion(rows, filaHeaderEquipos, filaSubtotalEquipos, "Equipos");
     const itemsMateriales = leerItemsSeccion(rows, filaHeaderMateriales, filaSubtotalMateriales, "Materiales");
 
     return {
-      resumen: { totalManoObra, totalEquipos, totalMateriales, precioTotalSinIva, precioTotalConIva },
-      items: [...itemsEquipos, ...itemsMateriales],
+      resumen: { totalManoObra, totalEquipos, totalHerramientas, totalMateriales, precioTotalSinIva, precioTotalConIva },
+      items: [...itemsEquipos, ...itemsHerramientas, ...itemsMateriales],
     };
   }
 
@@ -1835,7 +2152,8 @@ export default function ConcretarApp() {
       fecha: hoyISO(),
       fechaNecesaria: pedidoFechaNecesaria,
       proveedor: pedidoProveedor,
-      estado: "Pendiente",
+      estado: "Solicitado",
+      solicitadoPor: currentRole,
       items: itemsFinales,
       total: totalPedido,
     }, setPedidosMateriales);
@@ -1881,10 +2199,100 @@ export default function ConcretarApp() {
     if (!window.confirm(`¿Marcar este pedido como recibido en obra? Esto suma ${fmtARS(pedido.total)} a la curva de inversión real de la obra.`)) return;
     await recibirPedidoMaterial(pedido);
   }
+  const puedeAprobarPedidos = currentRole === "Gerente";
+  function aprobarPedidoMaterial(pedido) {
+    updateRecord("pedidos_materiales", pedido.id, { estado: "Aprobado", aprobadoPor: currentRole, fechaAprobacion: hoyISO() }, setPedidosMateriales);
+  }
+  function rechazarPedidoMaterial(pedido) {
+    if (!window.confirm("¿Rechazar este pedido? El capataz va a tener que volver a armarlo si todavía lo necesita.")) return;
+    updateRecord("pedidos_materiales", pedido.id, { estado: "Rechazado", aprobadoPor: currentRole, fechaAprobacion: hoyISO() }, setPedidosMateriales);
+  }
+
+  // ---------- Orden de Compra en PDF ----------
+  function generarOrdenCompraPDF(pedido) {
+    const obra = obras.find((o) => o.id === pedido.obraId);
+    const prov = proveedores.find((p) => p.razonSocial === pedido.proveedor);
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+
+    doc.setFillColor(2, 29, 52);
+    doc.rect(0, 0, 210, 28, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.text("ORDEN DE COMPRA", 14, 14);
+    doc.setFontSize(10);
+    doc.text(`N° ${String(pedido.id).padStart(5, "0")}  ·  ${fmtFecha(pedido.fecha)}`, 14, 21);
+    doc.text("Grupo Concretar S.A.S.", 150, 14);
+
+    doc.setTextColor(20, 20, 20);
+    doc.setFontSize(10);
+    let y = 38;
+    doc.setFont(undefined, "bold");
+    doc.text("Proveedor", 14, y);
+    doc.setFont(undefined, "normal");
+    doc.text(pedido.proveedor || "Sin especificar", 40, y);
+    y += 6;
+    if (prov?.cuit) { doc.text(`CUIT: ${prov.cuit}`, 14, y); y += 6; }
+    if (prov?.domicilio) { doc.text(`Domicilio: ${prov.domicilio}`, 14, y); y += 6; }
+    if (prov?.contacto) { doc.text(`Contacto: ${prov.contacto}${prov.telefono ? " — " + prov.telefono : ""}`, 14, y); y += 6; }
+
+    doc.setFont(undefined, "bold");
+    doc.text("Obra de destino", 120, 38);
+    doc.setFont(undefined, "normal");
+    doc.text(obra?.nombre || "-", 120, 44);
+    if (pedido.fechaNecesaria) doc.text(`Necesario para: ${fmtFecha(pedido.fechaNecesaria)}`, 120, 50);
+
+    autoTable(doc, {
+      startY: Math.max(y, 56) + 4,
+      head: [["Material", "Unidad", "Cantidad", "P. Unitario (sin IVA)", "Total"]],
+      body: pedido.items.map((it) => [it.material, it.unidad || "-", String(it.cantidad), fmtARS(it.precioUnitario), fmtARS(it.total)]),
+      foot: [["", "", "", "TOTAL", fmtARS(pedido.total)]],
+      headStyles: { fillColor: [2, 29, 52] },
+      footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
+      styles: { fontSize: 9 },
+    });
+
+    const finalY = doc.lastAutoTable.finalY || 100;
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text("Precios estimados según presupuesto — sujetos a corrección con la factura real.", 14, finalY + 8);
+
+    doc.save(`OC_${(obra?.nombre || "obra").replace(/\s+/g, "_")}_${pedido.id}.pdf`);
+  }
+
+  // ---------- Carga de factura real (corrige precios, imputa el gasto final a la obra) ----------
+  const [facturandoPedidoId, setFacturandoPedidoId] = useState(null);
+  const [itemsFacturaDraft, setItemsFacturaDraft] = useState([]);
+  const [comprobanteDraft, setComprobanteDraft] = useState("");
+  const [guardandoFactura, setGuardandoFactura] = useState(false);
+
+  function abrirCargaFactura(pedido) {
+    setFacturandoPedidoId(pedido.id);
+    setItemsFacturaDraft(pedido.items.map((it) => ({ ...it })));
+    setComprobanteDraft("");
+  }
+  function actualizarPrecioFactura(idx, valor) {
+    setItemsFacturaDraft((items) => items.map((it, i) => (i === idx ? { ...it, precioUnitario: valor, total: (Number(it.cantidad) || 0) * (Number(valor) || 0) } : it)));
+  }
+  async function confirmarFacturaReal(pedido) {
+    setGuardandoFactura(true);
+    const itemsFinal = itemsFacturaDraft.map((it) => ({ ...it, total: (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0) }));
+    const totalReal = itemsFinal.reduce((s, it) => s + it.total, 0);
+    await updateRecord("pedidos_materiales", pedido.id, { items: itemsFinal, total: totalReal, estado: "Facturado", comprobante: comprobanteDraft }, setPedidosMateriales);
+    // El gasto real se imputa recién cuando se recibe el remito (ahí se sabe cuánto entró
+    // a esta obra y cuánto quedó en stock general) — acá solo corregimos los precios.
+    for (const it of itemsFinal) {
+      const existente = catalogoMateriales.find((m) => m.nombre.toLowerCase() === it.material.toLowerCase() && m.categoria === it.categoria);
+      if (existente && it.precioUnitario > 0) {
+        await updateRecord("catalogo_materiales", existente.id, { ultimoPrecio: it.precioUnitario, ultimoProveedor: pedido.proveedor || existente.ultimoProveedor }, setCatalogoMateriales);
+      }
+    }
+    setFacturandoPedidoId(null);
+    setGuardandoFactura(false);
+  }
 
   // ---------- Consolidación de pedidos entre obras + generación de remitos por proveedor ----------
   const idsPedidosConRemito = new Set(remitos.filter((r) => r.pedidoMaterialId).map((r) => r.pedidoMaterialId));
-  const pedidosSinEnviar = pedidosMateriales.filter((p) => p.estado === "Pendiente" && !idsPedidosConRemito.has(p.id));
+  const pedidosSinEnviar = pedidosMateriales.filter((p) => (p.estado === "Aprobado" || p.estado === "Facturado") && !idsPedidosConRemito.has(p.id));
 
   function proveedorSugerido(pedido) {
     if (pedido.proveedor) return pedido.proveedor;
@@ -1915,6 +2323,7 @@ export default function ConcretarApp() {
       fecha: hoyISO(),
       origen: proveedor,
       destino: obra.nombre,
+      destinoObraId: obra.id,
       destinoEsTaller: false,
       destinoProveedorId: null,
       herramientaIds: [],
@@ -2005,7 +2414,7 @@ export default function ConcretarApp() {
               }`}
             >
               <span className="flex items-center gap-3"><item.icon size={17} />{item.label}</span>
-              {item.id === "dashboard" && totalAlertas > 0 && (
+              {item.id === "general" && totalAlertas > 0 && (
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{totalAlertas}</span>
               )}
             </button>
@@ -2033,54 +2442,19 @@ export default function ConcretarApp() {
 
       {/* Main content */}
       <main className="mt-12 flex-1 overflow-y-auto p-4 md:mt-0 md:p-8">
-        {tab === "dashboard" && !obraSel && (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
-            <Building2 size={28} className="text-slate-400" />
-            <div className="text-sm font-semibold text-slate-700">Todavía no hay obras cargadas</div>
-            <div className="max-w-sm text-xs text-slate-500">
-              {isSupabaseConfigured
-                ? "La base está conectada pero la tabla \"obras\" está vacía. Revisá en Supabase (Table Editor) si corrió el schema.sql, o cargá tu primera obra desde la pestaña Obras."
-                : "Cargá tu primera obra desde la pestaña Obras."}
-            </div>
-            <button onClick={() => setTab("obras")} className="mt-1 rounded-md bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-amber-400">
-              Ir a Obras
-            </button>
-          </div>
-        )}
-
-        {tab === "dashboard" && obraSel && (
+        {tab === "general" && (
           <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-widest text-amber-600">Dashboard financiero</div>
-                <h2 className="text-2xl font-bold tracking-tight text-slate-900">{obraSel.nombre}</h2>
-              </div>
-              <select
-                className={inputCls}
-                value={selectedObraId}
-                onChange={(e) => setSelectedObraId(Number(e.target.value))}
-              >
-                {obras.map((o) => (
-                  <option key={o.id} value={o.id}>{o.nombre}</option>
-                ))}
-              </select>
-            </div>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">General</h2>
 
-            <Panel title="Alertas">
+            <Panel title="Alertas de todas las obras">
               {totalAlertas === 0 ? (
                 <div className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 size={16} /> Todo en orden, sin pendientes críticos.</div>
               ) : (
                 <div className="space-y-2">
-                  {hayDesvioAlerta && (
-                    <div className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${desvioPct > DESVIO_DANGER_PCT ? "border-rose-300 bg-rose-50 text-rose-700" : "border-amber-300 bg-amber-50 text-amber-700"}`}>
-                      <AlertTriangle size={16} />
-                      {obraSel.nombre} está {desvioPct.toFixed(1)}% por encima de lo planificado a la fecha.
-                    </div>
-                  )}
                   {ocPendientesAprobacion.length > 0 && (
                     <div className="flex items-center gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                       <AlertTriangle size={16} />
-                      {ocPendientesAprobacion.length} orden(es) de compra por encima de {fmtARS(UMBRAL_APROBACION_OC)} esperando tu aprobación.
+                      {ocPendientesAprobacion.length} orden(es) de compra por encima de {fmtARS(UMBRAL_APROBACION_OC)} esperando aprobación.
                     </div>
                   )}
                   {herramientasAtencion.length > 0 && (
@@ -2161,6 +2535,39 @@ export default function ConcretarApp() {
                       </ul>
                     </div>
                   )}
+                  {pedidosPorAprobar.length > 0 && (
+                    <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <ShoppingCart size={16} />
+                        {pedidosPorAprobar.length} pedido(s) esperando aprobación de Gerencia.
+                      </div>
+                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
+                        {pedidosPorAprobar.slice(0, 5).map((p) => (
+                          <li key={p.id}>
+                            <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="underline hover:no-underline">
+                              {p.items.map((it) => it.material).join(", ")} — {obras.find((o) => o.id === p.obraId)?.nombre} ({fmtARS(p.total)})
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {personalSinObra5Dias.length > 0 && (
+                    <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <Users size={16} />
+                        {personalSinObra5Dias.length} persona(s) sin obra asignada hace 5 días o más.
+                      </div>
+                      <ul className="ml-6 mt-1 space-y-1 text-xs">
+                        {personalSinObra5Dias.slice(0, 5).map((p) => (
+                          <li key={p.id} className="flex items-center justify-between gap-2">
+                            <span>{nombreCompletoDe(p)} — última actividad {fmtFecha(ultimaFechaActividad(p))}</span>
+                            <button onClick={() => darDeBajaPersonal(p)} className="rounded-md border border-rose-300 px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:bg-rose-100">Dar de baja</button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {asistenciasEditadas.length > 0 && (
                     <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
                       <div className="flex items-center gap-2 font-semibold">
@@ -2180,47 +2587,85 @@ export default function ConcretarApp() {
               )}
             </Panel>
 
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Presupuesto</div>
-                <div className="mt-1 font-mono text-lg font-bold text-slate-900">{fmtARS(obraSel.presupuesto)}</div>
-              </div>
-              <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Gastado a la fecha</div>
-                <div className="mt-1 font-mono text-lg font-bold text-slate-900">{fmtARS(puntoActual.Real)}</div>
-              </div>
-              <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Desvío vs. plan</div>
-                <div className={`mt-1 flex items-center gap-1 font-mono text-lg font-bold ${desvioAbs > 0 ? "text-rose-600" : "text-emerald-600"}`}>
-                  {desvioAbs > 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                  {desvioPct.toFixed(1)}%
-                </div>
-              </div>
-              <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Herramientas en uso</div>
-                <div className="mt-1 font-mono text-lg font-bold text-slate-900">{herramientasEnUso}</div>
-              </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Panel title="Últimos movimientos de herramientas">
+                {(() => {
+                  const ultimos = [...remitos].filter((r) => r.herramientaIds?.length > 0).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).slice(0, 6);
+                  return ultimos.length === 0 ? (
+                    <div className="text-xs text-slate-400">Sin movimientos todavía.</div>
+                  ) : (
+                    <div className="divide-y divide-stone-100">
+                      {ultimos.map((r) => (
+                        <div key={r.id} className="flex items-center justify-between py-1.5 text-xs">
+                          <span className="flex items-center gap-1.5 text-slate-700">{r.origen} <ArrowRightLeft size={11} className="text-slate-400" /> {r.destino}</span>
+                          <Badge estado={r.estado === "En tránsito" ? "En Obra" : "Disponible"} />
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </Panel>
+
+              <Panel title="Compras de materiales recientes">
+                {(() => {
+                  const ultimos = [...pedidosMateriales].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).slice(0, 6);
+                  return ultimos.length === 0 ? (
+                    <div className="text-xs text-slate-400">Sin pedidos todavía.</div>
+                  ) : (
+                    <div className="divide-y divide-stone-100">
+                      {ultimos.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between py-1.5 text-xs">
+                          <span className="text-slate-700">{obras.find((o) => o.id === p.obraId)?.nombre} — {p.proveedor || "sin proveedor"}</span>
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono text-slate-600">{fmtARS(p.total)}</span>
+                            <Badge estado={p.estado} />
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </Panel>
             </div>
 
-            <Panel title="Curva de inversión — planificado vs. real">
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
-                    <XAxis dataKey="mes" tick={{ fontSize: 12 }} stroke="#78716c" />
-                    <YAxis tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`} tick={{ fontSize: 12 }} stroke="#78716c" />
-                    <Tooltip formatter={(v) => fmtARS(v)} />
-                    <Legend />
-                    <Line type="monotone" dataKey="Planificado" stroke="#78716c" strokeDasharray="5 4" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="Real" stroke="#f59e0b" strokeWidth={3} dot={{ r: 3 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+            <Panel title="Asignación de personal">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {Object.values(cuadrillasPorObra).map(({ obra, empresa, gruposTantero }) => (
+                  <button key={obra.id} onClick={() => { setTab("obras"); abrirObra(obra); }} className="rounded-md border border-stone-200 bg-white p-3 text-left hover:bg-stone-50">
+                    <div className="truncate text-xs font-semibold text-slate-700">{obra.nombre}</div>
+                    <div className="mt-1 font-mono text-lg font-bold text-slate-900">{empresa.length + gruposTantero.reduce((s, g) => s + (g.integrantes?.length || 0), 0)}</div>
+                    <div className="text-[10px] text-slate-400">personas afectadas</div>
+                  </button>
+                ))}
+                <div className="rounded-md border border-dashed border-stone-300 p-3">
+                  <div className="text-xs font-semibold text-slate-500">Sin asignar</div>
+                  <div className="mt-1 font-mono text-lg font-bold text-slate-700">{personalSinAsignar.length}</div>
+                  <div className="text-[10px] text-slate-400">disponibles</div>
+                </div>
+                <div className="rounded-md border border-dashed border-stone-300 p-3">
+                  <div className="text-xs font-semibold text-slate-500">Centro General</div>
+                  <div className="mt-1 font-mono text-lg font-bold text-slate-700">{personalCentroGeneral.length}</div>
+                  <div className="text-[10px] text-slate-400">Gerencia/RRHH/Logística</div>
+                </div>
               </div>
             </Panel>
+
+            {obras.filter((o) => o.estado === "En curso").length > 0 && (
+              <Panel title="Ir a una obra">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {obras.filter((o) => o.estado === "En curso").map((o) => (
+                    <button key={o.id} onClick={() => { setTab("obras"); abrirObra(o); }} className="flex items-center justify-between rounded-md border border-stone-200 bg-white px-3 py-2 text-left text-sm hover:bg-stone-50">
+                      <span className="font-medium text-slate-800">{o.nombre}</span>
+                      <ArrowRightLeft size={14} className="text-slate-400" />
+                    </button>
+                  ))}
+                </div>
+              </Panel>
+            )}
           </div>
         )}
 
-        {tab === "obras" && (
+        {tab === "obras" && !viewingObraId && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Obras</h2>
@@ -2231,29 +2676,23 @@ export default function ConcretarApp() {
 
             {showObraForm && (
               <Panel title="Añadir obra" action={<button onClick={() => setShowObraForm(false)}><X size={16} /></button>}>
-                <form
-                  className="grid grid-cols-1 gap-4 md:grid-cols-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const f = new FormData(e.target);
-                    addRecord("obras", {
-                      nombre: f.get("nombre"),
-                      cliente: f.get("cliente"),
-                      presupuesto: Number(f.get("presupuesto")) || 0,
-                      meses: Number(f.get("meses")) || 1,
-                      inicio: f.get("inicio"),
-                      estado: "En curso",
-                      encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
-                      diaCierre: f.get("diaCierre"),
-                      horaCierre: f.get("horaCierre"),
-                    }, setObras);
-                    e.target.reset();
-                    setShowObraForm(false);
-                  }}
-                >
+                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitNuevaObra}>
                   <Field label="Nombre de la obra"><input name="nombre" required className={inputCls} /></Field>
-                  <Field label="Cliente"><input name="cliente" className={inputCls} /></Field>
-                  <Field label="Presupuesto (ARS)"><input name="presupuesto" type="number" required className={inputCls} /></Field>
+                  <Field label="Cliente">
+                    {clientes.length === 0 ? (
+                      <div className="rounded-md border border-dashed border-stone-300 px-2 py-2 text-xs text-slate-500">
+                        No hay clientes cargados — andá primero a "Clientes/Proveedores" y dalo de alta.
+                      </div>
+                    ) : (
+                      <select name="clienteId" required className={inputCls}>
+                        <option value="">-- Elegir --</option>
+                        {clientes.map((c) => <option key={c.id} value={c.id}>{c.razonSocial}</option>)}
+                      </select>
+                    )}
+                  </Field>
+                  <Field label={`Presupuesto (ARS)${resumenObraImportado ? " — se completa con el Excel" : ""}`}>
+                    <MoneyInput name="presupuesto" placeholder={resumenObraImportado ? String(resumenObraImportado.precioTotalConIva) : "0,00"} className={inputCls} />
+                  </Field>
                   <Field label="Fecha de inicio"><input name="inicio" type="date" required className={inputCls} /></Field>
                   <Field label="Duración (meses)"><input name="meses" type="number" min="1" required className={inputCls} /></Field>
                   <Field label="Encargado de obra">
@@ -2270,7 +2709,53 @@ export default function ConcretarApp() {
                   <Field label="Hora de cierre">
                     <input name="horaCierre" type="time" defaultValue="18:00" className={inputCls} />
                   </Field>
-                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+
+                  <div className="md:col-span-3 rounded-md border border-dashed border-amber-300 bg-amber-50 p-4">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800">Presupuesto de la obra (opcional acá, se puede importar después)</div>
+                    <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-stone-50">
+                      <Upload size={16} /> Subir Planilla Interna (.xlsx)
+                      <input ref={obraFileInputRef} type="file" accept=".xlsx,.xls" onChange={handleExcelUploadNuevaObra} className="hidden" />
+                    </label>
+                    {archivoObraNombre && (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                        <FileSpreadsheet size={13} /> {archivoObraNombre}
+                        <button type="button" onClick={quitarExcelNuevaObra} className="text-slate-400 hover:text-rose-600"><X size={13} /></button>
+                      </div>
+                    )}
+                    {resumenObraImportado && (
+                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div className="rounded-md border border-stone-200 bg-white p-2">
+                          <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Mano de Obra</div>
+                          <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.totalManoObra)}</div>
+                        </div>
+                        <div className="rounded-md border border-stone-200 bg-white p-2">
+                          <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Equipos</div>
+                          <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.totalEquipos)}</div>
+                        </div>
+                        {resumenObraImportado.totalHerramientas > 0 && (
+                          <div className="rounded-md border border-stone-200 bg-white p-2">
+                            <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Herramientas</div>
+                            <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.totalHerramientas)}</div>
+                          </div>
+                        )}
+                        <div className="rounded-md border border-stone-200 bg-white p-2">
+                          <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Materiales</div>
+                          <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.totalMateriales)}</div>
+                        </div>
+                        <div className="rounded-md border border-amber-300 bg-white p-2 sm:col-span-2">
+                          <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">Total con IVA</div>
+                          <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.precioTotalConIva)}</div>
+                        </div>
+                        <div className="text-[11px] text-slate-500 sm:col-span-2 sm:self-center">{itemsObraImportados.length} ítem(s) de Equipos/Herramientas/Materiales detectados.</div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-end">
+                    <button disabled={creandoObra} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+                      {creandoObra ? "Guardando..." : "Guardar"}
+                    </button>
+                  </div>
                 </form>
                 <div className="mt-3 text-[11px] text-slate-400">
                   El encargado de obra aprueba la recepción de los remitos que le lleguen a esta obra. Gerencia siempre puede aprobar cualquier remito, sea cual sea el encargado. El día/hora de cierre dispara el aviso de auditoría semanal de herramientas.
@@ -2281,31 +2766,232 @@ export default function ConcretarApp() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {obras.map((o) => {
                 const encargado = personal.find((p) => p.id === o.encargadoId);
+                const gentePropia = personal.filter((p) => obraActualDe(p)?.id === o.id).length;
                 return (
                   <div key={o.id} className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="font-bold text-slate-900">{o.nombre}</div>
-                        <div className="text-sm text-slate-500">{o.cliente}</div>
-                      </div>
-                      <Badge estado={o.estado} />
-                    </div>
-                    <div className="mt-3 flex justify-between text-sm">
-                      <span className="text-slate-500">Presupuesto</span>
-                      <span className="font-mono font-semibold">{fmtARS(o.presupuesto)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Duración</span>
-                      <span>{o.meses} meses desde {fmtFecha(o.inicio)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Encargado</span>
-                      <span>{encargado ? nombreCompletoDe(encargado) : <span className="text-slate-400">Sin asignar</span>}</span>
-                    </div>
+                    {editandoObraId === o.id ? (
+                      <form onSubmit={(e) => guardarEdicionObra(e, o)} className="space-y-3">
+                        <div className="text-sm font-semibold text-slate-900">Editar {o.nombre}</div>
+                        <Field label="Nombre"><input name="nombre" defaultValue={o.nombre} required className={inputCls} /></Field>
+                        <Field label="Cliente">
+                          <select name="clienteId" defaultValue={o.clienteId || ""} className={inputCls}>
+                            <option value="">Sin conectar (texto: {o.cliente || "—"})</option>
+                            {clientes.map((c) => <option key={c.id} value={c.id}>{c.razonSocial}</option>)}
+                          </select>
+                        </Field>
+                        <Field label="Presupuesto (ARS)"><MoneyInput name="presupuesto" value={o.presupuesto} className={inputCls} /></Field>
+                        <Field label="Encargado de obra">
+                          <select name="encargadoId" defaultValue={o.encargadoId || ""} className={inputCls}>
+                            <option value="">Sin asignar</option>
+                            {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
+                          </select>
+                        </Field>
+                        <div className="flex gap-2">
+                          <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
+                          <button type="button" onClick={() => setEditandoObraId(null)} className={btnGhost}>Cancelar</button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <button onClick={() => abrirObra(o)} className="text-left font-bold text-slate-900 underline decoration-dotted hover:text-amber-600">{o.nombre}</button>
+                            <div className="text-sm text-slate-500">{o.cliente}{!o.clienteId && <span className="ml-1 text-amber-600">(sin conectar)</span>}</div>
+                          </div>
+                          <select
+                            value={o.estado}
+                            onChange={(e) => cambiarEstadoObra(o, e.target.value)}
+                            className={`rounded-full border-2 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${BADGE_STYLES[o.estado] || "border-slate-400 text-slate-500"}`}
+                          >
+                            {ESTADOS_OBRA.map((s) => <option key={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div className="mt-3 flex justify-between text-sm">
+                          <span className="text-slate-500">Presupuesto</span>
+                          <span className="font-mono font-semibold">{fmtARS(o.presupuesto)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-500">Duración</span>
+                          <span>{o.meses} meses desde {fmtFecha(o.inicio)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-500">Encargado</span>
+                          <span>{encargado ? nombreCompletoDe(encargado) : <span className="text-slate-400">Sin asignar</span>}</span>
+                        </div>
+                        {o.estado === "En curso" && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-slate-500">Personal afectado</span>
+                            <span>{gentePropia}</span>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {tab === "obras" && viewingObraId && obraSel && (
+          <div className="space-y-6">
+            <button onClick={() => setViewingObraId(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
+              ← Volver a Obras
+            </button>
+
+            {(() => {
+              const encargadoObra = personal.find((p) => p.id === obraSel.encargadoId);
+              const herrAtencionObra = herramientasAtencion.filter((h) => h.ubicacion === obraSel.nombre);
+              const cierreObra = obrasEnVentanaCierre.filter((o) => o.id === obraSel.id);
+              const aperturaObra = obrasSinAperturaLunes.filter((o) => o.id === obraSel.id);
+              const matVencidosObra = materialesVencidos.filter((p) => p.obraId === obraSel.id);
+              const matProximosObra = materialesProximos.filter((p) => p.obraId === obraSel.id);
+              const pedidosAprobarObra = pedidosPorAprobar.filter((p) => p.obraId === obraSel.id);
+              const ocAprobacionObra = ocPendientesAprobacion.filter((o) => o.obraId === obraSel.id);
+              const asistEditadasObra = asistenciasEditadas.filter((a) => a.obraId === obraSel.id);
+              const totalAlertasObra = herrAtencionObra.length + cierreObra.length + aperturaObra.length + matVencidosObra.length + matProximosObra.length + pedidosAprobarObra.length + ocAprobacionObra.length + asistEditadasObra.length + (hayDesvioAlerta ? 1 : 0);
+
+              return (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-widest text-amber-600">{obraSel.cliente}</div>
+                      <h2 className="text-2xl font-bold tracking-tight text-slate-900">{obraSel.nombre}</h2>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge estado={obraSel.estado} />
+                      <button onClick={() => iniciarEdicionObra(obraSel)} className={btnGhost}>
+                        <span className="flex items-center gap-1"><Pencil size={13} /> Editar</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                    <div className="rounded-lg border border-stone-200 bg-white p-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Encargado</div>
+                      <div className="mt-0.5 font-medium text-slate-800">{encargadoObra ? nombreCompletoDe(encargadoObra) : "Sin asignar"}</div>
+                    </div>
+                    <div className="rounded-lg border border-stone-200 bg-white p-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Duración</div>
+                      <div className="mt-0.5 font-medium text-slate-800">{obraSel.meses} meses desde {fmtFecha(obraSel.inicio)}</div>
+                    </div>
+                    <div className="rounded-lg border border-stone-200 bg-white p-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Cierre semanal</div>
+                      <div className="mt-0.5 font-medium text-slate-800">{obraSel.diaCierre || "—"} {obraSel.horaCierre || ""}</div>
+                    </div>
+                    <div className="rounded-lg border border-stone-200 bg-white p-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Personal afectado</div>
+                      <div className="mt-0.5 font-medium text-slate-800">{personal.filter((p) => obraActualDe(p)?.id === obraSel.id).length}</div>
+                    </div>
+                  </div>
+
+                  <Panel title="Alertas de esta obra">
+                    {totalAlertasObra === 0 ? (
+                      <div className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 size={16} /> Todo en orden en esta obra.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {hayDesvioAlerta && (
+                          <div className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${desvioPct > DESVIO_DANGER_PCT ? "border-rose-300 bg-rose-50 text-rose-700" : "border-amber-300 bg-amber-50 text-amber-700"}`}>
+                            <AlertTriangle size={16} />
+                            Está {desvioPct.toFixed(1)}% por encima de lo planificado a la fecha.
+                          </div>
+                        )}
+                        {ocAprobacionObra.length > 0 && (
+                          <div className="flex items-center gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                            <AlertTriangle size={16} />
+                            {ocAprobacionObra.length} orden(es) de compra esperando aprobación.
+                          </div>
+                        )}
+                        {herrAtencionObra.length > 0 && (
+                          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                            <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> {herrAtencionObra.length} herramienta(s) en mal estado o rota(s) acá.</div>
+                            <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">{herrAtencionObra.map((h) => <li key={h.id}>{h.nombre} ({h.numeroSerie}) — {h.estado}</li>)}</ul>
+                          </div>
+                        )}
+                        {cierreObra.length > 0 && (
+                          <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                            <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> Falta menos de 1hs para el cierre — hacé el control de herramientas.</div>
+                            <button onClick={() => abrirAuditoria(obraSel.id, "Cierre")} className="mt-1 ml-6 text-xs font-semibold underline hover:no-underline">Hacer control de cierre ahora →</button>
+                          </div>
+                        )}
+                        {aperturaObra.length > 0 && (
+                          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                            <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> Falta validar el inventario inicial de la semana.</div>
+                            <button onClick={() => abrirAuditoria(obraSel.id, "Apertura")} className="mt-1 ml-6 text-xs font-semibold underline hover:no-underline">Hacer control de apertura ahora →</button>
+                          </div>
+                        )}
+                        {matVencidosObra.length > 0 && (
+                          <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                            <div className="flex items-center gap-2 font-semibold"><Package size={16} /> {matVencidosObra.length} pedido(s) con fecha vencida — sin recibir.</div>
+                            <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">{matVencidosObra.map((p) => <li key={p.id}>{p.items.map((it) => it.material).join(", ")} (necesitaba el {fmtFecha(p.fechaNecesaria)})</li>)}</ul>
+                          </div>
+                        )}
+                        {matProximosObra.length > 0 && (
+                          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                            <div className="flex items-center gap-2 font-semibold"><Package size={16} /> {matProximosObra.length} pedido(s) necesarios en los próximos 2 días.</div>
+                            <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">{matProximosObra.map((p) => <li key={p.id}>{p.items.map((it) => it.material).join(", ")} (en {diasHasta(p.fechaNecesaria)} día(s))</li>)}</ul>
+                          </div>
+                        )}
+                        {pedidosAprobarObra.length > 0 && (
+                          <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                            <div className="flex items-center gap-2 font-semibold"><ShoppingCart size={16} /> {pedidosAprobarObra.length} pedido(s) esperando aprobación de Gerencia.</div>
+                            <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">{pedidosAprobarObra.map((p) => <li key={p.id}>{p.items.map((it) => it.material).join(", ")} ({fmtARS(p.total)})</li>)}</ul>
+                          </div>
+                        )}
+                        {asistEditadasObra.length > 0 && (
+                          <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                            <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> {asistEditadasObra.length} registro(s) de asistencia modificados.</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Panel>
+
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                    <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Presupuesto</div>
+                      <div className="mt-1 font-mono text-lg font-bold text-slate-900">{fmtARS(obraSel.presupuesto)}</div>
+                    </div>
+                    <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Gastado a la fecha</div>
+                      <div className="mt-1 font-mono text-lg font-bold text-slate-900">{fmtARS(puntoActual.Real)}</div>
+                    </div>
+                    <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Desvío vs. plan</div>
+                      <div className={`mt-1 flex items-center gap-1 font-mono text-lg font-bold ${desvioAbs > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                        {desvioAbs > 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                        {desvioPct.toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Herramientas en uso</div>
+                      <div className="mt-1 font-mono text-lg font-bold text-slate-900">{herramientasEnUso}</div>
+                    </div>
+                  </div>
+
+                  <Panel title="Curva de inversión — planificado vs. real">
+                    <div className="h-72 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
+                          <XAxis dataKey="mes" tick={{ fontSize: 12 }} stroke="#78716c" />
+                          <YAxis tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`} tick={{ fontSize: 12 }} stroke="#78716c" />
+                          <Tooltip formatter={(v) => fmtARS(v)} />
+                          <Legend />
+                          <Line type="monotone" dataKey="Planificado" stroke="#78716c" strokeDasharray="5 4" strokeWidth={2} dot={false} />
+                          <Line type="monotone" dataKey="Real" stroke="#f59e0b" strokeWidth={3} dot={{ r: 3 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </Panel>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(obraSel.id); }} className={btnGhost}>Ver Materiales de esta obra</button>
+                    <button onClick={() => { setTab("personal"); }} className={btnGhost}>Ver Personal</button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -2393,11 +3079,10 @@ export default function ConcretarApp() {
                           <td className="px-4 py-3 font-medium text-slate-900">{c.categoria}</td>
                           <td className="px-4 py-3">
                             {canEditarCostos ? (
-                              <input
-                                type="number"
+                              <MoneyInput
                                 className={`${inputCls} w-40`}
-                                value={costoDrafts[c.id] ?? (c.costoHora ?? "")}
-                                onChange={(e) => setCostoDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
+                                value={costoDrafts[c.id] ?? (c.costoHora ?? 0)}
+                                onChange={(v) => setCostoDrafts((d) => ({ ...d, [c.id]: v }))}
                               />
                             ) : c.costoHora ? (
                               fmtARS(c.costoHora)
@@ -2936,7 +3621,7 @@ export default function ConcretarApp() {
                         </select>
                       </Field>
                       <Field label="Precio cerrado (ARS)">
-                        <input type="number" value={tanteroForm.precioTotal} onChange={(e) => setTanteroForm((f) => ({ ...f, precioTotal: e.target.value }))} required className={inputCls} />
+                        <MoneyInput value={tanteroForm.precioTotal} onChange={(v) => setTanteroForm((f) => ({ ...f, precioTotal: v }))} className={inputCls} />
                       </Field>
                       <div className="md:col-span-3">
                         <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Integrantes del grupo</div>
@@ -3030,7 +3715,7 @@ export default function ConcretarApp() {
                                 <input type="date" required value={avanceForm.fecha} onChange={(e) => setAvanceForm((f) => ({ ...f, fecha: e.target.value }))} className={inputCls} />
                               </Field>
                               <Field label="Monto (ARS)">
-                                <input type="number" required value={avanceForm.monto} onChange={(e) => setAvanceForm((f) => ({ ...f, monto: e.target.value }))} className={inputCls} />
+                                <MoneyInput value={avanceForm.monto} onChange={(v) => setAvanceForm((f) => ({ ...f, monto: v }))} className={inputCls} />
                               </Field>
                               <div className="md:col-span-2">
                                 <Field label="Descripción">
@@ -3824,6 +4509,12 @@ export default function ConcretarApp() {
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{pedidosSinEnviar.length + remitosMaterialesPendientes.length}</span>
                 )}
               </button>
+              <button
+                onClick={() => setVistaMateriales("stock")}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "stock" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Stock
+              </button>
             </div>
 
             {vistaMateriales === "presupuestos" && (
@@ -4051,7 +4742,7 @@ export default function ConcretarApp() {
                                       <input type="number" value={it.cantidad} onChange={(e) => actualizarCantidadPedido(idx, "cantidad", Number(e.target.value))} className="w-20 rounded border border-stone-300 px-1.5 py-1 text-right" />
                                     </td>
                                     <td className="px-2 py-1.5 text-right">
-                                      <input type="number" value={it.precioUnitario} onChange={(e) => actualizarCantidadPedido(idx, "precioUnitario", Number(e.target.value))} className="w-24 rounded border border-stone-300 px-1.5 py-1 text-right" />
+                                      <MoneyInput value={it.precioUnitario} onChange={(v) => actualizarCantidadPedido(idx, "precioUnitario", v)} className="w-24 rounded border border-stone-300 px-1.5 py-1 text-right" />
                                     </td>
                                     <td className="px-2 py-1.5 text-right font-mono">{fmtARS((Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0))}</td>
                                     <td className="px-2 py-1.5"><button onClick={() => quitarItemPedido(idx)} className="text-slate-400 hover:text-rose-600"><X size={13} /></button></td>
@@ -4102,7 +4793,7 @@ export default function ConcretarApp() {
                             </div>
                             <div className="w-28">
                               <Field label="P. Unitario">
-                                <input type="number" value={itemManualDraft.precioUnitario} onChange={(e) => setItemManualDraft((d) => ({ ...d, precioUnitario: Number(e.target.value) }))} className={inputCls} />
+                                <MoneyInput value={itemManualDraft.precioUnitario} onChange={(v) => setItemManualDraft((d) => ({ ...d, precioUnitario: v }))} className={inputCls} />
                               </Field>
                             </div>
                             <button type="button" onClick={agregarItemManualPedido} className={btnGhost}>+ Agregar</button>
@@ -4126,13 +4817,13 @@ export default function ConcretarApp() {
                           <div className="space-y-3">
                             {[...pedidosObra].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((p) => {
                               const dias = p.fechaNecesaria ? diasHasta(p.fechaNecesaria) : null;
-                              const urgencia = p.estado === "Recibido" || dias === null ? "text-slate-400" : dias < 0 ? "font-semibold text-rose-600" : dias <= 2 ? "font-semibold text-amber-700" : "text-slate-500";
+                              const urgencia = !pedidoEnCurso(p) || dias === null ? "text-slate-400" : dias < 0 ? "font-semibold text-rose-600" : dias <= 2 ? "font-semibold text-amber-700" : "text-slate-500";
                               return (
                                 <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
                                       <span className="font-semibold text-slate-900">{p.proveedor || "Proveedor sin especificar"}</span>
-                                      <span className="ml-2"><Badge estado={p.estado === "Recibido" ? "Recibida" : "Pendiente"} /></span>
+                                      <span className="ml-2"><Badge estado={p.estado} /></span>
                                     </div>
                                     <span className="text-xs text-slate-400">{fmtFecha(p.fecha)} · {p.items.length} ítem(s) · <span className="font-mono font-semibold text-slate-600">{fmtARS(p.total)}</span></span>
                                   </div>
@@ -4140,13 +4831,77 @@ export default function ConcretarApp() {
                                   {p.fechaNecesaria && (
                                     <div className={`mt-1 text-xs ${urgencia}`}>
                                       Necesario para el {fmtFecha(p.fechaNecesaria)}
-                                      {p.estado !== "Recibido" && dias !== null && dias < 0 && " — VENCIDO"}
+                                      {(p.estado === "Solicitado" || p.estado === "Aprobado") && dias !== null && dias < 0 && " — VENCIDO"}
                                     </div>
                                   )}
-                                  {p.estado !== "Recibido" && (
-                                    <button onClick={() => marcarPedidoRecibido(p)} className="mt-2 flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-                                      <Check size={13} /> Marcar como recibido en obra
-                                    </button>
+
+                                  {p.estado === "Solicitado" && (
+                                    puedeAprobarPedidos ? (
+                                      <div className="mt-2 flex gap-2">
+                                        <button onClick={() => aprobarPedidoMaterial(p)} className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                                          <Check size={13} /> Aprobar pedido
+                                        </button>
+                                        <button onClick={() => rechazarPedidoMaterial(p)} className="flex items-center gap-1 rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50">
+                                          <X size={13} /> Rechazar
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="mt-2 text-xs italic text-slate-400">Esperando aprobación de Gerencia.</div>
+                                    )
+                                  )}
+                                  {p.estado === "Aprobado" && (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      <button onClick={() => generarOrdenCompraPDF(p)} className={btnGhost}>
+                                        <span className="flex items-center gap-1"><FileDown size={13} /> Orden de Compra (PDF)</span>
+                                      </button>
+                                      <button onClick={() => abrirCargaFactura(p)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                                        <Receipt size={13} /> Cargar factura real
+                                      </button>
+                                    </div>
+                                  )}
+                                  {p.estado === "Facturado" && (
+                                    <div className="mt-2 text-xs text-slate-500">
+                                      Facturado{p.comprobante ? ` — comprobante ${p.comprobante}` : ""}. El gasto ya quedó imputado a esta obra.
+                                    </div>
+                                  )}
+
+                                  {facturandoPedidoId === p.id && (
+                                    <div className="mt-3 rounded-md border border-stone-200 bg-stone-50 p-3">
+                                      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Corregí los precios con la factura real</div>
+                                      <div className="space-y-1.5">
+                                        {itemsFacturaDraft.map((it, idx) => (
+                                          <div key={idx} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                            <span className="text-slate-700">{it.material} <span className="text-slate-400">({it.cantidad} {it.unidad})</span></span>
+                                            <div className="flex items-center gap-1">
+                                              <span className="text-slate-400">$</span>
+                                              <MoneyInput
+                                                value={it.precioUnitario}
+                                                onChange={(v) => actualizarPrecioFactura(idx, v)}
+                                                className="w-24 rounded border border-stone-300 px-1.5 py-1 text-right"
+                                              />
+                                              <span className="w-24 text-right font-mono text-slate-600">{fmtARS((Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0))}</span>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                        <input
+                                          value={comprobanteDraft}
+                                          onChange={(e) => setComprobanteDraft(e.target.value)}
+                                          placeholder="N° de comprobante (ej: A-0001-00012345)"
+                                          className={inputCls}
+                                        />
+                                        <div className="flex items-center justify-end font-mono text-sm font-bold text-slate-900">
+                                          Total: {fmtARS(itemsFacturaDraft.reduce((s, it) => s + (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0), 0))}
+                                        </div>
+                                      </div>
+                                      <div className="mt-2 flex gap-2">
+                                        <button disabled={guardandoFactura} onClick={() => confirmarFacturaReal(p)} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+                                          {guardandoFactura ? "Guardando..." : "Confirmar factura"}
+                                        </button>
+                                        <button onClick={() => setFacturandoPedidoId(null)} className="text-xs text-slate-400 hover:underline">Cancelar</button>
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
                               );
@@ -4359,9 +5114,47 @@ export default function ConcretarApp() {
                             <span className="text-xs text-slate-500">Salió el {fmtFecha(r.fecha)} ({r.creadoPor})</span>
                           </div>
                           <div className="mt-1 text-xs text-slate-600">{r.materialItems.map((it) => it.material).join(", ")}</div>
-                          <button onClick={() => confirmarRecepcionRemito(r)} className="mt-2 flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-                            <Check size={13} /> Confirmar recepción en {r.destino}
-                          </button>
+
+                          {recibiendoRemitoId !== r.id ? (
+                            <button onClick={() => confirmarRecepcionRemito(r)} className="mt-2 flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                              <Check size={13} /> Confirmar recepción en {r.destino}
+                            </button>
+                          ) : (
+                            <div className="mt-3 rounded-md border border-amber-200 bg-white p-3">
+                              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                ¿Cuánto entra a "{r.destino}"? Lo que no entra queda en Stock general.
+                              </div>
+                              <div className="space-y-2">
+                                {r.materialItems.map((it, idx) => {
+                                  const aObra = cantidadesRecepcion[idx] ?? it.cantidad;
+                                  const aStock = Math.max(0, it.cantidad - aObra);
+                                  return (
+                                    <div key={idx} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                      <span className="text-slate-700">{it.material} <span className="text-slate-400">(compradas: {it.cantidad} {it.unidad})</span></span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-slate-400">A la obra:</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max={it.cantidad}
+                                          value={aObra}
+                                          onChange={(e) => actualizarCantidadRecepcion(idx, e.target.value, it.cantidad)}
+                                          className="w-20 rounded border border-stone-300 px-1.5 py-1 text-right"
+                                        />
+                                        {aStock > 0 && <span className="text-amber-700">→ {aStock} {it.unidad} a stock</span>}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="mt-3 flex gap-2">
+                                <button disabled={guardandoRecepcion} onClick={() => confirmarRecepcionMaterialConDivision(r)} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+                                  {guardandoRecepcion ? "Guardando..." : "Confirmar recepción"}
+                                </button>
+                                <button onClick={() => setRecibiendoRemitoId(null)} className="text-xs text-slate-400 hover:underline">Cancelar</button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -4381,6 +5174,70 @@ export default function ConcretarApp() {
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {vistaMateriales === "stock" && (
+              <>
+                <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
+                  Lo que compraste pero no entró completo a una obra queda acá — el gasto ya se hizo y quedó anotado como "general" hasta que lo asignes a alguna obra.
+                </div>
+
+                {stockMateriales.filter((s) => s.cantidad > 0).length === 0 ? (
+                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
+                    No hay materiales en stock general por ahora.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3">Material</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3 text-right">Cantidad</th>
+                          <th className="px-4 py-3 text-right">Precio unitario</th><th className="px-4 py-3 text-right">Valor en stock</th><th className="px-4 py-3"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stockMateriales.filter((s) => s.cantidad > 0).map((s) => (
+                          <Fragment key={s.id}>
+                            <tr className="border-t border-stone-100">
+                              <td className="px-4 py-2.5 font-medium text-slate-900">{s.material}</td>
+                              <td className="px-4 py-2.5 text-slate-600">{s.categoria}{s.subcategoria ? ` — ${s.subcategoria}` : ""}</td>
+                              <td className="px-4 py-2.5 text-right font-mono">{s.cantidad} {s.unidad}</td>
+                              <td className="px-4 py-2.5 text-right font-mono">{fmtARS(s.precioUnitario)}</td>
+                              <td className="px-4 py-2.5 text-right font-mono">{fmtARS(s.cantidad * s.precioUnitario)}</td>
+                              <td className="px-4 py-2.5">
+                                <button onClick={() => { setAsignandoStockId(s.id); setObraParaStock(""); setCantidadParaStock(s.cantidad); }} className={btnGhost}>Asignar a obra</button>
+                              </td>
+                            </tr>
+                            {asignandoStockId === s.id && (
+                              <tr className="border-t border-stone-100 bg-stone-50">
+                                <td colSpan={6} className="px-4 py-3">
+                                  <div className="flex flex-wrap items-end gap-2">
+                                    <div className="w-48">
+                                      <Field label="Obra destino">
+                                        <select value={obraParaStock} onChange={(e) => setObraParaStock(e.target.value)} className={inputCls}>
+                                          <option value="">-- Elegir --</option>
+                                          {obras.filter((o) => o.estado === "En curso").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                                        </select>
+                                      </Field>
+                                    </div>
+                                    <div className="w-28">
+                                      <Field label="Cantidad">
+                                        <input type="number" min="1" max={s.cantidad} value={cantidadParaStock} onChange={(e) => setCantidadParaStock(e.target.value)} className={inputCls} />
+                                      </Field>
+                                    </div>
+                                    <button onClick={() => asignarStockAObra(s)} className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700">Confirmar</button>
+                                    <button onClick={() => setAsignandoStockId(null)} className="text-xs text-slate-400 hover:underline">Cancelar</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </>
@@ -4427,7 +5284,7 @@ export default function ConcretarApp() {
                   </Field>
                   <Field label="Proveedor"><input name="proveedor" required className={inputCls} /></Field>
                   <Field label="Ítems / detalle"><input name="item" className={inputCls} /></Field>
-                  <Field label="Monto estimado (ARS)"><input name="montoEstimado" type="number" required className={inputCls} /></Field>
+                  <Field label="Monto estimado (ARS)"><MoneyInput name="montoEstimado" className={inputCls} /></Field>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
               </Panel>
@@ -4506,7 +5363,7 @@ export default function ConcretarApp() {
                   <Field label="Categoría">
                     <select name="categoria" className={inputCls}>{CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}</select>
                   </Field>
-                  <Field label="Monto (ARS)"><input name="monto" type="number" required className={inputCls} /></Field>
+                  <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
                   <Field label="N° comprobante"><input name="comprobante" className={inputCls} /></Field>
                   <Field label="Estado">
                     <select name="estado" className={inputCls}>{ESTADOS_FACTURA.map((s) => <option key={s}>{s}</option>)}</select>
@@ -4594,7 +5451,7 @@ export default function ConcretarApp() {
                     <select name="obraId" className={inputCls}>{obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
                   <Field label="Concepto"><input name="concepto" required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
-                  <Field label="Monto (ARS)"><input name="monto" type="number" required className={inputCls} /></Field>
+                  <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
                   <Field label="Formalidad">
                     <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
                   </Field>
@@ -4674,65 +5531,162 @@ export default function ConcretarApp() {
 
         {tab === "proveedores" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Proveedores</h2>
-              <button onClick={() => setShowProveedorForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
-                <Plus size={16} /> Nuevo proveedor
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Clientes/Proveedores</h2>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setVistaClientesProveedores("clientes")}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaClientesProveedores === "clientes" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Clientes
+              </button>
+              <button
+                onClick={() => setVistaClientesProveedores("proveedores")}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaClientesProveedores === "proveedores" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Proveedores
               </button>
             </div>
-            <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-              Los talleres de reparación también se cargan acá (marcando "¿Es taller de reparación?" en Sí) — así aparecen como destino posible en los remitos de Herramientas.
-            </div>
 
-            {showProveedorForm && (
-              <Panel title="Añadir proveedor" action={<button onClick={() => setShowProveedorForm(false)}><X size={16} /></button>}>
-                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitProveedorForm}>
-                  <Field label="Razón social">
-                    <input value={proveedorForm.razonSocial} onChange={(e) => setProveedorForm((f) => ({ ...f, razonSocial: e.target.value }))} required className={inputCls} />
-                  </Field>
-                  <Field label="CUIT">
-                    <input value={proveedorForm.cuit} onChange={(e) => setProveedorForm((f) => ({ ...f, cuit: e.target.value }))} placeholder="30-12345678-9" className={inputCls} />
-                  </Field>
-                  <Field label="Domicilio">
-                    <input value={proveedorForm.domicilio} onChange={(e) => setProveedorForm((f) => ({ ...f, domicilio: e.target.value }))} className={inputCls} />
-                  </Field>
-                  <Field label="Contacto">
-                    <input value={proveedorForm.contacto} onChange={(e) => setProveedorForm((f) => ({ ...f, contacto: e.target.value }))} className={inputCls} />
-                  </Field>
-                  <Field label="Teléfono">
-                    <input value={proveedorForm.telefono} onChange={(e) => setProveedorForm((f) => ({ ...f, telefono: e.target.value }))} className={inputCls} />
-                  </Field>
-                  <Field label="¿Es taller de reparación?">
-                    <select value={proveedorForm.esTaller} onChange={(e) => setProveedorForm((f) => ({ ...f, esTaller: e.target.value }))} className={inputCls}>
-                      {SI_NO.map((s) => <option key={s}>{s}</option>)}
-                    </select>
-                  </Field>
-                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
-                </form>
-              </Panel>
+            {vistaClientesProveedores === "clientes" && (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-slate-500">El saldo es lo acordado en el presupuesto de sus obras menos lo que ya ingresó por esa obra.</div>
+                  <button onClick={() => setShowClienteForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                    <Plus size={16} /> Nuevo cliente
+                  </button>
+                </div>
+
+                {showClienteForm && (
+                  <Panel title="Añadir cliente" action={<button onClick={() => setShowClienteForm(false)}><X size={16} /></button>}>
+                    <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitClienteForm}>
+                      <Field label="Razón social / Nombre">
+                        <input value={clienteForm.razonSocial} onChange={(e) => setClienteForm((f) => ({ ...f, razonSocial: e.target.value }))} required className={inputCls} />
+                      </Field>
+                      <Field label="CUIT / DNI">
+                        <input value={clienteForm.cuit} onChange={(e) => setClienteForm((f) => ({ ...f, cuit: e.target.value }))} className={inputCls} />
+                      </Field>
+                      <Field label="Domicilio">
+                        <input value={clienteForm.domicilio} onChange={(e) => setClienteForm((f) => ({ ...f, domicilio: e.target.value }))} className={inputCls} />
+                      </Field>
+                      <Field label="Contacto">
+                        <input value={clienteForm.contacto} onChange={(e) => setClienteForm((f) => ({ ...f, contacto: e.target.value }))} className={inputCls} />
+                      </Field>
+                      <Field label="Teléfono">
+                        <input value={clienteForm.telefono} onChange={(e) => setClienteForm((f) => ({ ...f, telefono: e.target.value }))} className={inputCls} />
+                      </Field>
+                      <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                    </form>
+                  </Panel>
+                )}
+
+                {clientes.length === 0 ? (
+                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay clientes cargados.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {clientes.map((cli) => {
+                      const { obrasCliente, totalAcordado, totalCobrado, saldo } = balanceCliente(cli);
+                      return (
+                        <div key={cli.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div className="font-semibold text-slate-900">{cli.razonSocial}</div>
+                              <div className="text-xs text-slate-500">{cli.contacto}{cli.contacto && cli.telefono ? " · " : ""}{cli.telefono}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Saldo — te debe</div>
+                              <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
+                            <span>Acordado: <span className="font-mono text-slate-700">{fmtARS(totalAcordado)}</span></span>
+                            <span>Cobrado: <span className="font-mono text-slate-700">{fmtARS(totalCobrado)}</span></span>
+                            <span>Obras: {obrasCliente.map((o) => o.nombre).join(", ") || "—"}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
 
-            {proveedores.length === 0 ? (
-              <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay proveedores cargados.</div>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    <tr><th className="px-4 py-3">Razón social</th><th className="px-4 py-3">CUIT</th><th className="px-4 py-3">Contacto</th><th className="px-4 py-3">Teléfono</th><th className="px-4 py-3">Tipo</th></tr>
-                  </thead>
-                  <tbody>
-                    {proveedores.map((p) => (
-                      <tr key={p.id} className="border-t border-stone-100">
-                        <td className="px-4 py-3 font-medium text-slate-900">{p.razonSocial}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-500">{p.cuit || "—"}</td>
-                        <td className="px-4 py-3 text-slate-600">{p.contacto || "—"}</td>
-                        <td className="px-4 py-3 text-slate-600">{p.telefono || "—"}</td>
-                        <td className="px-4 py-3">{p.esTaller === "Sí" ? <Badge estado="En Reparación" /> : <span className="text-xs text-slate-400">Proveedor</span>}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            {vistaClientesProveedores === "proveedores" && (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-slate-500">Los talleres de reparación también se cargan acá — así aparecen como destino posible en los remitos de Herramientas. El saldo es lo facturado menos lo ya pagado.</div>
+                  <button onClick={() => setShowProveedorForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                    <Plus size={16} /> Nuevo proveedor
+                  </button>
+                </div>
+
+                {showProveedorForm && (
+                  <Panel title="Añadir proveedor" action={<button onClick={() => setShowProveedorForm(false)}><X size={16} /></button>}>
+                    <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitProveedorForm}>
+                      <Field label="Razón social">
+                        <input value={proveedorForm.razonSocial} onChange={(e) => setProveedorForm((f) => ({ ...f, razonSocial: e.target.value }))} required className={inputCls} />
+                      </Field>
+                      <Field label="CUIT">
+                        <input value={proveedorForm.cuit} onChange={(e) => setProveedorForm((f) => ({ ...f, cuit: e.target.value }))} placeholder="30-12345678-9" className={inputCls} />
+                      </Field>
+                      <Field label="Domicilio">
+                        <input value={proveedorForm.domicilio} onChange={(e) => setProveedorForm((f) => ({ ...f, domicilio: e.target.value }))} className={inputCls} />
+                      </Field>
+                      <Field label="Contacto">
+                        <input value={proveedorForm.contacto} onChange={(e) => setProveedorForm((f) => ({ ...f, contacto: e.target.value }))} className={inputCls} />
+                      </Field>
+                      <Field label="Teléfono">
+                        <input value={proveedorForm.telefono} onChange={(e) => setProveedorForm((f) => ({ ...f, telefono: e.target.value }))} className={inputCls} />
+                      </Field>
+                      <Field label="¿Es taller de reparación?">
+                        <select value={proveedorForm.esTaller} onChange={(e) => setProveedorForm((f) => ({ ...f, esTaller: e.target.value }))} className={inputCls}>
+                          {SI_NO.map((s) => <option key={s}>{s}</option>)}
+                        </select>
+                      </Field>
+                      <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                    </form>
+                  </Panel>
+                )}
+
+                {proveedores.length === 0 ? (
+                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay proveedores cargados.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {proveedores.map((p) => {
+                      const { totalFacturado, totalPagado, saldo, facturasPendientes } = balanceProveedor(p);
+                      return (
+                        <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <span className="font-semibold text-slate-900">{p.razonSocial}</span>
+                              {p.esTaller === "Sí" && <span className="ml-2"><Badge estado="En Reparación" /></span>}
+                              <div className="text-xs text-slate-500">{p.contacto}{p.contacto && p.telefono ? " · " : ""}{p.telefono}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Saldo — le debés</div>
+                              <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
+                            <span>Facturado: <span className="font-mono text-slate-700">{fmtARS(totalFacturado)}</span></span>
+                            <span>Pagado: <span className="font-mono text-slate-700">{fmtARS(totalPagado)}</span></span>
+                          </div>
+                          {facturasPendientes.length > 0 && (
+                            <div className="mt-3 space-y-1 border-t border-stone-100 pt-2">
+                              {facturasPendientes.map((f) => (
+                                <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                  <span className="text-slate-600">{fmtFecha(f.fecha)} — {f.comprobante || "sin comprobante"} — <span className="font-mono">{fmtARS(f.monto)}</span></span>
+                                  <button onClick={() => marcarFacturaPagada(f)} className={btnGhost}>Marcar pagada</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
