@@ -260,7 +260,7 @@ const btnGhost = "rounded-md border border-slate-300 px-2.5 py-1 text-xs font-se
 // Campo de plata: mientras escribís va agregando puntos de miles y ",00" de decimales
 // en vivo (1 -> 1,00 -> 10 -> 10,00 -> 1000 -> 1.000,00), como en una caja registradora.
 // Funciona tanto con formularios controlados (value+onChange) como con FormData (name).
-function MoneyInput({ name, value, onChange, className, placeholder, required }) {
+function MoneyInput({ name, value, onChange, onBlur, className, placeholder, required }) {
   const [raw, setRaw] = useState(value !== undefined && value !== null && value !== "" ? String(Math.round(Number(value))) : "");
   function handleChange(e) {
     const digitos = e.target.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
@@ -276,6 +276,7 @@ function MoneyInput({ name, value, onChange, className, placeholder, required })
         inputMode="numeric"
         value={display}
         onChange={handleChange}
+        onBlur={() => onBlur && onBlur(num)}
         placeholder={placeholder || "0,00"}
         className={className || inputCls}
       />
@@ -356,7 +357,12 @@ export default function ConcretarApp() {
     { id: 7, nombre: "Mario", apellido: "González", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero" },
     { id: 8, nombre: "Raúl", apellido: "Medina", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero" },
   ];
-  const DEMO_COSTOS = CATEGORIAS_PERSONAL.map((cat, i) => ({ id: i + 1, categoria: cat, costoHora: null }));
+  const DEMO_COSTOS = [
+    { id: 1, categoria: "Oficial Especializado", mes: "2026-08", costoHora: 7500 },
+    { id: 2, categoria: "Oficial", mes: "2026-08", costoHora: 6500 },
+    { id: 3, categoria: "Medio Oficial", mes: "2026-08", costoHora: 5500 },
+    { id: 4, categoria: "Ayudante", mes: "2026-08", costoHora: 4500 },
+  ];
 
   const DEMO_ASISTENCIA = [
     { id: 1, fecha: "2026-08-03", obraId: 1, nombre: "Pablo Robles", horas: 8, cargadoPor: "Gerente", estado: "Presente" },
@@ -659,15 +665,32 @@ export default function ConcretarApp() {
   const canEditarPersonal = ROLES_EDITAR_PERSONAL.includes(currentRole);
 
   const canEditarCostos = ROLES_EDITAR_COSTOS.includes(currentRole);
-  const [costoDrafts, setCostoDrafts] = useState({});
-  const [savedCostoId, setSavedCostoId] = useState(null);
+  const [mesesExtraCostos, setMesesExtraCostos] = useState([]);
+  const [nuevoMesCosto, setNuevoMesCosto] = useState("");
 
-  function guardarCosto(costo) {
-    const draft = costoDrafts[costo.id];
-    const nuevoValor = draft === undefined ? costo.costoHora : (draft === "" ? null : Number(draft));
-    updateRecord("costos_categoria", costo.id, { costoHora: nuevoValor }, setCostosCategoria);
-    setSavedCostoId(costo.id);
-    setTimeout(() => setSavedCostoId((id) => (id === costo.id ? null : id)), 1500);
+  const mesesCostos = Array.from(new Set([
+    ...costosCategoria.map((c) => c.mes).filter(Boolean),
+    hoyISO().slice(0, 7),
+    ...mesesExtraCostos,
+  ])).sort();
+
+  function nombreMes(mesStr) {
+    return fechaLocal(`${mesStr}-01`).toLocaleDateString("es-AR", { month: "short", year: "2-digit" });
+  }
+  function agregarMesCosto() {
+    if (!nuevoMesCosto || mesesCostos.includes(nuevoMesCosto)) return;
+    setMesesExtraCostos((arr) => [...arr, nuevoMesCosto]);
+    setNuevoMesCosto("");
+  }
+  function guardarCostoCelda(categoria, mes, valor) {
+    const existente = costosCategoria.find((c) => c.categoria === categoria && c.mes === mes);
+    if (existente) {
+      if (existente.costoHora === valor) return;
+      updateRecord("costos_categoria", existente.id, { costoHora: valor }, setCostosCategoria);
+    } else {
+      if (!valor) return;
+      addRecord("costos_categoria", { categoria, mes, costoHora: valor }, setCostosCategoria);
+    }
   }
 
   const [viewingPersonId, setViewingPersonId] = useState(null);
@@ -1268,12 +1291,19 @@ export default function ConcretarApp() {
     return personal.find((p) => nombreCompletoDe(p) === nombreCompleto)?.categoria || null;
   }
 
-  function costoHoraDeCategoria(categoria) {
-    return costosCategoria.find((c) => c.categoria === categoria)?.costoHora || 0;
+  function costoHoraDeCategoria(categoria, fechaStr) {
+    const mes = (fechaStr || hoyISO()).slice(0, 7); // "YYYY-MM"
+    const exacto = costosCategoria.find((c) => c.categoria === categoria && c.mes === mes);
+    if (exacto) return exacto.costoHora || 0;
+    // Si ese mes puntual no se cargó, usa el último mes cargado ANTERIOR (el sueldo no cambió hasta que se avise lo contrario).
+    const anteriores = costosCategoria
+      .filter((c) => c.categoria === categoria && c.mes && c.mes <= mes)
+      .sort((a, b) => b.mes.localeCompare(a.mes));
+    return anteriores[0]?.costoHora || 0;
   }
 
   function montoDe(a) {
-    return (a.horas || 0) * costoHoraDeCategoria(categoriaDe(a.nombre));
+    return (a.horas || 0) * costoHoraDeCategoria(categoriaDe(a.nombre), a.fecha);
   }
 
   // Lunes de la semana a la que pertenece una fecha "YYYY-MM-DD"
@@ -3006,7 +3036,7 @@ export default function ConcretarApp() {
                     showCostosPanel ? "border-slate-400 bg-stone-100 text-slate-700" : "border-stone-300 bg-white text-slate-700 hover:bg-stone-50"
                   }`}
                 >
-                  <DollarSign size={16} /> Costos por Categoría
+                  <DollarSign size={16} /> Precios Mano de Obra
                 </button>
                 {canEditarPersonal && (
                   <button
@@ -3059,44 +3089,53 @@ export default function ConcretarApp() {
             )}
 
             {showCostosPanel && (
-              <Panel title="Costos por Categoría" action={<button onClick={() => setShowCostosPanel(false)}><X size={16} /></button>}>
+              <Panel title="Precios Mano de Obra" action={<button onClick={() => setShowCostosPanel(false)}><X size={16} /></button>}>
                 <div className="mb-3 text-xs text-slate-500">
-                  Este valor se usa para calcular el costo por hora de cada persona, según su categoría.
+                  El costo por hora de cada categoría varía mes a mes. Al tomar asistencia, Liquidación usa solo el precio del mes en que se trabajó. Si un mes no tiene precio cargado, se usa el último mes anterior que sí lo tenga.
                   {!canEditarCostos && " Solo Gerente y RRHH pueden modificarlo."}
                 </div>
+
+                {canEditarCostos && (
+                  <div className="mb-3 flex flex-wrap items-end gap-2">
+                    <div className="w-40">
+                      <Field label="Agregar mes">
+                        <input type="month" value={nuevoMesCosto} onChange={(e) => setNuevoMesCosto(e.target.value)} className={inputCls} />
+                      </Field>
+                    </div>
+                    <button onClick={agregarMesCosto} className={btnGhost}>+ Agregar columna</button>
+                  </div>
+                )}
+
                 <div className="overflow-x-auto rounded-lg border border-stone-200">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
-                        <th className="px-4 py-3">Categoría</th>
-                        <th className="px-4 py-3">Costo por hora (ARS)</th>
-                        {canEditarCostos && <th className="px-4 py-3"></th>}
+                        <th className="sticky left-0 bg-stone-50 px-4 py-3">Categoría</th>
+                        {mesesCostos.map((mes) => <th key={mes} className="px-3 py-3 text-right capitalize">{nombreMes(mes)}</th>)}
                       </tr>
                     </thead>
                     <tbody>
-                      {costosCategoria.map((c) => (
-                        <tr key={c.id} className="border-t border-stone-100">
-                          <td className="px-4 py-3 font-medium text-slate-900">{c.categoria}</td>
-                          <td className="px-4 py-3">
-                            {canEditarCostos ? (
-                              <MoneyInput
-                                className={`${inputCls} w-40`}
-                                value={costoDrafts[c.id] ?? (c.costoHora ?? 0)}
-                                onChange={(v) => setCostoDrafts((d) => ({ ...d, [c.id]: v }))}
-                              />
-                            ) : c.costoHora ? (
-                              fmtARS(c.costoHora)
-                            ) : (
-                              <span className="text-slate-400">Sin definir</span>
-                            )}
-                          </td>
-                          {canEditarCostos && (
-                            <td className="px-4 py-3">
-                              <button onClick={() => guardarCosto(c)} className={btnGhost}>
-                                {savedCostoId === c.id ? <span className="flex items-center gap-1 text-emerald-600"><Check size={14} /> Guardado</span> : "Guardar"}
-                              </button>
-                            </td>
-                          )}
+                      {CATEGORIAS_PERSONAL.map((categoria) => (
+                        <tr key={categoria} className="border-t border-stone-100">
+                          <td className="sticky left-0 bg-white px-4 py-2 font-medium text-slate-900">{categoria}</td>
+                          {mesesCostos.map((mes) => {
+                            const entrada = costosCategoria.find((c) => c.categoria === categoria && c.mes === mes);
+                            return (
+                              <td key={mes} className="px-2 py-1.5">
+                                {canEditarCostos ? (
+                                  <MoneyInput
+                                    className={`${inputCls} w-28 text-right`}
+                                    value={entrada?.costoHora ?? 0}
+                                    onBlur={(v) => guardarCostoCelda(categoria, mes, v)}
+                                  />
+                                ) : entrada?.costoHora ? (
+                                  <span className="block text-right">{fmtARS(entrada.costoHora)}</span>
+                                ) : (
+                                  <span className="block text-right text-slate-300">—</span>
+                                )}
+                              </td>
+                            );
+                          })}
                         </tr>
                       ))}
                     </tbody>
