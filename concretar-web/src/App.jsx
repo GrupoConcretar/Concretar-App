@@ -358,10 +358,14 @@ export default function ConcretarApp() {
     { id: 8, nombre: "Raúl", apellido: "Medina", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero" },
   ];
   const DEMO_COSTOS = [
-    { id: 1, categoria: "Oficial Especializado", mes: "2026-08", costoHora: 7500 },
-    { id: 2, categoria: "Oficial", mes: "2026-08", costoHora: 6500 },
-    { id: 3, categoria: "Medio Oficial", mes: "2026-08", costoHora: 5500 },
-    { id: 4, categoria: "Ayudante", mes: "2026-08", costoHora: 4500 },
+    { id: 1, categoria: "Oficial Especializado", mes: "2026-07", costoHora: 7000 },
+    { id: 2, categoria: "Oficial", mes: "2026-07", costoHora: 6100 },
+    { id: 3, categoria: "Medio Oficial", mes: "2026-07", costoHora: 5200 },
+    { id: 4, categoria: "Ayudante", mes: "2026-07", costoHora: 4200 },
+    { id: 5, categoria: "Oficial Especializado", mes: "2026-08", costoHora: 7500 },
+    { id: 6, categoria: "Oficial", mes: "2026-08", costoHora: 6500 },
+    { id: 7, categoria: "Medio Oficial", mes: "2026-08", costoHora: 5500 },
+    { id: 8, categoria: "Ayudante", mes: "2026-08", costoHora: 4500 },
   ];
 
   const DEMO_ASISTENCIA = [
@@ -665,22 +669,22 @@ export default function ConcretarApp() {
   const canEditarPersonal = ROLES_EDITAR_PERSONAL.includes(currentRole);
 
   const canEditarCostos = ROLES_EDITAR_COSTOS.includes(currentRole);
-  const [mesesExtraCostos, setMesesExtraCostos] = useState([]);
-  const [nuevoMesCosto, setNuevoMesCosto] = useState("");
+  const anioActual = Number(hoyISO().slice(0, 4));
+  const mesActualNum = Number(hoyISO().slice(5, 7));
+  const [anioCostos, setAnioCostos] = useState(anioActual);
+  const aniosCostosDisponibles = [anioActual - 1, anioActual, anioActual + 1, anioActual + 2];
 
-  const mesesCostos = Array.from(new Set([
-    ...costosCategoria.map((c) => c.mes).filter(Boolean),
-    hoyISO().slice(0, 7),
-    ...mesesExtraCostos,
-  ])).sort();
+  // Año actual: de este mes a diciembre. Otro año (ej. 2027): el año completo, para planificar con anticipación.
+  const mesesCostos = Array.from(
+    { length: anioCostos === anioActual ? 13 - mesActualNum : 12 },
+    (_, i) => {
+      const mesNum = (anioCostos === anioActual ? mesActualNum + i : i + 1);
+      return `${anioCostos}-${String(mesNum).padStart(2, "0")}`;
+    }
+  );
 
   function nombreMes(mesStr) {
-    return fechaLocal(`${mesStr}-01`).toLocaleDateString("es-AR", { month: "short", year: "2-digit" });
-  }
-  function agregarMesCosto() {
-    if (!nuevoMesCosto || mesesCostos.includes(nuevoMesCosto)) return;
-    setMesesExtraCostos((arr) => [...arr, nuevoMesCosto]);
-    setNuevoMesCosto("");
+    return fechaLocal(`${mesStr}-01`).toLocaleDateString("es-AR", { month: "long" });
   }
   function guardarCostoCelda(categoria, mes, valor) {
     const existente = costosCategoria.find((c) => c.categoria === categoria && c.mes === mes);
@@ -3095,16 +3099,17 @@ export default function ConcretarApp() {
                   {!canEditarCostos && " Solo Gerente y RRHH pueden modificarlo."}
                 </div>
 
-                {canEditarCostos && (
-                  <div className="mb-3 flex flex-wrap items-end gap-2">
-                    <div className="w-40">
-                      <Field label="Agregar mes">
-                        <input type="month" value={nuevoMesCosto} onChange={(e) => setNuevoMesCosto(e.target.value)} className={inputCls} />
-                      </Field>
-                    </div>
-                    <button onClick={agregarMesCosto} className={btnGhost}>+ Agregar columna</button>
-                  </div>
-                )}
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {aniosCostosDisponibles.map((a) => (
+                    <button
+                      key={a}
+                      onClick={() => setAnioCostos(a)}
+                      className={`rounded-md px-3 py-1.5 text-sm font-semibold ${anioCostos === a ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                    >
+                      {a}{a === anioActual ? " (actual)" : ""}
+                    </button>
+                  ))}
+                </div>
 
                 <div className="overflow-x-auto rounded-lg border border-stone-200">
                   <table className="w-full text-left text-sm">
