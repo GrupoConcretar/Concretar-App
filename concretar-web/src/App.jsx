@@ -3116,7 +3116,7 @@ export default function ConcretarApp() {
                     <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="sticky left-0 bg-stone-50 px-4 py-3">Categoría</th>
-                        {mesesCostos.map((mes) => <th key={mes} className="px-3 py-3 text-right capitalize">{nombreMes(mes)}</th>)}
+                        {mesesCostos.map((mes) => <th key={mes} className="px-2 py-3 text-right capitalize">{nombreMes(mes)}</th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -3129,7 +3129,7 @@ export default function ConcretarApp() {
                               <td key={mes} className="px-2 py-1.5">
                                 {canEditarCostos ? (
                                   <MoneyInput
-                                    className={`${inputCls} w-28 text-right`}
+                                    className={`${inputCls} w-full text-right`}
                                     value={entrada?.costoHora ?? 0}
                                     onBlur={(v) => guardarCostoCelda(categoria, mes, v)}
                                   />
