@@ -481,6 +481,12 @@ function monthsBetween(d1, d2) {
 export default function ConcretarApp() {
   const [tab, setTab] = useState("general");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // El contenido scrollea dentro de <main>, no en el body — al abrir un formulario
+  // de edición desde algo que quedó más abajo en la lista, lo subimos a la vista.
+  const mainRef = useRef(null);
+  function scrollContenidoArriba() {
+    mainRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   const DEMO_OBRAS = [
     { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", clienteId: 1, presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], horaApertura: "08:00", diaCierre: "Viernes", horaCierre: "18:00" },
@@ -1196,6 +1202,7 @@ export default function ConcretarApp() {
     setEditingPersonalId(p.id);
     setShowPersonalForm(true);
     setViewingPersonId(null);
+    scrollContenidoArriba();
   }
 
   function cancelPersonalForm() {
@@ -1241,7 +1248,7 @@ export default function ConcretarApp() {
     { id: "obras", label: "Obras", icon: Building2 },
     { id: "personal", label: "Personal/Cuadrillas", icon: Users },
     { id: "asistencia", label: "Asistencia", icon: ClipboardCheck },
-    { id: "liquidacion", label: "Liquidación", icon: Wallet },
+    { id: "liquidacion", label: "Salario Personal", icon: Wallet },
     { id: "herramientas", label: "Herramientas", icon: Wrench },
     { id: "materiales", label: "Pedidos de Obra", icon: Package },
     { id: "ordenes", label: "Órdenes de Compra", icon: ShoppingCart },
@@ -1443,6 +1450,7 @@ export default function ConcretarApp() {
     setEditandoObraId(obra.id);
     setShowObraForm(false);
     setViewingObraId(null);
+    scrollContenidoArriba();
   }
   async function guardarEdicionObra(e, obra) {
     e.preventDefault();
@@ -1506,6 +1514,7 @@ export default function ConcretarApp() {
     setEditingAsistenciaId(a.id);
     setEditAsistenciaDraft({ fecha: a.fecha, nombre: a.nombre, obraId: a.obraId, horas: a.horas, estado: a.estado });
     setMotivoEdicionAsistencia("");
+    scrollContenidoArriba();
   }
 
   function cancelEditAsistencia() {
@@ -2025,6 +2034,7 @@ export default function ConcretarApp() {
     setEditingHerramientaId(h.id);
     setShowHerrForm(true);
     setViewingHerramientaId(null);
+    scrollContenidoArriba();
   }
   function submitHerrForm(e) {
     e.preventDefault();
@@ -2400,6 +2410,7 @@ export default function ConcretarApp() {
       diaCierre: obra.diaCierre || "Viernes",
       horaCierre: obra.horaCierre || "18:00",
     });
+    scrollContenidoArriba();
   }
   function toggleDiaLaborable(dia) {
     setHorarioForm((f) => ({
@@ -3012,7 +3023,7 @@ export default function ConcretarApp() {
       </aside>
 
       {/* Main content */}
-      <main className="mt-12 flex-1 overflow-y-auto p-4 md:mt-0 md:p-8">
+      <main ref={mainRef} className="mt-12 flex-1 overflow-y-auto p-4 md:mt-0 md:p-8">
         {tab === "general" && (
           <div className="space-y-6">
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">General</h2>
@@ -3723,7 +3734,7 @@ export default function ConcretarApp() {
             {showCostosPanel && (
               <Panel title="Precios Mano de Obra" action={<button onClick={() => setShowCostosPanel(false)}><X size={16} /></button>}>
                 <div className="mb-3 text-xs text-slate-500">
-                  El costo por hora de cada categoría varía mes a mes. Al tomar asistencia, Liquidación usa solo el precio del mes en que se trabajó. Si un mes no tiene precio cargado, se usa el último mes anterior que sí lo tenga.
+                  El costo por hora de cada categoría varía mes a mes. Al tomar asistencia, Salario Personal usa solo el precio del mes en que se trabajó. Si un mes no tiene precio cargado, se usa el último mes anterior que sí lo tenga.
                   {!canEditarCostos && " Solo Gerente y RRHH pueden modificarlo."}
                 </div>
 
@@ -4108,35 +4119,6 @@ export default function ConcretarApp() {
               </Panel>
             )}
 
-            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Nombre</th><th className="px-2 py-1.5">Centro de costo</th><th className="px-2 py-1.5">Hs</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Cargado por</th><th className="px-2 py-1.5"></th></tr>
-                </thead>
-                <tbody>
-                  {[...asistencia].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((a) => {
-                    const obra = obras.find((o) => o.id === a.obraId);
-                    return (
-                      <tr key={a.id} className="border-t border-stone-100">
-                        <td className="px-2 py-1 text-slate-600">{fmtFecha(a.fecha)}</td>
-                        <td className="px-2 py-1 font-medium text-slate-900">
-                          <span className="flex items-center gap-1.5">
-                            {a.nombre}
-                            {a.editado && <span title={`Editado por ${a.editadoPor}: ${a.motivoEdicion}`}><AlertTriangle size={12} className="text-sky-500" /></span>}
-                          </span>
-                        </td>
-                        <td className="px-2 py-1 text-slate-600">{obra?.nombre}</td>
-                        <td className="px-2 py-1 font-mono text-slate-700">{a.horas}</td>
-                        <td className="px-2 py-1"><Badge estado={a.estado} /></td>
-                        <td className="px-2 py-1 text-slate-500">{a.cargadoPor}</td>
-                        <td className="px-2 py-1"><button onClick={() => startEditAsistencia(a)} className={btnGhost}>Editar</button></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
             {editingAsistenciaId && editAsistenciaDraft && (
               <Panel title="Editar asistencia" action={<button onClick={cancelEditAsistencia}><X size={16} /></button>}>
                 <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitEditAsistencia}>
@@ -4183,6 +4165,35 @@ export default function ConcretarApp() {
                 </div>
               </Panel>
             )}
+
+            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Nombre</th><th className="px-2 py-1.5">Centro de costo</th><th className="px-2 py-1.5">Hs</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Cargado por</th><th className="px-2 py-1.5"></th></tr>
+                </thead>
+                <tbody>
+                  {[...asistencia].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((a) => {
+                    const obra = obras.find((o) => o.id === a.obraId);
+                    return (
+                      <tr key={a.id} className="border-t border-stone-100">
+                        <td className="px-2 py-1 text-slate-600">{fmtFecha(a.fecha)}</td>
+                        <td className="px-2 py-1 font-medium text-slate-900">
+                          <span className="flex items-center gap-1.5">
+                            {a.nombre}
+                            {a.editado && <span title={`Editado por ${a.editadoPor}: ${a.motivoEdicion}`}><AlertTriangle size={12} className="text-sky-500" /></span>}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1 text-slate-600">{obra?.nombre}</td>
+                        <td className="px-2 py-1 font-mono text-slate-700">{a.horas}</td>
+                        <td className="px-2 py-1"><Badge estado={a.estado} /></td>
+                        <td className="px-2 py-1 text-slate-500">{a.cargadoPor}</td>
+                        <td className="px-2 py-1"><button onClick={() => startEditAsistencia(a)} className={btnGhost}>Editar</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -4196,7 +4207,7 @@ export default function ConcretarApp() {
 
         {tab === "liquidacion" && canVerLiquidacion && (
           <div className="space-y-6">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Liquidación</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Salario Personal</h2>
 
             <div className="flex flex-wrap gap-2">
               <button
