@@ -5047,37 +5047,42 @@ export default function ConcretarApp() {
                             )}
                           </div>
                           <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                            <table className="w-full text-left text-sm">
-                              <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                                 <tr>
-                                  <th className="px-3 py-3"></th>
-                                  <th className="px-3 py-3 text-right">#</th>
-                                  <th className="px-4 py-3">Rubro</th><th className="px-4 py-3">Descripción</th>
-                                  <th className="px-4 py-3">Unidad</th><th className="px-4 py-3 text-right">Cantidad</th><th className="px-4 py-3 text-right">P. Unitario</th>
-                                  <th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3"></th>
+                                  <th className="px-2 py-1.5"></th>
+                                  <th className="px-2 py-1.5 text-right">#</th>
+                                  <th className="px-2 py-1.5">Rubro</th><th className="px-2 py-1.5">Descripción</th>
+                                  <th className="px-2 py-1.5">Unidad</th><th className="px-2 py-1.5 text-right">Cantidad</th><th className="px-2 py-1.5 text-right">P. Unitario</th>
+                                  <th className="px-2 py-1.5 text-right">Total</th><th className="px-2 py-1.5"></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {lineasObra.map((m, i) => {
                                   const numero = i + 1;
                                   const yaPedido = !!m.pedidoId;
+                                  const seleccionada = seleccionPresupuesto.includes(m.id);
                                   return (
-                                    <tr key={m.id} className={`border-t border-stone-100 ${yaPedido ? "opacity-50" : ""}`}>
-                                      <td className="px-3 py-2.5">
+                                    <tr
+                                      key={m.id}
+                                      onClick={(e) => { if (!yaPedido && !e.target.closest("input, button")) toggleSeleccionPresupuesto(m.id); }}
+                                      className={`border-t border-stone-100 leading-tight ${yaPedido ? "opacity-50" : "cursor-pointer hover:bg-amber-50"} ${seleccionada ? "bg-amber-50" : ""}`}
+                                    >
+                                      <td className="px-2 py-1">
                                         {yaPedido ? (
-                                          <span title="Ya está en un pedido"><ShoppingCart size={13} className="text-slate-400" /></span>
+                                          <span title="Ya está en un pedido"><ShoppingCart size={12} className="text-slate-400" /></span>
                                         ) : (
-                                          <input type="checkbox" checked={seleccionPresupuesto.includes(m.id)} onChange={() => toggleSeleccionPresupuesto(m.id)} className="h-3.5 w-3.5" />
+                                          <input type="checkbox" checked={seleccionada} onChange={() => toggleSeleccionPresupuesto(m.id)} className="h-3.5 w-3.5" />
                                         )}
                                       </td>
-                                      <td className="px-3 py-2.5 text-right font-mono text-slate-400">{numero}</td>
-                                      <td className="px-4 py-2.5 text-slate-600">{m.subcategoria || "—"}</td>
-                                      <td className="px-4 py-2.5 font-medium text-slate-900">{m.material}</td>
-                                      <td className="px-4 py-2.5 text-slate-600">{m.unidad}</td>
-                                      <td className="px-4 py-2.5 text-right font-mono">{m.cantidad}</td>
-                                      <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
-                                      <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.total)}</td>
-                                      <td className="px-4 py-2.5">{!yaPedido && <button onClick={() => eliminarLineaPresupuesto(m.id)} className="text-slate-400 hover:text-rose-600"><X size={14} /></button>}</td>
+                                      <td className="px-2 py-1 text-right font-mono text-slate-400">{numero}</td>
+                                      <td className="px-2 py-1 text-slate-600">{m.subcategoria || "—"}</td>
+                                      <td className="px-2 py-1 font-medium text-slate-900">{m.material}</td>
+                                      <td className="px-2 py-1 text-slate-600">{m.unidad}</td>
+                                      <td className="px-2 py-1 text-right font-mono">{m.cantidad}</td>
+                                      <td className="px-2 py-1 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
+                                      <td className="px-2 py-1 text-right font-mono">{fmtARS(m.total)}</td>
+                                      <td className="px-2 py-1">{!yaPedido && <button onClick={() => eliminarLineaPresupuesto(m.id)} className="text-slate-400 hover:text-rose-600"><X size={13} /></button>}</td>
                                     </tr>
                                   );
                                 })}
