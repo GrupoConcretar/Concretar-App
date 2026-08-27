@@ -83,7 +83,10 @@ const CATEGORIAS_PERSONAL = ["Oficial Especializado", "Oficial", "Medio Oficial"
 // Categorías de convenio UOCRA (CCT 76/75) — el resto de CATEGORIAS_PERSONAL es
 // personal de estructura (Gerente, RRHH, etc.), no se liquida con este régimen.
 const CATEGORIAS_CONVENIO_UOCRA = ["Oficial Especializado", "Oficial", "Medio Oficial", "Ayudante"];
-const TIPOS_TRABAJADOR = ["Empresa", "Tantero"];
+// "En blanco": su liquidación se cierra sí o sí por la calculadora formal UOCRA
+// (pasa por Contaduría). "En negro": se le puede pagar en mano desde "Pendientes
+// de pago". "Tantero": sigue igual, se liquida por grupo/avance, no por asistencia.
+const TIPOS_TRABAJADOR = ["Tantero", "En blanco", "En negro"];
 const ESTADOS_PERSONAL = ["Activo", "Licencia", "Baja"];
 const MANO_HABIL = ["Diestro", "Zurdo"];
 const TIPOS_SANGRE = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -436,12 +439,12 @@ export default function ConcretarApp() {
     { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", clienteId: 2, presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"], horaApertura: "07:30", diaCierre: "Viernes", horaCierre: "17:30" },
   ];
   const DEMO_PERSONAL = [
-    { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
-    { id: 2, nombre: "Eduardo", apellido: "Sr", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
-    { id: 3, nombre: "Daniel", apellido: "Tello", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
-    { id: 4, nombre: "Pablo", apellido: "Robles", dni: "", telefono: "", categoria: "Gerente", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
-    { id: 5, nombre: "Pepito", apellido: "Chespirito", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
-    { id: 6, nombre: "Emi", apellido: "Perez", dni: "", telefono: "", categoria: "Logística", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Empresa" },
+    { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro" },
+    { id: 2, nombre: "Eduardo", apellido: "Sr", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En blanco" },
+    { id: 3, nombre: "Daniel", apellido: "Tello", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En blanco" },
+    { id: 4, nombre: "Pablo", apellido: "Robles", dni: "", telefono: "", categoria: "Gerente", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro" },
+    { id: 5, nombre: "Pepito", apellido: "Chespirito", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro" },
+    { id: 6, nombre: "Emi", apellido: "Perez", dni: "", telefono: "", categoria: "Logística", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro" },
     { id: 7, nombre: "Mario", apellido: "González", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero" },
     { id: 8, nombre: "Raúl", apellido: "Medina", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero" },
   ];
@@ -861,7 +864,7 @@ export default function ConcretarApp() {
 
   // En qué obra está trabajando esta persona ahora mismo:
   // - Tantero: la obra del grupo al que pertenece.
-  // - Empresa: la obra de su registro de asistencia más reciente.
+  // - En blanco / en negro: la obra de su registro de asistencia más reciente.
   function obraActualDe(p) {
     if (p.tipoTrabajador === "Tantero") {
       const grupo = tanteros.find((t) => (t.integrantes || []).includes(p.id));
@@ -1086,7 +1089,7 @@ export default function ConcretarApp() {
     estado: "Activo", direccion: "", fechaNacimiento: "", fotoPersona: null, dniFrente: null, dniDorso: null,
     manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "",
     especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "",
-    tipoTrabajador: "Empresa",
+    tipoTrabajador: "En negro",
   };
   const [personalForm, setPersonalForm] = useState(emptyPersonalForm);
   const [editingPersonalId, setEditingPersonalId] = useState(null);
@@ -1113,7 +1116,7 @@ export default function ConcretarApp() {
       talleCamisa: p.talleCamisa || "",
       talleGuantes: p.talleGuantes || "",
       talleCalzado: p.talleCalzado || "",
-      tipoTrabajador: p.tipoTrabajador || "Empresa",
+      tipoTrabajador: p.tipoTrabajador === "Empresa" ? "En negro" : (p.tipoTrabajador || "En negro"),
     });
     setEditingPersonalId(p.id);
     setShowPersonalForm(true);
@@ -1462,6 +1465,11 @@ export default function ConcretarApp() {
   function categoriaDe(nombreCompleto) {
     return personal.find((p) => nombreCompletoDe(p) === nombreCompleto)?.categoria || null;
   }
+  // "Empresa" es el valor legado de antes de separar en blanco/negro — se trata como "En negro".
+  function tipoTrabajadorDe(nombreCompleto) {
+    const t = personal.find((p) => nombreCompletoDe(p) === nombreCompleto)?.tipoTrabajador;
+    return t === "Empresa" ? "En negro" : (t || "En negro");
+  }
 
   function costoHoraDeCategoria(categoria, fechaStr) {
     const mes = (fechaStr || hoyISO()).slice(0, 7); // "YYYY-MM"
@@ -1504,7 +1512,11 @@ export default function ConcretarApp() {
     return `${y}-${m}-${dd}`;
   }
 
-  const pendientesTodasObras = asistencia.filter((a) => a.estadoPago !== "Pagado" && a.estado !== "Ausente" && (a.horas || 0) > 0);
+  // El personal "En blanco" no se paga en mano acá — su liquidación se cierra sí o sí
+  // por la calculadora formal UOCRA (pestaña "Liquidación formal"), pasando por Contaduría.
+  const pendientesTodasObras = asistencia.filter(
+    (a) => a.estadoPago !== "Pagado" && a.estado !== "Ausente" && (a.horas || 0) > 0 && tipoTrabajadorDe(a.nombre) !== "En blanco"
+  );
 
   // Agrupa: semana -> obraId -> nombre -> { registros:[ids], horas, monto }
   const gruposSemana = {};
@@ -1605,8 +1617,10 @@ export default function ConcretarApp() {
   const asistenciaDelMesFormal = asistencia.filter(
     (a) => a.obraId === Number(obraFormalId) && (a.fecha || "").slice(0, 7) === mesFormal
   );
+  // Solo entra acá el personal marcado "En blanco" — el resto (en negro) se cierra
+  // pagando en mano desde "Pendientes de pago", y los tanteros no pasan por asistencia.
   const nombresDelMesFormal = [...new Set(asistenciaDelMesFormal.map((a) => a.nombre))]
-    .filter((nombre) => CATEGORIAS_CONVENIO_UOCRA.includes(categoriaDe(nombre)))
+    .filter((nombre) => CATEGORIAS_CONVENIO_UOCRA.includes(categoriaDe(nombre)) && tipoTrabajadorDe(nombre) === "En blanco")
     .sort();
 
   // Como Asistencia guarda un total de horas por día (no el detalle horario), el
@@ -3881,7 +3895,7 @@ export default function ConcretarApp() {
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Mano hábil</div><div className="text-slate-800">{viewingPerson.manoHabil || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tipo de sangre</div><div className="text-slate-800">{viewingPerson.tipoSangre || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tarjeta IERIC</div><div className="text-slate-800">{viewingPerson.tarjetaIeric || "No"}</div></div>
-                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tipo de trabajador</div><div className="text-slate-800">{viewingPerson.tipoTrabajador || "Empresa"}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tipo de trabajador</div><div className="text-slate-800">{viewingPerson.tipoTrabajador === "Empresa" ? "En negro" : (viewingPerson.tipoTrabajador || "En negro")}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Especialidad</div><div className="flex items-center gap-1.5 text-slate-800"><EspecialidadIcon especialidad={viewingPerson.especialidad} size={14} />{viewingPerson.especialidad || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Talle pantalón</div><div className="text-slate-800">{viewingPerson.tallePantalon || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Talle camisa</div><div className="text-slate-800">{viewingPerson.talleCamisa || "—"}</div></div>
