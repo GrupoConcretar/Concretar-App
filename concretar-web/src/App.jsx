@@ -8,7 +8,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, Package, Upload, FileSpreadsheet
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, Package, Upload, FileSpreadsheet, Trash2
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -193,9 +193,9 @@ const BADGE_STYLES = {
   Blanco: "border-sky-600 text-sky-700",
   Negro: "border-slate-600 text-slate-700",
   "En curso": "border-amber-600 text-amber-700",
-  Pausada: "border-slate-400 text-slate-500",
+  Pausada: "border-rose-600 text-rose-700",
   Finalizada: "border-emerald-600 text-emerald-700",
-  Finalizada: "border-emerald-600 text-emerald-700",
+  Papelera: "border-slate-400 text-slate-500",
   Activo: "border-emerald-600 text-emerald-700",
   Licencia: "border-amber-600 text-amber-700",
   Presente: "border-emerald-600 text-emerald-700",
@@ -620,6 +620,9 @@ export default function ConcretarApp() {
     setDbError(null);
     (async () => {
       try {
+        // Además del cron horario en Supabase, disparamos la purga acá para que
+        // una obra vencida en Papelera desaparezca apenas alguien abre la app.
+        try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
         const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
@@ -1109,6 +1112,10 @@ export default function ConcretarApp() {
   const desvioPct = puntoActual.Planificado ? (desvioAbs / puntoActual.Planificado) * 100 : 0;
   const herramientasEnUso = obraSel ? herramientas.filter((h) => h.ubicacion === obraSel.nombre && h.estado === "En Obra").length : 0;
 
+  // Obras en la Papelera: sus gastos/ingresos/pedidos dejan de contar en todos lados
+  // hasta que se restauren o se borren del todo (24hs), como si nunca hubieran existido.
+  const obraIdsPapelera = new Set(obras.filter((o) => o.estado === "Papelera").map((o) => o.id));
+
   // ---------- Alertas globales ----------
   const herramientasAtencion = herramientas.filter((h) => h.estado === "Mal Estado" || h.estado === "Rota");
   const herramientasReparadasRecientes = herramientas.filter((h) => {
@@ -1117,7 +1124,7 @@ export default function ConcretarApp() {
     const horas = (Date.now() - new Date(h.fechaUltimoCambioEstado).getTime()) / 36e5;
     return horas >= 0 && horas < 48;
   });
-  const ocPendientesAprobacion = ordenesCompra.filter((o) => o.estado === "Requiere aprobación");
+  const ocPendientesAprobacion = ordenesCompra.filter((o) => o.estado === "Requiere aprobación" && !obraIdsPapelera.has(o.obraId));
   const hayDesvioAlerta = desvioPct > DESVIO_ALERTA_PCT;
   const asistenciasEditadas = asistencia.filter((a) => a.editado);
   function nombreDiaHoy() {
@@ -1152,9 +1159,9 @@ export default function ConcretarApp() {
     return Math.round((fechaLocal(fechaStr) - fechaLocal(hoyISO())) / 86400000);
   }
   const pedidoEnCurso = (p) => p.estado === "Solicitado" || p.estado === "Aprobado";
-  const materialesVencidos = pedidosMateriales.filter((p) => pedidoEnCurso(p) && p.fechaNecesaria && diasHasta(p.fechaNecesaria) < 0);
-  const materialesProximos = pedidosMateriales.filter((p) => pedidoEnCurso(p) && p.fechaNecesaria && diasHasta(p.fechaNecesaria) >= 0 && diasHasta(p.fechaNecesaria) <= 2);
-  const pedidosPorAprobar = pedidosMateriales.filter((p) => p.estado === "Solicitado");
+  const materialesVencidos = pedidosMateriales.filter((p) => pedidoEnCurso(p) && p.fechaNecesaria && diasHasta(p.fechaNecesaria) < 0 && !obraIdsPapelera.has(p.obraId));
+  const materialesProximos = pedidosMateriales.filter((p) => pedidoEnCurso(p) && p.fechaNecesaria && diasHasta(p.fechaNecesaria) >= 0 && diasHasta(p.fechaNecesaria) <= 2 && !obraIdsPapelera.has(p.obraId));
+  const pedidosPorAprobar = pedidosMateriales.filter((p) => p.estado === "Solicitado" && !obraIdsPapelera.has(p.obraId));
 
   const totalAlertas =
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
@@ -1163,6 +1170,7 @@ export default function ConcretarApp() {
 
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
+  const [filtroObrasEstado, setFiltroObrasEstado] = useState("En curso");
   const [resumenObraImportado, setResumenObraImportado] = useState(null);
   const [itemsObraImportados, setItemsObraImportados] = useState([]);
   const [archivoObraNombre, setArchivoObraNombre] = useState("");
@@ -1235,6 +1243,30 @@ export default function ConcretarApp() {
   function cambiarEstadoObra(obra, nuevoEstado) {
     if ((nuevoEstado === "Pausada" || nuevoEstado === "Finalizada") && !window.confirm(`¿${nuevoEstado === "Pausada" ? "Pausar" : "Finalizar"} "${obra.nombre}"? El personal que estaba afectado queda liberado para asignarse a otra obra.`)) return;
     updateRecord("obras", obra.id, { estado: nuevoEstado }, setObras);
+  }
+
+  // Manda la obra a la Papelera: libera las herramientas que estaban ahí (vuelven
+  // a Oficina, Disponibles) y deja registrada la fecha de cancelación para que
+  // el borrado automático (24hs) sepa cuándo purgarla. El personal se libera solo
+  // porque obraActualDe() ya ignora cualquier obra que no esté "En curso".
+  async function cancelarObra(obra) {
+    if (!window.confirm(`¿Cancelar "${obra.nombre}"? Pasa a la Papelera: las herramientas que estén ahí vuelven a Oficina, el personal queda liberado, y los gastos/ingresos de esta obra dejan de contar en los balances. Se borra todo definitivamente en 24hs (podés restaurarla antes desde la Papelera). ¿Confirmar?`)) return false;
+    const herramientasDeLaObra = herramientas.filter((h) => h.ubicacion === obra.nombre);
+    for (const h of herramientasDeLaObra) {
+      await updateRecord("herramientas", h.id, { ubicacion: "Oficina", estado: "Disponible", fechaUltimoCambioEstado: new Date().toISOString() }, setHerramientas);
+    }
+    await updateRecord("obras", obra.id, { estado: "Papelera", fechaCancelacion: new Date().toISOString() }, setObras);
+    return true;
+  }
+  function restaurarObra(obra) {
+    if (!window.confirm(`¿Restaurar "${obra.nombre}"? Vuelve a quedar "En curso" y sus gastos/ingresos vuelven a contar en los balances.`)) return;
+    updateRecord("obras", obra.id, { estado: "En curso", fechaCancelacion: null }, setObras);
+  }
+  // Horas que le quedan a una obra en Papelera antes del borrado automático.
+  function horasRestantesPapelera(obra) {
+    if (!obra.fechaCancelacion) return null;
+    const limite = new Date(obra.fechaCancelacion).getTime() + 24 * 3600 * 1000;
+    return Math.max(0, Math.ceil((limite - Date.now()) / 3600000));
   }
   const [editandoObraId, setEditandoObraId] = useState(null);
   const [viewingObraId, setViewingObraId] = useState(null);
@@ -1502,10 +1534,10 @@ export default function ConcretarApp() {
 
   function saldoCuenta(cuenta, formalidad) {
     const totalIngresos = ingresos
-      .filter((i) => i.cuenta === cuenta && i.formalidad === formalidad)
+      .filter((i) => i.cuenta === cuenta && i.formalidad === formalidad && !obraIdsPapelera.has(i.obraId))
       .reduce((s, i) => s + (i.monto || 0), 0);
     const totalEgresos = comprasFacturas
-      .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad)
+      .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad && !obraIdsPapelera.has(c.obraId))
       .reduce((s, c) => s + (c.monto || 0), 0);
     return totalIngresos - totalEgresos;
   }
@@ -1700,7 +1732,7 @@ export default function ConcretarApp() {
     setShowProveedorForm(false);
   }
   function balanceProveedor(prov) {
-    const facturas = comprasFacturas.filter((c) => c.proveedor === prov.razonSocial);
+    const facturas = comprasFacturas.filter((c) => c.proveedor === prov.razonSocial && !obraIdsPapelera.has(c.obraId));
     const totalFacturado = facturas.reduce((s, c) => s + (c.monto || 0), 0);
     const totalPagado = facturas.filter((c) => c.estado === "Pagada").reduce((s, c) => s + (c.monto || 0), 0);
     return { totalFacturado, totalPagado, saldo: totalFacturado - totalPagado, facturasPendientes: facturas.filter((c) => c.estado !== "Pagada") };
@@ -1722,7 +1754,7 @@ export default function ConcretarApp() {
     setShowClienteForm(false);
   }
   function balanceCliente(cli) {
-    const obrasCliente = obras.filter((o) => o.clienteId === cli.id);
+    const obrasCliente = obras.filter((o) => o.clienteId === cli.id && o.estado !== "Papelera");
     const totalAcordado = obrasCliente.reduce((s, o) => s + (o.presupuesto || 0), 0);
     const totalCobrado = ingresos.filter((i) => obrasCliente.some((o) => o.id === i.obraId)).reduce((s, i) => s + (i.monto || 0), 0);
     return { obrasCliente, totalAcordado, totalCobrado, saldo: totalAcordado - totalCobrado };
@@ -2675,7 +2707,7 @@ export default function ConcretarApp() {
 
               <Panel title="Compras de materiales recientes">
                 {(() => {
-                  const ultimos = [...pedidosMateriales].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).slice(0, 6);
+                  const ultimos = pedidosMateriales.filter((p) => !obraIdsPapelera.has(p.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).slice(0, 6);
                   return ultimos.length === 0 ? (
                     <div className="text-xs text-slate-400">Sin pedidos todavía.</div>
                   ) : (
@@ -2734,11 +2766,33 @@ export default function ConcretarApp() {
 
         {tab === "obras" && !viewingObraId && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Obras</h2>
               <button onClick={() => setShowObraForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                 <Plus size={16} /> Nueva obra
               </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {[
+                { estado: "En curso", label: "Activas", activeCls: "border-amber-500 bg-amber-500 text-slate-900", idleCls: "border-amber-300 text-amber-700 hover:bg-amber-50" },
+                { estado: "Finalizada", label: "Finalizadas", activeCls: "border-emerald-600 bg-emerald-600 text-white", idleCls: "border-emerald-300 text-emerald-700 hover:bg-emerald-50" },
+                { estado: "Pausada", label: "Pausadas", activeCls: "border-rose-600 bg-rose-600 text-white", idleCls: "border-rose-300 text-rose-700 hover:bg-rose-50" },
+                { estado: "Papelera", label: "Papelera", activeCls: "border-slate-500 bg-slate-500 text-white", idleCls: "border-slate-300 text-slate-600 hover:bg-slate-50" },
+              ].map((f) => {
+                const cantidad = obras.filter((o) => o.estado === f.estado).length;
+                const activo = filtroObrasEstado === f.estado;
+                return (
+                  <button
+                    key={f.estado}
+                    onClick={() => setFiltroObrasEstado(f.estado)}
+                    className={`flex items-center gap-1.5 rounded-full border-2 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${activo ? f.activeCls : f.idleCls}`}
+                  >
+                    {f.label}
+                    <span className={`flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[10px] ${activo ? "bg-white/25" : "bg-stone-100"}`}>{cantidad}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {showObraForm && (
@@ -2831,9 +2885,32 @@ export default function ConcretarApp() {
             )}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {obras.map((o) => {
+              {obras.filter((o) => o.estado === filtroObrasEstado).length === 0 && (
+                <div className="text-sm text-slate-400 md:col-span-2">No hay obras en este estado.</div>
+              )}
+              {obras.filter((o) => o.estado === filtroObrasEstado).map((o) => {
                 const encargado = personal.find((p) => p.id === o.encargadoId);
                 const gentePropia = personal.filter((p) => obraActualDe(p)?.id === o.id).length;
+                if (o.estado === "Papelera") {
+                  const horasRestantes = horasRestantesPapelera(o);
+                  return (
+                    <div key={o.id} className="rounded-lg border border-slate-300 bg-slate-50 p-5 shadow-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-bold text-slate-600">{o.nombre}</div>
+                          <div className="text-sm text-slate-400">{o.cliente}</div>
+                        </div>
+                        <Badge estado="Papelera" />
+                      </div>
+                      <div className="mt-3 text-xs text-slate-500">
+                        Se borra definitivamente {horasRestantes > 0 ? `en ${horasRestantes}hs` : "en cualquier momento"} — sus gastos, ingresos y pedidos ya dejaron de contar en los balances, y las herramientas volvieron a Oficina.
+                      </div>
+                      <button onClick={() => restaurarObra(o)} className="mt-3 flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                        <RefreshCw size={13} /> Restaurar obra
+                      </button>
+                    </div>
+                  );
+                }
                 return (
                   <div key={o.id} className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
                     {editandoObraId === o.id ? (
@@ -2865,13 +2942,18 @@ export default function ConcretarApp() {
                             <button onClick={() => abrirObra(o)} className="text-left font-bold text-slate-900 underline decoration-dotted hover:text-amber-600">{o.nombre}</button>
                             <div className="text-sm text-slate-500">{o.cliente}{!o.clienteId && <span className="ml-1 text-amber-600">(sin conectar)</span>}</div>
                           </div>
-                          <select
-                            value={o.estado}
-                            onChange={(e) => cambiarEstadoObra(o, e.target.value)}
-                            className={`rounded-full border-2 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${BADGE_STYLES[o.estado] || "border-slate-400 text-slate-500"}`}
-                          >
-                            {ESTADOS_OBRA.map((s) => <option key={s}>{s}</option>)}
-                          </select>
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              value={o.estado}
+                              onChange={(e) => cambiarEstadoObra(o, e.target.value)}
+                              className={`rounded-full border-2 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${BADGE_STYLES[o.estado] || "border-slate-400 text-slate-500"}`}
+                            >
+                              {ESTADOS_OBRA.map((s) => <option key={s}>{s}</option>)}
+                            </select>
+                            <button onClick={() => cancelarObra(o)} title="Cancelar obra (a Papelera)" className="rounded-md border border-slate-300 p-1 text-slate-400 hover:border-rose-300 hover:text-rose-600">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </div>
                         <div className="mt-3 flex justify-between text-sm">
                           <span className="text-slate-500">Presupuesto</span>
@@ -2929,6 +3011,9 @@ export default function ConcretarApp() {
                       <Badge estado={obraSel.estado} />
                       <button onClick={() => iniciarEdicionObra(obraSel)} className={btnGhost}>
                         <span className="flex items-center gap-1"><Pencil size={13} /> Editar</span>
+                      </button>
+                      <button onClick={async () => { if (await cancelarObra(obraSel)) setViewingObraId(null); }} className={btnGhostDanger}>
+                        <span className="flex items-center gap-1"><Trash2 size={13} /> Cancelar obra</span>
                       </button>
                     </div>
                   </div>
@@ -3460,7 +3545,7 @@ export default function ConcretarApp() {
                   </Field>
                   <Field label="Centro de costo / Obra">
                     <select value={asistenciaForm.obraId} onChange={(e) => asf("obraId")(e.target.value)} className={inputCls}>
-                      {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                      {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                     </select>
                   </Field>
                   <Field label="Hs trabajadas">
@@ -3703,7 +3788,7 @@ export default function ConcretarApp() {
                       </Field>
                       <Field label="Obra">
                         <select value={tanteroForm.obraId} onChange={(e) => setTanteroForm((f) => ({ ...f, obraId: e.target.value }))} className={inputCls}>
-                          {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                          {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                         </select>
                       </Field>
                       <Field label="Precio cerrado (ARS)">
@@ -3835,7 +3920,7 @@ export default function ConcretarApp() {
             {vistaLiquidacion === "historial" && (
               <>
                 <select className={inputCls} value={obraHistorialId} onChange={(e) => setObraHistorialId(e.target.value)}>
-                  {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                  {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                 </select>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -4045,7 +4130,7 @@ export default function ConcretarApp() {
                   <select className={inputCls} value={filtroHerr.ubicacion} onChange={(e) => setFiltroHerr((f) => ({ ...f, ubicacion: e.target.value }))}>
                     <option>Todas</option>
                     <option>Oficina</option>
-                    {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
+                    {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id}>{o.nombre}</option>)}
                   </select>
                   <select className={inputCls} value={filtroHerr.estado} onChange={(e) => setFiltroHerr((f) => ({ ...f, estado: e.target.value }))}>
                     <option>Todos</option>
@@ -4287,7 +4372,7 @@ export default function ConcretarApp() {
                                 <>
                                   <select value={obraParaAsignar} onChange={(e) => setObraParaAsignar(e.target.value)} className={inputCls}>
                                     <option value="">-- Elegir obra --</option>
-                                    {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                                    {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                                   </select>
                                   <button onClick={() => confirmarAsignarObraCaja(combo)} className={btnGhost}>Confirmar</button>
                                   <button onClick={() => { setAsignandoObraCajaId(null); setObraParaAsignar(""); }} className="text-xs text-slate-400 hover:underline">Cancelar</button>
@@ -4372,7 +4457,7 @@ export default function ConcretarApp() {
                             className={inputCls}
                           >
                             <option>Oficina</option>
-                            {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
+                            {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id}>{o.nombre}</option>)}
                           </select>
                         </Field>
                         <Field label="Destino">
@@ -4380,7 +4465,7 @@ export default function ConcretarApp() {
                             <option value="">-- Elegir --</option>
                             <option>Oficina</option>
                             <optgroup label="Obras">
-                              {obras.map((o) => <option key={o.id}>{o.nombre}</option>)}
+                              {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id}>{o.nombre}</option>)}
                             </optgroup>
                             {talleres.length > 0 && (
                               <optgroup label="Talleres de reparación">
@@ -4498,7 +4583,7 @@ export default function ConcretarApp() {
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <Field label="Obra">
                           <select value={obraAuditoriaId} onChange={(e) => { setObraAuditoriaId(Number(e.target.value)); setPresentesAuditoria([]); }} className={inputCls}>
-                            {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                            {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                           </select>
                         </Field>
                         <Field label="Tipo de control">
@@ -4609,7 +4694,7 @@ export default function ConcretarApp() {
                   <div className="min-w-[200px]">
                     <Field label="Obra">
                       <select value={obraPresupuestoId} onChange={(e) => setObraPresupuestoId(e.target.value)} className={inputCls}>
-                        {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                        {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                       </select>
                     </Field>
                   </div>
@@ -5377,7 +5462,7 @@ export default function ConcretarApp() {
             )}
 
             <div className="space-y-3">
-              {ordenesCompra.map((oc) => {
+              {ordenesCompra.filter((oc) => !obraIdsPapelera.has(oc.obraId)).map((oc) => {
                 const obra = obras.find((o) => o.id === oc.obraId);
                 return (
                   <div key={oc.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
@@ -5437,12 +5522,12 @@ export default function ConcretarApp() {
                 >
                   <Field label="Fecha"><input name="fecha" type="date" required className={inputCls} /></Field>
                   <Field label="Obra">
-                    <select name="obraId" className={inputCls}>{obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
+                    <select name="obraId" className={inputCls}>{obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
                   <Field label="Orden de compra (opcional)">
                     <select name="ordenCompraId" className={inputCls}>
                       <option value="">Sin orden asociada</option>
-                      {ordenesCompra.map((oc) => <option key={oc.id} value={oc.id}>#{oc.id} · {oc.proveedor}</option>)}
+                      {ordenesCompra.filter((oc) => !obraIdsPapelera.has(oc.obraId)).map((oc) => <option key={oc.id} value={oc.id}>#{oc.id} · {oc.proveedor}</option>)}
                     </select>
                   </Field>
                   <Field label="Proveedor"><input name="proveedor" required className={inputCls} /></Field>
@@ -5471,7 +5556,7 @@ export default function ConcretarApp() {
                   <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Proveedor</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Formalidad</th><th className="px-4 py-3">Cuenta</th><th className="px-4 py-3">Monto</th><th className="px-4 py-3">Estado</th></tr>
                 </thead>
                 <tbody>
-                  {[...comprasFacturas].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
+                  {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
                     const obra = obras.find((o) => o.id === c.obraId);
                     return (
                       <tr key={c.id} className="border-t border-stone-100">
@@ -5534,7 +5619,7 @@ export default function ConcretarApp() {
                 >
                   <Field label="Fecha"><input name="fecha" type="date" required className={inputCls} /></Field>
                   <Field label="Obra">
-                    <select name="obraId" className={inputCls}>{obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
+                    <select name="obraId" className={inputCls}>{obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
                   <Field label="Concepto"><input name="concepto" required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
                   <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
@@ -5555,7 +5640,7 @@ export default function ConcretarApp() {
                   <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Concepto</th><th className="px-4 py-3">Formalidad</th><th className="px-4 py-3">Cuenta</th><th className="px-4 py-3">Monto</th></tr>
                 </thead>
                 <tbody>
-                  {[...ingresos].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((i) => {
+                  {ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((i) => {
                     const obra = obras.find((o) => o.id === i.obraId);
                     return (
                       <tr key={i.id} className="border-t border-stone-100">
@@ -5824,7 +5909,7 @@ export default function ConcretarApp() {
 
             <Panel title="Ficha horaria por obra">
               <div className="space-y-3">
-                {obras.map((o) => (
+                {obras.filter((o) => o.estado !== "Papelera").map((o) => (
                   <div key={o.id} className="rounded-lg border border-stone-200 p-4">
                     {editandoHorarioObraId === o.id ? (
                       <form className="space-y-3" onSubmit={guardarHorarioObra}>
