@@ -80,6 +80,9 @@ const LETRA_TIPO_HERRAMIENTA = {
   "Equipo a Combustión": "C",
 };
 const CATEGORIAS_PERSONAL = ["Oficial Especializado", "Oficial", "Medio Oficial", "Ayudante", "Gerente", "HyS", "Recursos Humanos", "Capataz", "Logística"];
+// Categorías de convenio UOCRA (CCT 76/75) — el resto de CATEGORIAS_PERSONAL es
+// personal de estructura (Gerente, RRHH, etc.), no se liquida con este régimen.
+const CATEGORIAS_CONVENIO_UOCRA = ["Oficial Especializado", "Oficial", "Medio Oficial", "Ayudante"];
 const TIPOS_TRABAJADOR = ["Empresa", "Tantero"];
 const ESTADOS_PERSONAL = ["Activo", "Licencia", "Baja"];
 const MANO_HABIL = ["Diestro", "Zurdo"];
@@ -303,6 +306,26 @@ function MoneyInput({ name, value, onChange, onBlur, className, placeholder, req
 }
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
 
+// Campo numérico (admite decimales) que solo guarda al perder el foco — para
+// porcentajes/factores que se editan poco (Liquidación formal UOCRA).
+function PctField({ label, value, onSave, suffix = "%", confirmar = false }) {
+  const [v, setV] = useState(value ?? 0);
+  useEffect(() => setV(value ?? 0), [value]);
+  return (
+    <Field label={confirmar ? `${label} (a confirmar)` : label}>
+      <div className="flex items-center gap-1">
+        <input
+          type="number" step="0.01" value={v}
+          onChange={(e) => setV(e.target.value)}
+          onBlur={() => onSave(Number(v) || 0)}
+          className={`${inputCls} text-right`}
+        />
+        <span className="text-xs text-slate-400">{suffix}</span>
+      </div>
+    </Field>
+  );
+}
+
 function PhotoInput({ label, value, onChange }) {
   return (
     <div className="flex flex-col gap-1 text-sm">
@@ -431,6 +454,23 @@ export default function ConcretarApp() {
     { id: 6, categoria: "Oficial", mes: "2026-08", costoHora: 6500 },
     { id: 7, categoria: "Medio Oficial", mes: "2026-08", costoHora: 5500 },
     { id: 8, categoria: "Ayudante", mes: "2026-08", costoHora: 4500 },
+  ];
+  // Básico de convenio UOCRA CCT 76/75, Zona A (San Juan) — referencia julio 2026.
+  // No es lo que la empresa paga (eso es costosCategoria/DEMO_COSTOS): es el piso
+  // legal que usa la calculadora de Liquidación formal.
+  const DEMO_BASICOS_CONVENIO = [
+    { id: 1, categoria: "Oficial Especializado", mes: "2026-07", basicoHora: 6666 },
+    { id: 2, categoria: "Oficial", mes: "2026-07", basicoHora: 5703 },
+    { id: 3, categoria: "Medio Oficial", mes: "2026-07", basicoHora: 5270 },
+    { id: 4, categoria: "Ayudante", mes: "2026-07", basicoHora: 4851 },
+  ];
+  const DEMO_CONFIG_LIQUIDACION = [
+    {
+      id: 1, presentismoPct: 20, horaExtra50Pct: 50, horaExtra100Pct: 100, antiguedadPctAnio: 0,
+      aporteJubilacionPct: 11, aporteObraSocialPct: 3, aportePamiPct: 3, aporteSindicalPct: 2,
+      contribObraSocialPct: 6, contribEmpresariaPct: 2, contribJubilacionPct: 0,
+      fondoCesePrimerAnioPct: 12, fondoCesePosteriorPct: 8, iericMontoFijo: 0,
+    },
   ];
 
   const DEMO_ASISTENCIA = [
@@ -603,6 +643,8 @@ export default function ConcretarApp() {
   const [selectedObraId, setSelectedObraId] = useState(1);
   const [personal, setPersonal] = useState(isSupabaseConfigured ? [] : DEMO_PERSONAL);
   const [costosCategoria, setCostosCategoria] = useState(isSupabaseConfigured ? [] : DEMO_COSTOS);
+  const [basicosConvenio, setBasicosConvenio] = useState(isSupabaseConfigured ? [] : DEMO_BASICOS_CONVENIO);
+  const [configLiquidacion, setConfigLiquidacion] = useState(isSupabaseConfigured ? [] : DEMO_CONFIG_LIQUIDACION);
   const [asistencia, setAsistencia] = useState(isSupabaseConfigured ? [] : DEMO_ASISTENCIA);
   const [herramientas, setHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_HERRAMIENTAS);
   const [combosHerramientas, setCombosHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_COMBOS);
@@ -640,7 +682,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -648,10 +690,13 @@ export default function ConcretarApp() {
           sbSelect("proveedores"), sbSelect("remitos"), sbSelect("auditorias_herramientas"), sbSelect("feriados"), sbSelect("clientes"),
           sbSelect("subcategorias_material"), sbSelect("tipos_material"), sbSelect("catalogo_materiales"), sbSelect("presupuesto_materiales"),
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
+          sbSelect("basicos_convenio"), sbSelect("config_liquidacion"),
         ]);
         setObras(o);
         setPersonal(p);
         setCostosCategoria(cc);
+        setBasicosConvenio(bc);
+        setConfigLiquidacion(cl);
         setAsistencia(a);
         setHerramientas(h);
         setOrdenesCompra(oc);
@@ -763,6 +808,23 @@ export default function ConcretarApp() {
       if (!valor) return;
       addRecord("costos_categoria", { categoria, mes, costoHora: valor }, setCostosCategoria);
     }
+  }
+
+  // ---------- Factores UOCRA / Régimen de la Construcción (Liquidación formal) ----------
+  function guardarBasicoConvenioCelda(categoria, mes, valor) {
+    const existente = basicosConvenio.find((c) => c.categoria === categoria && c.mes === mes);
+    if (existente) {
+      if (existente.basicoHora === valor) return;
+      updateRecord("basicos_convenio", existente.id, { basicoHora: valor }, setBasicosConvenio);
+    } else {
+      if (!valor) return;
+      addRecord("basicos_convenio", { categoria, mes, basicoHora: valor }, setBasicosConvenio);
+    }
+  }
+  const cfgLiq = configLiquidacion[0] || DEMO_CONFIG_LIQUIDACION[0];
+  function actualizarConfigLiquidacion(campo, valor) {
+    if (!cfgLiq?.id) return;
+    updateRecord("config_liquidacion", cfgLiq.id, { [campo]: valor }, setConfigLiquidacion);
   }
 
   const [viewingPersonId, setViewingPersonId] = useState(null);
@@ -1409,6 +1471,15 @@ export default function ConcretarApp() {
       .sort((a, b) => b.mes.localeCompare(a.mes));
     return anteriores[0]?.costoHora || 0;
   }
+  function basicoConvenioDeCategoria(categoria, fechaStr) {
+    const mes = (fechaStr || hoyISO()).slice(0, 7);
+    const exacto = basicosConvenio.find((c) => c.categoria === categoria && c.mes === mes);
+    if (exacto) return exacto.basicoHora || 0;
+    const anteriores = basicosConvenio
+      .filter((c) => c.categoria === categoria && c.mes && c.mes <= mes)
+      .sort((a, b) => b.mes.localeCompare(a.mes));
+    return anteriores[0]?.basicoHora || 0;
+  }
 
   function montoDe(a) {
     return (a.horas || 0) * costoHoraDeCategoria(categoriaDe(a.nombre), a.fecha);
@@ -1503,6 +1574,151 @@ export default function ConcretarApp() {
       })
     );
     setSeleccionLiquidacion([]);
+  }
+
+  // ---------- Liquidación formal (UOCRA CCT 76/75 Zona A — San Juan, Ley 22.250) ----------
+  // Simulación de recibo: parte de las horas reales cargadas en Asistencia pero son
+  // 100% editables (a veces se declaran menos horas "en blanco" que las reales).
+  // No escribe nada en asistencia — es una calculadora de referencia, no reemplaza
+  // el pago informal que ya maneja "Pendientes de pago".
+  const [obraFormalId, setObraFormalId] = useState(obras[0]?.id ?? "");
+  const [mesFormal, setMesFormal] = useState(hoyISO().slice(0, 7));
+  const [overridesFormal, setOverridesFormal] = useState({}); // nombre -> campos tocados a mano
+  const [showFactoresLiquidacion, setShowFactoresLiquidacion] = useState(false);
+
+  function esFeriado(fechaStr) {
+    return feriados.some((f) => f.fecha === fechaStr);
+  }
+
+  const asistenciaDelMesFormal = asistencia.filter(
+    (a) => a.obraId === Number(obraFormalId) && (a.fecha || "").slice(0, 7) === mesFormal
+  );
+  const nombresDelMesFormal = [...new Set(asistenciaDelMesFormal.map((a) => a.nombre))]
+    .filter((nombre) => CATEGORIAS_CONVENIO_UOCRA.includes(categoriaDe(nombre)))
+    .sort();
+
+  // Como Asistencia guarda un total de horas por día (no el detalle horario), el
+  // reparto normal/50%/100% es una estimación: domingo y feriado van enteros al 100%,
+  // el resto de los días hasta 9hs (jornada legal del CCT) va normal y el excedente al 50%.
+  function calcularDefaultsFormal(nombre) {
+    const registros = asistenciaDelMesFormal.filter((a) => a.nombre === nombre);
+    let normales = 0, extra50 = 0, extra100 = 0;
+    registros.forEach((a) => {
+      const horas = a.horas || 0;
+      if (horas <= 0) return;
+      const esDomingoOFeriado = fechaLocal(a.fecha).getDay() === 0 || esFeriado(a.fecha);
+      if (esDomingoOFeriado) {
+        extra100 += horas;
+      } else {
+        normales += Math.min(horas, 9);
+        extra50 += Math.max(0, horas - 9);
+      }
+    });
+    const huboAusenciaInjustificada = registros.some((a) => a.estado === "Ausente");
+    return { horasNormales: normales, horasExtra50: extra50, horasExtra100: extra100, presentismo: !huboAusenciaInjustificada, primerAnio: false };
+  }
+  function valoresFormalDe(nombre) {
+    return { ...calcularDefaultsFormal(nombre), ...(overridesFormal[nombre] || {}) };
+  }
+  function actualizarOverrideFormal(nombre, campo, valor) {
+    setOverridesFormal((prev) => ({
+      ...prev,
+      [nombre]: { ...calcularDefaultsFormal(nombre), ...prev[nombre], [campo]: valor },
+    }));
+  }
+
+  const filasFormal = nombresDelMesFormal.map((nombre) => {
+    const categoria = categoriaDe(nombre) || CATEGORIAS_PERSONAL[0];
+    const v = valoresFormalDe(nombre);
+    const basicoHora = basicoConvenioDeCategoria(categoria, `${mesFormal}-01`);
+    const valorHora50 = basicoHora * (1 + (cfgLiq.horaExtra50Pct || 0) / 100);
+    const valorHora100 = basicoHora * (1 + (cfgLiq.horaExtra100Pct || 0) / 100);
+    const montoBasico = v.horasNormales * basicoHora;
+    const montoExtra50 = v.horasExtra50 * valorHora50;
+    const montoExtra100 = v.horasExtra100 * valorHora100;
+    const montoPresentismo = v.presentismo ? montoBasico * ((cfgLiq.presentismoPct || 0) / 100) : 0;
+    const bruto = montoBasico + montoExtra50 + montoExtra100 + montoPresentismo;
+    const aportesPct = (cfgLiq.aporteJubilacionPct || 0) + (cfgLiq.aporteObraSocialPct || 0) + (cfgLiq.aportePamiPct || 0) + (cfgLiq.aporteSindicalPct || 0);
+    const aportes = bruto * (aportesPct / 100);
+    const neto = bruto - aportes;
+    const contribPct = (cfgLiq.contribObraSocialPct || 0) + (cfgLiq.contribEmpresariaPct || 0) + (cfgLiq.contribJubilacionPct || 0);
+    const contribuciones = bruto * (contribPct / 100);
+    const fondoCesePct = v.primerAnio ? (cfgLiq.fondoCesePrimerAnioPct || 0) : (cfgLiq.fondoCesePosteriorPct || 0);
+    const fondoCese = bruto * (fondoCesePct / 100);
+    const costoEmpresa = bruto + contribuciones + fondoCese + (cfgLiq.iericMontoFijo || 0);
+    const horasReales = asistenciaDelMesFormal.filter((a) => a.nombre === nombre).reduce((s, a) => s + (a.horas || 0), 0);
+    const diasTrabajados = new Set(asistenciaDelMesFormal.filter((a) => a.nombre === nombre).map((a) => a.fecha)).size;
+    return {
+      nombre, categoria, horasReales, diasTrabajados, basicoHora,
+      horasNormales: v.horasNormales, horasExtra50: v.horasExtra50, horasExtra100: v.horasExtra100,
+      presentismo: v.presentismo, primerAnio: v.primerAnio,
+      montoBasico, montoExtra50, montoExtra100, montoPresentismo, bruto, aportes, neto, contribuciones, fondoCese, costoEmpresa,
+    };
+  });
+  const totalesFormal = filasFormal.reduce(
+    (acc, f) => ({ bruto: acc.bruto + f.bruto, aportes: acc.aportes + f.aportes, neto: acc.neto + f.neto, costoEmpresa: acc.costoEmpresa + f.costoEmpresa }),
+    { bruto: 0, aportes: 0, neto: 0, costoEmpresa: 0 }
+  );
+
+  function generarPdfHorasReales() {
+    const obra = obras.find((o) => o.id === Number(obraFormalId));
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    doc.setFillColor(2, 29, 52);
+    doc.rect(0, 0, 210, 28, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.text("HORAS TRABAJADAS", 14, 14);
+    doc.setFontSize(10);
+    doc.text(`${obra?.nombre || "Obra"} · ${nombreMes(mesFormal)} de ${mesFormal.slice(0, 4)}`, 14, 21);
+    doc.setTextColor(20, 20, 20);
+    autoTable(doc, {
+      startY: 36,
+      head: [["Persona", "Categoría", "Días trabajados", "Horas reales"]],
+      body: filasFormal.map((f) => [f.nombre, f.categoria, String(f.diasTrabajados), String(f.horasReales)]),
+      headStyles: { fillColor: [2, 29, 52] },
+      styles: { fontSize: 9 },
+    });
+    const finalY = doc.lastAutoTable.finalY || 100;
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text("Horas reales según asistencia registrada en obra, sin ajustes — para que Contaduría haga la liquidación.", 14, finalY + 8);
+    doc.save(`Horas_${(obra?.nombre || "obra").replace(/\s+/g, "_")}_${mesFormal}.pdf`);
+  }
+
+  function generarPdfLiquidacionFormal() {
+    const obra = obras.find((o) => o.id === Number(obraFormalId));
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    doc.setFillColor(2, 29, 52);
+    doc.rect(0, 0, 210, 28, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(15);
+    doc.text("LIQUIDACIÓN (simulación UOCRA — Zona A / San Juan)", 14, 14);
+    doc.setFontSize(10);
+    doc.text(`${obra?.nombre || "Obra"} · ${nombreMes(mesFormal)} de ${mesFormal.slice(0, 4)}`, 14, 21);
+    doc.setTextColor(20, 20, 20);
+    autoTable(doc, {
+      startY: 36,
+      head: [["Persona", "Categ.", "Hs. norm.", "Hs. 50%", "Hs. 100%", "Bruto", "Aportes", "Neto", "Costo empresa"]],
+      body: filasFormal.map((f) => [
+        f.nombre, f.categoria, String(f.horasNormales), String(f.horasExtra50), String(f.horasExtra100),
+        fmtARS(f.bruto), fmtARS(f.aportes), fmtARS(f.neto), fmtARS(f.costoEmpresa),
+      ]),
+      foot: [["", "", "", "", "TOTAL", fmtARS(totalesFormal.bruto), fmtARS(totalesFormal.aportes), fmtARS(totalesFormal.neto), fmtARS(totalesFormal.costoEmpresa)]],
+      headStyles: { fillColor: [2, 29, 52] },
+      footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
+      styles: { fontSize: 7.5 },
+    });
+    const finalY = doc.lastAutoTable.finalY || 100;
+    doc.setFontSize(7.5);
+    doc.setTextColor(120, 120, 120);
+    doc.text(
+      [
+        "Simulación interna, no reemplaza el recibo oficial. Factores de referencia: UOCRA CCT 76/75 (Zona A / San Juan) y",
+        "Fondo de Cese Laboral Ley 22.250, sujetos a la paritaria vigente — verificar con Contaduría antes de usarla como pago real.",
+      ],
+      14, finalY + 8
+    );
+    doc.save(`Liquidacion_${(obra?.nombre || "obra").replace(/\s+/g, "_")}_${mesFormal}.pdf`);
   }
 
   // ---------- Tanteros (mano de obra por precio cerrado) ----------
@@ -3803,6 +4019,12 @@ export default function ConcretarApp() {
               >
                 Historial de la obra
               </button>
+              <button
+                onClick={() => setVistaLiquidacion("formal")}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaLiquidacion === "formal" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Liquidación formal (UOCRA)
+              </button>
             </div>
 
             {vistaLiquidacion === "pendientes" && (
@@ -4096,6 +4318,189 @@ export default function ConcretarApp() {
                       </Panel>
                     );
                   })
+                )}
+              </>
+            )}
+
+            {vistaLiquidacion === "formal" && (
+              <>
+                <div className="rounded-md border border-sky-300 bg-sky-50 px-4 py-3 text-xs text-sky-800">
+                  Simulación de liquidación formal (UOCRA CCT 76/75, Zona A / San Juan — Ley 22.250). Las horas parten de lo cargado en
+                  Asistencia pero son 100% editables, por si se declaran menos horas "en blanco" que las reales. No reemplaza el recibo
+                  oficial ni toca los pagos de "Pendientes de pago": usalo como guía interna, o generá el PDF de horas reales para que
+                  Contaduría haga la liquidación ella misma.
+                </div>
+
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="min-w-[200px]">
+                    <Field label="Obra">
+                      <select value={obraFormalId} onChange={(e) => setObraFormalId(e.target.value)} className={inputCls}>
+                        {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="min-w-[160px]">
+                    <Field label="Mes">
+                      <input type="month" value={mesFormal} onChange={(e) => setMesFormal(e.target.value)} className={inputCls} />
+                    </Field>
+                  </div>
+                  <button onClick={() => setShowFactoresLiquidacion((v) => !v)} className={btnGhost}>
+                    {showFactoresLiquidacion ? "Ocultar factores" : "Ver / editar factores UOCRA"}
+                  </button>
+                </div>
+
+                {showFactoresLiquidacion && (
+                  <Panel title="Factores UOCRA / Régimen de la Construcción — San Juan (Zona A)" action={<button onClick={() => setShowFactoresLiquidacion(false)}><X size={16} /></button>}>
+                    <div className="mb-3 text-xs text-slate-500">
+                      Valores de referencia a agosto de 2026. Se actualizan acá cada vez que haya un nuevo acuerdo paritario UOCRA.
+                      Los marcados <span className="font-semibold text-amber-700">(a confirmar)</span> no se pudieron verificar con precisión — pedile el valor vigente al contador.
+                      {!canEditarCostos && " Solo Gerente y RRHH pueden modificarlos."}
+                    </div>
+
+                    <div className="mb-5">
+                      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Básico de convenio por hora, por categoría y mes</div>
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {aniosCostosDisponibles.map((a) => (
+                          <button
+                            key={a}
+                            onClick={() => setAnioCostos(a)}
+                            className={`rounded-md px-3 py-1.5 text-sm font-semibold ${anioCostos === a ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                          >
+                            {a}{a === anioActual ? " (actual)" : ""}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="overflow-x-auto rounded-lg border border-stone-200">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th className="sticky left-0 bg-stone-50 px-4 py-3">Categoría</th>
+                              {mesesCostos.map((mes) => <th key={mes} className="px-2 py-3 text-right capitalize">{nombreMes(mes)}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {CATEGORIAS_CONVENIO_UOCRA.map((categoria) => (
+                              <tr key={categoria} className="border-t border-stone-100">
+                                <td className="sticky left-0 bg-white px-4 py-2 font-medium text-slate-900">{categoria}</td>
+                                {mesesCostos.map((mes) => {
+                                  const entrada = basicosConvenio.find((c) => c.categoria === categoria && c.mes === mes);
+                                  return (
+                                    <td key={mes} className="px-2 py-1.5">
+                                      {canEditarCostos ? (
+                                        <MoneyInput
+                                          className={`${inputCls} w-full text-right`}
+                                          value={entrada?.basicoHora ?? 0}
+                                          onBlur={(v) => guardarBasicoConvenioCelda(categoria, mes, v)}
+                                        />
+                                      ) : entrada?.basicoHora ? (
+                                        <span className="block text-right">{fmtARS(entrada.basicoHora)}</span>
+                                      ) : (
+                                        <span className="block text-right text-slate-300">—</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <PctField label="Presentismo" value={cfgLiq.presentismoPct} onSave={(v) => actualizarConfigLiquidacion("presentismoPct", v)} />
+                      <PctField label="Hora extra día hábil" value={cfgLiq.horaExtra50Pct} onSave={(v) => actualizarConfigLiquidacion("horaExtra50Pct", v)} />
+                      <PctField label="Hora extra sáb./dom./feriado" value={cfgLiq.horaExtra100Pct} onSave={(v) => actualizarConfigLiquidacion("horaExtra100Pct", v)} />
+                      <PctField label="Aporte jubilación (trabajador)" value={cfgLiq.aporteJubilacionPct} onSave={(v) => actualizarConfigLiquidacion("aporteJubilacionPct", v)} />
+                      <PctField label="Aporte obra social (trabajador)" value={cfgLiq.aporteObraSocialPct} onSave={(v) => actualizarConfigLiquidacion("aporteObraSocialPct", v)} />
+                      <PctField label="Aporte PAMI / Ley 19032" value={cfgLiq.aportePamiPct} onSave={(v) => actualizarConfigLiquidacion("aportePamiPct", v)} />
+                      <PctField label="Cuota sindical UOCRA" value={cfgLiq.aporteSindicalPct} onSave={(v) => actualizarConfigLiquidacion("aporteSindicalPct", v)} />
+                      <PctField label="Contrib. obra social (patronal)" value={cfgLiq.contribObraSocialPct} onSave={(v) => actualizarConfigLiquidacion("contribObraSocialPct", v)} />
+                      <PctField label="Contrib. empresaria al gremio" value={cfgLiq.contribEmpresariaPct} onSave={(v) => actualizarConfigLiquidacion("contribEmpresariaPct", v)} />
+                      <PctField label="Contrib. jubilatoria (patronal)" value={cfgLiq.contribJubilacionPct} onSave={(v) => actualizarConfigLiquidacion("contribJubilacionPct", v)} confirmar />
+                      <PctField label="Fondo de Cese Laboral — 1er año" value={cfgLiq.fondoCesePrimerAnioPct} onSave={(v) => actualizarConfigLiquidacion("fondoCesePrimerAnioPct", v)} />
+                      <PctField label="Fondo de Cese Laboral — después" value={cfgLiq.fondoCesePosteriorPct} onSave={(v) => actualizarConfigLiquidacion("fondoCesePosteriorPct", v)} />
+                      <Field label="IERIC (a confirmar)">
+                        <MoneyInput className={inputCls} value={cfgLiq.iericMontoFijo ?? 0} onBlur={(v) => actualizarConfigLiquidacion("iericMontoFijo", v)} />
+                      </Field>
+                    </div>
+                  </Panel>
+                )}
+
+                {filasFormal.length === 0 ? (
+                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
+                    No hay asistencia cargada para esta obra en {nombreMes(mesFormal)} de {mesFormal.slice(0, 4)}.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={generarPdfHorasReales} className={btnGhost}>
+                        <span className="flex items-center gap-1"><FileDown size={13} /> PDF horas reales (para el contador)</span>
+                      </button>
+                      <button onClick={generarPdfLiquidacionFormal} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700">
+                        <FileDown size={13} /> PDF liquidación simulada
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-2 py-2">Persona</th>
+                            <th className="px-2 py-2">Categoría</th>
+                            <th className="px-2 py-2 text-right">Hs. reales</th>
+                            <th className="px-2 py-2 text-right">Hs. normales</th>
+                            <th className="px-2 py-2 text-right">Hs. 50%</th>
+                            <th className="px-2 py-2 text-right">Hs. 100%</th>
+                            <th className="px-2 py-2 text-center">Presentismo</th>
+                            <th className="px-2 py-2 text-center">1er año</th>
+                            <th className="px-2 py-2 text-right">Bruto</th>
+                            <th className="px-2 py-2 text-right">Neto</th>
+                            <th className="px-2 py-2 text-right">Costo empresa</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filasFormal.map((f) => (
+                            <tr key={f.nombre} className="border-t border-stone-100">
+                              <td className="px-2 py-1.5 font-medium text-slate-900">{f.nombre}</td>
+                              <td className="px-2 py-1.5 text-slate-600">{f.categoria}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-slate-400">{f.horasReales}</td>
+                              <td className="px-2 py-1.5 text-right">
+                                <input type="number" value={f.horasNormales} onChange={(e) => actualizarOverrideFormal(f.nombre, "horasNormales", Number(e.target.value))} className="w-16 rounded border border-stone-300 px-1 py-0.5 text-right" />
+                              </td>
+                              <td className="px-2 py-1.5 text-right">
+                                <input type="number" value={f.horasExtra50} onChange={(e) => actualizarOverrideFormal(f.nombre, "horasExtra50", Number(e.target.value))} className="w-16 rounded border border-stone-300 px-1 py-0.5 text-right" />
+                              </td>
+                              <td className="px-2 py-1.5 text-right">
+                                <input type="number" value={f.horasExtra100} onChange={(e) => actualizarOverrideFormal(f.nombre, "horasExtra100", Number(e.target.value))} className="w-16 rounded border border-stone-300 px-1 py-0.5 text-right" />
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                <input type="checkbox" checked={f.presentismo} onChange={(e) => actualizarOverrideFormal(f.nombre, "presentismo", e.target.checked)} />
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                <input type="checkbox" checked={f.primerAnio} onChange={(e) => actualizarOverrideFormal(f.nombre, "primerAnio", e.target.checked)} />
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-mono">{fmtARS(f.bruto)}</td>
+                              <td className="px-2 py-1.5 text-right font-mono font-semibold">{fmtARS(f.neto)}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-slate-500">{fmtARS(f.costoEmpresa)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t-2 border-stone-200 font-semibold">
+                            <td className="px-2 py-2" colSpan={8}>Total</td>
+                            <td className="px-2 py-2 text-right font-mono">{fmtARS(totalesFormal.bruto)}</td>
+                            <td className="px-2 py-2 text-right font-mono">{fmtARS(totalesFormal.neto)}</td>
+                            <td className="px-2 py-2 text-right font-mono">{fmtARS(totalesFormal.costoEmpresa)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      "Hs. reales" es de referencia (lo cargado en Asistencia) y no se edita acá. Las columnas de horas declaradas parten de una
+                      estimación (domingo/feriado al 100%, resto hasta 9hs/día normal y excedente al 50%) pero podés cambiarlas libremente.
+                    </div>
+                  </>
                 )}
               </>
             )}
