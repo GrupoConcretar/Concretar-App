@@ -2398,12 +2398,16 @@ export default function ConcretarApp() {
   const [facturandoPedidoId, setFacturandoPedidoId] = useState(null);
   const [itemsFacturaDraft, setItemsFacturaDraft] = useState([]);
   const [comprobanteDraft, setComprobanteDraft] = useState("");
+  const [totalFacturaRapido, setTotalFacturaRapido] = useState(0);
+  const [facturaRevision, setFacturaRevision] = useState(0);
   const [guardandoFactura, setGuardandoFactura] = useState(false);
 
   function abrirCargaFactura(pedido) {
     setFacturandoPedidoId(pedido.id);
     setItemsFacturaDraft(pedido.items.map((it) => ({ ...it })));
     setComprobanteDraft("");
+    setTotalFacturaRapido(0);
+    setFacturaRevision(0);
   }
   function actualizarPrecioFactura(idx, valor) {
     setItemsFacturaDraft((items) => items.map((it, i) => (i === idx ? { ...it, precioUnitario: valor, total: (Number(it.cantidad) || 0) * (Number(valor) || 0) } : it)));
@@ -2412,6 +2416,22 @@ export default function ConcretarApp() {
   // alquilado (el alquiler se carga como gasto real de la obra).
   function actualizarTipoEquipoFactura(idx, valor) {
     setItemsFacturaDraft((items) => items.map((it, i) => (i === idx ? { ...it, tipoEquipo: valor, precioUnitario: valor === "Propio" ? 0 : it.precioUnitario, total: valor === "Propio" ? 0 : it.total } : it)));
+  }
+  // Para cuando hay apuro y no vale la pena discriminar precio por ítem: reparte un
+  // total único entre los ítems a prorrata de cantidad, sin tocar los que son "Propio"
+  // (esos no tienen costo, sea cual sea el total que se cargue).
+  function aplicarTotalFactura(totalIngresado) {
+    const total = Number(totalIngresado) || 0;
+    const itemsAPrecio = itemsFacturaDraft.filter((it) => it.tipoEquipo !== "Propio");
+    const sumaCantidades = itemsAPrecio.reduce((s, it) => s + (Number(it.cantidad) || 0), 0);
+    setItemsFacturaDraft((items) => items.map((it) => {
+      if (it.tipoEquipo === "Propio") return it;
+      const cant = Number(it.cantidad) || 0;
+      const proporcion = sumaCantidades > 0 ? cant / sumaCantidades : 1 / (itemsAPrecio.length || 1);
+      const precio = cant > 0 ? (total * proporcion) / cant : 0;
+      return { ...it, precioUnitario: precio, total: precio * cant };
+    }));
+    setFacturaRevision((r) => r + 1);
   }
   async function confirmarFacturaReal(pedido) {
     if (itemsFacturaDraft.some((it) => ["Equipos", "Herramientas"].includes(it.categoria) && !it.tipoEquipo)) {
@@ -4943,6 +4963,17 @@ export default function ConcretarApp() {
                         </Panel>
                       )}
 
+                      {["materiales", "equipos"].includes(vistaMateriales) && !showPedidoForm && (
+                        <div className="flex items-center justify-end">
+                          <button
+                            onClick={() => { setItemManualDraft((d) => ({ ...d, categoria: vistaMateriales === "equipos" ? "Equipos" : "Materiales" })); setShowPedidoForm(true); }}
+                            className="flex items-center gap-1.5 rounded-md border-2 border-rose-400 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                          >
+                            <AlertTriangle size={16} /> Pedido fuera de presupuesto
+                          </button>
+                        </div>
+                      )}
+
                       {["epps", "consumibles"].includes(vistaMateriales) ? (
                         <Panel
                           title={`Catálogo de ${vistaMateriales === "epps" ? "Epps" : "Consumibles"}`}
@@ -5159,7 +5190,7 @@ export default function ConcretarApp() {
                             </div>
                             <button type="button" onClick={agregarItemManualPedido} className={btnGhost}>+ Agregar</button>
                           </div>
-                          <div className="mt-1 text-[11px] text-slate-400">Esto es para algo que no estaba en el presupuesto original — se agrega igual, a mano.</div>
+                          <div className="mt-1 text-[11px] text-slate-400">Esto es para algo que no estaba en el presupuesto original — se agrega igual, a mano. No hace falta el precio ahora: lo carga Logística/Contabilidad cuando llega la compra.</div>
 
                           <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
                             <div className="font-mono text-lg font-bold text-slate-900">
@@ -5186,6 +5217,7 @@ export default function ConcretarApp() {
                                       <span className="font-semibold text-slate-900">{p.proveedor || "Proveedor sin especificar"}</span>
                                       <span className="ml-2"><Badge estado={p.estado} /></span>
                                       {p.obraId == null && <span className="ml-2 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Compra general</span>}
+                                      {p.items.length > 0 && p.items.every((it) => !it.presupuestoId) && <span className="ml-2 rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">Fuera de presupuesto</span>}
                                     </div>
                                     <span className="text-xs text-slate-400">{fmtFecha(p.fecha)} · {p.items.length} ítem(s) · <span className="font-mono font-semibold text-slate-600">{fmtARS(p.total)}</span></span>
                                   </div>
@@ -5256,7 +5288,7 @@ export default function ConcretarApp() {
                                                 )}
                                                 <span className="text-slate-400">$</span>
                                                 <MoneyInput
-                                                  key={`${idx}-${it.tipoEquipo || ""}`}
+                                                  key={`${idx}-${it.tipoEquipo || ""}-${facturaRevision}`}
                                                   value={it.precioUnitario}
                                                   onChange={(v) => actualizarPrecioFactura(idx, v)}
                                                   disabled={esEquipo && it.tipoEquipo === "Propio"}
@@ -5271,6 +5303,17 @@ export default function ConcretarApp() {
                                       {itemsFacturaDraft.some((it) => ["Equipos", "Herramientas"].includes(it.categoria) && !it.tipoEquipo) && (
                                         <div className="mt-1 text-[11px] text-amber-700">Faltan marcar como Propio o Alquilado los equipos/herramientas de arriba.</div>
                                       )}
+
+                                      <div className="mt-3 flex flex-wrap items-end gap-2 rounded-md border border-dashed border-stone-300 p-2">
+                                        <div className="w-40">
+                                          <Field label="¿Con apuro? Un total y listo">
+                                            <MoneyInput value={totalFacturaRapido} onChange={setTotalFacturaRapido} className="w-full rounded border border-stone-300 px-1.5 py-1 text-right text-xs" />
+                                          </Field>
+                                        </div>
+                                        <button type="button" onClick={() => aplicarTotalFactura(totalFacturaRapido)} className={btnGhost}>Repartir entre los ítems</button>
+                                        <div className="text-[11px] text-slate-400">Reparte el total a prorrata de cantidad — no toca lo marcado "Propio".</div>
+                                      </div>
+
                                       <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                                         <input
                                           value={comprobanteDraft}
