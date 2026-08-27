@@ -6687,9 +6687,17 @@ export default function ConcretarApp() {
                   <Field label="Obra">
                     <select name="obraId" className={inputCls}>{obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
-                  <Field label="Proveedor"><input name="proveedor" required className={inputCls} /></Field>
+                  <Field label="Proveedor">
+                    <input name="proveedor" list="proveedores-oc-list" placeholder="Elegí de la lista o escribí uno nuevo" required className={inputCls} />
+                    <datalist id="proveedores-oc-list">
+                      {proveedores.map((p) => <option key={p.id} value={p.razonSocial} />)}
+                    </datalist>
+                  </Field>
                   <Field label="Ítems / detalle"><input name="item" className={inputCls} /></Field>
-                  <Field label="Monto estimado (ARS)"><MoneyInput name="montoEstimado" className={inputCls} /></Field>
+                  <Field label="Monto estimado ($)">
+                    <MoneyInput name="montoEstimado" className={inputCls} />
+                    <div className="mt-1 text-[11px] text-slate-400">Precio final, con IVA incluido.</div>
+                  </Field>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
               </Panel>
