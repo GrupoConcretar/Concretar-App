@@ -1250,15 +1250,15 @@ export default function ConcretarApp() {
   const NAV = [
     { id: "general", label: "General", icon: LayoutDashboard },
     { id: "obras", label: "Obras", icon: Building2 },
-    { id: "personal", label: "Personal/Cuadrillas", icon: Users },
     { id: "asistencia", label: "Asistencia", icon: ClipboardCheck },
-    { id: "liquidacion", label: "Salario Personal", icon: Wallet },
-    { id: "herramientas", label: "Herramientas", icon: Wrench },
     { id: "materiales", label: "Pedidos de Obra", icon: Package },
     { id: "ordenes", label: "Órdenes de Compra", icon: ShoppingCart },
+    { id: "herramientas", label: "Herramientas", icon: Wrench },
     { id: "ingresos", label: "Ingresos", icon: TrendingUp },
     { id: "facturas", label: "Compras y Facturas", icon: Receipt },
+    { id: "personal", label: "Personal/Cuadrillas", icon: Users },
     { id: "cuentas", label: "Cuentas", icon: Landmark },
+    { id: "liquidacion", label: "Salario Personal", icon: Wallet },
     { id: "proveedores", label: "Clientes/Proveedores", icon: Truck },
     { id: "calendario", label: "Calendario", icon: CalendarDays },
   ];
