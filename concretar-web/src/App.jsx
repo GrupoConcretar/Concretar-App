@@ -207,6 +207,7 @@ const BADGE_STYLES = {
   Solicitado: "border-sky-600 text-sky-700",
   Aprobado: "border-emerald-600 text-emerald-700",
   Rechazado: "border-rose-600 text-rose-700",
+  Rechazada: "border-rose-600 text-rose-700",
   Facturado: "border-indigo-600 text-indigo-700",
   "Requiere aprobación": "border-rose-600 text-rose-700",
   Aprobada: "border-amber-600 text-amber-700",
@@ -1331,7 +1332,10 @@ export default function ConcretarApp() {
   const pedidoEnCurso = (p) => p.estado === "Solicitado" || p.estado === "Aprobado";
   const materialesVencidos = pedidosMateriales.filter((p) => pedidoEnCurso(p) && p.fechaNecesaria && diasHasta(p.fechaNecesaria) < 0 && !obraIdsPapelera.has(p.obraId));
   const materialesProximos = pedidosMateriales.filter((p) => pedidoEnCurso(p) && p.fechaNecesaria && diasHasta(p.fechaNecesaria) >= 0 && diasHasta(p.fechaNecesaria) <= 2 && !obraIdsPapelera.has(p.obraId));
-  const pedidosPorAprobar = pedidosMateriales.filter((p) => p.estado === "Solicitado" && !obraIdsPapelera.has(p.obraId));
+  // Los pedidos de una obra pasan a Órdenes de Compra apenas se solicitan (ver
+  // confirmarPedido) — se cuentan ahí (ocPendientesAprobacion), no acá, para no
+  // duplicar la alerta. Solo quedan acá las compras generales, que no tienen obra.
+  const pedidosPorAprobar = pedidosMateriales.filter((p) => p.estado === "Solicitado" && p.obraId == null && !obraIdsPapelera.has(p.obraId));
 
   const totalAlertas =
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
@@ -2660,6 +2664,20 @@ export default function ConcretarApp() {
       total: totalPedido,
     }, setPedidosMateriales);
     if (pedidoCreado) {
+      // Todo pedido armado en una obra pasa automáticamente a Órdenes de Compra —
+      // ahí lo aprueba, rechaza o modifica Gerencia (las compras generales, sin obra,
+      // se siguen aprobando directo en Pedidos de Obra).
+      if (pedidoCreado.obraId != null) {
+        await addRecord("ordenes_compra", {
+          fecha: hoyISO(),
+          obraId: pedidoCreado.obraId,
+          proveedor: pedidoProveedor || "Sin especificar",
+          item: itemsFinales.map((it) => it.material).join(", "),
+          montoEstimado: totalPedido,
+          estado: "Requiere aprobación",
+          pedidoId: pedidoCreado.id,
+        }, setOrdenesCompra);
+      }
       for (const it of itemsFinales) {
         if (it.presupuestoId) {
           // Las líneas del presupuesto que se usaron quedan marcadas como "ya pedidas".
@@ -2708,12 +2726,11 @@ export default function ConcretarApp() {
     await recibirPedidoMaterial(pedido);
   }
   const puedeAprobarPedidos = currentRole === "Gerente";
-  function aprobarPedidoMaterial(pedido) {
-    updateRecord("pedidos_materiales", pedido.id, { estado: "Aprobado", aprobadoPor: currentRole, fechaAprobacion: hoyISO() }, setPedidosMateriales);
+  async function aprobarPedidoMaterial(pedido) {
+    await updateRecord("pedidos_materiales", pedido.id, { estado: "Aprobado", aprobadoPor: currentRole, fechaAprobacion: hoyISO() }, setPedidosMateriales);
   }
-  function rechazarPedidoMaterial(pedido) {
-    if (!window.confirm("¿Rechazar este pedido? El capataz va a tener que volver a armarlo si todavía lo necesita.")) return;
-    updateRecord("pedidos_materiales", pedido.id, { estado: "Rechazado", aprobadoPor: currentRole, fechaAprobacion: hoyISO() }, setPedidosMateriales);
+  async function rechazarPedidoMaterial(pedido, observaciones = "") {
+    await updateRecord("pedidos_materiales", pedido.id, { estado: "Rechazado", aprobadoPor: currentRole, fechaAprobacion: hoyISO(), observaciones }, setPedidosMateriales);
   }
 
   // Pedidos "Compra general" de Epps/Consumibles (sin obra) no pasan por remito: al
@@ -2927,8 +2944,58 @@ export default function ConcretarApp() {
     }
   }
 
-  const aprobarOC = (id) => updateRecord("ordenes_compra", id, { estado: "Aprobada" }, setOrdenesCompra);
+  // Las órdenes armadas desde un pedido de obra (oc.pedidoId) reflejan la decisión
+  // también en el pedido, para que Pedidos de Obra muestre el mismo estado.
+  async function aprobarOC(oc) {
+    await updateRecord("ordenes_compra", oc.id, { estado: "Aprobada" }, setOrdenesCompra);
+    if (oc.pedidoId) {
+      const pedido = pedidosMateriales.find((p) => p.id === oc.pedidoId);
+      if (pedido) await aprobarPedidoMaterial(pedido);
+    }
+  }
+  async function rechazarOC(oc, observaciones) {
+    await updateRecord("ordenes_compra", oc.id, { estado: "Rechazada", observaciones }, setOrdenesCompra);
+    if (oc.pedidoId) {
+      const pedido = pedidosMateriales.find((p) => p.id === oc.pedidoId);
+      if (pedido) await rechazarPedidoMaterial(pedido, observaciones);
+    }
+  }
   const recibirOC = (id) => updateRecord("ordenes_compra", id, { estado: "Recibida" }, setOrdenesCompra);
+
+  const [editandoOcId, setEditandoOcId] = useState(null);
+  const [ocEditDraft, setOcEditDraft] = useState(null);
+  const [rechazandoOcId, setRechazandoOcId] = useState(null);
+  const [observacionesRechazoOc, setObservacionesRechazoOc] = useState("");
+  function iniciarEdicionOc(oc) {
+    setEditandoOcId(oc.id);
+    setOcEditDraft({ proveedor: oc.proveedor || "", item: oc.item || "", montoEstimado: oc.montoEstimado || 0 });
+    scrollContenidoArriba();
+  }
+  function cancelarEdicionOc() {
+    setEditandoOcId(null);
+    setOcEditDraft(null);
+  }
+  async function guardarEdicionOc(oc) {
+    await updateRecord("ordenes_compra", oc.id, { ...ocEditDraft }, setOrdenesCompra);
+    cancelarEdicionOc();
+  }
+  function iniciarRechazoOc(oc) {
+    setRechazandoOcId(oc.id);
+    setObservacionesRechazoOc("");
+    scrollContenidoArriba();
+  }
+  function cancelarRechazoOc() {
+    setRechazandoOcId(null);
+    setObservacionesRechazoOc("");
+  }
+  async function confirmarRechazoOc(oc) {
+    if (!observacionesRechazoOc.trim()) {
+      alert("Escribí el motivo del rechazo en observaciones, para que Logística sepa por qué.");
+      return;
+    }
+    await rechazarOC(oc, observacionesRechazoOc.trim());
+    cancelarRechazoOc();
+  }
 
   if (dbLoading) {
     return (
@@ -3038,7 +3105,7 @@ export default function ConcretarApp() {
               ) : (
                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
                   {ocPendientesAprobacion.length > 0 && (
-                    <AlertCard tone="rose" icon={AlertTriangle} title={`${ocPendientesAprobacion.length} orden(es) de compra por encima de ${fmtARS(UMBRAL_APROBACION_OC)} esperando aprobación.`} />
+                    <AlertCard tone="rose" icon={AlertTriangle} title={`${ocPendientesAprobacion.length} orden(es) de compra esperando aprobación.`} />
                   )}
                   {herramientasAtencion.length > 0 && (
                     <AlertCard tone="amber" icon={AlertTriangle} title={`${herramientasAtencion.length} herramienta(s) en mal estado o rota(s) — mandar a reparar.`}>
@@ -6110,18 +6177,31 @@ export default function ConcretarApp() {
                                   )}
 
                                   {p.estado === "Solicitado" && (
-                                    puedeAprobarPedidos ? (
+                                    p.obraId != null ? (
+                                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs italic text-slate-400">
+                                        <ShoppingCart size={13} /> Pasó automáticamente a Órdenes de Compra — ahí lo aprueba, rechaza o modifica Gerencia.
+                                        {puedeAprobarPedidos && (
+                                          <button onClick={() => setTab("ordenes")} className="not-italic font-semibold text-amber-700 hover:underline">Ir a Órdenes de Compra</button>
+                                        )}
+                                      </div>
+                                    ) : puedeAprobarPedidos ? (
                                       <div className="mt-2 flex gap-2">
                                         <button onClick={() => aprobarPedidoMaterial(p)} className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
                                           <Check size={13} /> Aprobar pedido
                                         </button>
-                                        <button onClick={() => rechazarPedidoMaterial(p)} className="flex items-center gap-1 rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50">
+                                        <button
+                                          onClick={() => rechazarPedidoMaterial(p, window.prompt("Motivo del rechazo (opcional):") || "")}
+                                          className="flex items-center gap-1 rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                                        >
                                           <X size={13} /> Rechazar
                                         </button>
                                       </div>
                                     ) : (
                                       <div className="mt-2 text-xs italic text-slate-400">Esperando aprobación de Gerencia.</div>
                                     )
+                                  )}
+                                  {p.estado === "Rechazado" && p.observaciones && (
+                                    <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">Rechazado — Motivo: {p.observaciones}</div>
                                   )}
                                   {p.estado === "Aprobado" && (
                                     canVerPreciosPedido ? (
@@ -6580,7 +6660,7 @@ export default function ConcretarApp() {
             </div>
 
             <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-              Las órdenes por {fmtARS(UMBRAL_APROBACION_OC)} o más quedan como "Requiere aprobación" hasta que las apruebes.
+              Todo pedido armado en una obra (Pedidos de Obra) llega automáticamente acá como "Requiere aprobación". Las órdenes cargadas a mano por {fmtARS(UMBRAL_APROBACION_OC)} o más también quedan así hasta que las apruebes, rechaces (con el motivo, para que Logística lo vea) o modifiques.
             </div>
 
             {showOcForm && (
@@ -6618,23 +6698,83 @@ export default function ConcretarApp() {
             <div className="space-y-3">
               {ordenesCompra.filter((oc) => !obraIdsPapelera.has(oc.obraId)).map((oc) => {
                 const obra = obras.find((o) => o.id === oc.obraId);
+                const pendienteDecision = oc.estado === "Pendiente" || oc.estado === "Requiere aprobación";
+                const enEdicion = editandoOcId === oc.id;
+                const enRechazo = rechazandoOcId === oc.id;
                 return (
-                  <div key={oc.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                    <div>
-                      <div className="font-semibold text-slate-900">{oc.proveedor}</div>
-                      <div className="text-sm text-slate-500">{oc.item}</div>
-                      <div className="mt-1 text-xs text-slate-400">{obra?.nombre} · {fmtFecha(oc.fecha)}</div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-sm font-semibold text-slate-800">{fmtARS(oc.montoEstimado)}</span>
-                      <Badge estado={oc.estado} />
-                      {(oc.estado === "Pendiente" || oc.estado === "Requiere aprobación") && (
-                        <button onClick={() => aprobarOC(oc.id)} className={btnGhost}>Aprobar</button>
-                      )}
-                      {oc.estado === "Aprobada" && (
-                        <button onClick={() => recibirOC(oc.id)} className={btnGhost}>Marcar recibida</button>
-                      )}
-                    </div>
+                  <div key={oc.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                    {enEdicion ? (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                        <Field label="Proveedor">
+                          <input value={ocEditDraft.proveedor} onChange={(e) => setOcEditDraft((d) => ({ ...d, proveedor: e.target.value }))} className={inputCls} />
+                        </Field>
+                        <div className="sm:col-span-2">
+                          <Field label="Ítems / detalle">
+                            <input value={ocEditDraft.item} onChange={(e) => setOcEditDraft((d) => ({ ...d, item: e.target.value }))} className={inputCls} />
+                          </Field>
+                        </div>
+                        <Field label="Monto estimado">
+                          <MoneyInput value={ocEditDraft.montoEstimado} onChange={(v) => setOcEditDraft((d) => ({ ...d, montoEstimado: v }))} className={inputCls} />
+                        </Field>
+                        <div className="flex gap-2 sm:col-span-4">
+                          <button onClick={() => guardarEdicionOc(oc)} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Guardar</button>
+                          <button onClick={cancelarEdicionOc} className={btnGhost}>Cancelar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-900">{oc.proveedor}</span>
+                            {oc.pedidoId && (
+                              <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Desde Pedidos de Obra</span>
+                            )}
+                          </div>
+                          <div className="text-sm text-slate-500">{oc.item}</div>
+                          <div className="mt-1 text-xs text-slate-400">{obra?.nombre} · {fmtFecha(oc.fecha)}</div>
+                          {oc.estado === "Rechazada" && oc.observaciones && (
+                            <div className="mt-1.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">Motivo: {oc.observaciones}</div>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-sm font-semibold text-slate-800">{fmtARS(oc.montoEstimado)}</span>
+                          <Badge estado={oc.estado} />
+                          {pendienteDecision && (
+                            <>
+                              <button onClick={() => aprobarOC(oc)} className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                                <Check size={13} /> Aprobar
+                              </button>
+                              <button onClick={() => iniciarRechazoOc(oc)} className="flex items-center gap-1 rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50">
+                                <X size={13} /> Rechazar
+                              </button>
+                              <button onClick={() => iniciarEdicionOc(oc)} className={btnGhost}>
+                                <span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span>
+                              </button>
+                            </>
+                          )}
+                          {oc.estado === "Aprobada" && (
+                            <button onClick={() => recibirOC(oc.id)} className={btnGhost}>Marcar recibida</button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {enRechazo && (
+                      <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 p-3">
+                        <Field label="Observaciones (obligatorio) — para que Logística sepa por qué">
+                          <textarea
+                            value={observacionesRechazoOc}
+                            onChange={(e) => setObservacionesRechazoOc(e.target.value)}
+                            rows={2}
+                            placeholder="Ej: proveedor muy caro, no era urgente, pedir otra cotización..."
+                            className={inputCls}
+                          />
+                        </Field>
+                        <div className="mt-2 flex gap-2">
+                          <button onClick={() => confirmarRechazoOc(oc)} className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700">Confirmar rechazo</button>
+                          <button onClick={cancelarRechazoOc} className={btnGhost}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
