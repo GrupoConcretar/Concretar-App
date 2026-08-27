@@ -56,14 +56,17 @@ const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"]
 const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
 const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
 const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
-const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Otros"];
-// Agrupa las líneas del presupuesto al armar un pedido: Equipos y Herramientas
-// van juntos bajo un solo título, así queda más simple de leer que categoría por categoría.
-const GRUPOS_CATEGORIA_PEDIDO = [
-  { label: "Equipos/Herramientas", categorias: ["Equipos", "Herramientas"] },
-  { label: "Materiales", categorias: ["Materiales"] },
-  { label: "Otros", categorias: ["Otros"] },
-];
+const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Epps y Consumibles", "Otros"];
+// La pestaña "Pedidos de Obra" arma el pedido en 3 pasos (rubros). Cada uno filtra
+// las líneas del presupuesto importado por estas categorías.
+const CATEGORIAS_POR_VISTA = {
+  materiales: ["Materiales"],
+  equipos: ["Equipos", "Herramientas"],
+  epps: ["Epps y Consumibles"],
+};
+// Rubros para clasificar EPPs/consumibles — los mismos que ya se usan para las
+// cajas de herramientas personales, más "General" para lo que sirve en cualquier obra.
+const RUBROS_EPP = ["General", ...TIPOS_CAJA];
 const CATEGORIAS_HERRAMIENTA = ["Herramienta Eléctrica", "Herramienta Manual", "Equipo Eléctrico", "Equipo a Combustión"];
 const SI_NO = ["No", "Sí"];
 // Letra usada en el N° de serie automático (Tipo-Marca+N°). Cambiá acá si preferís otras letras.
@@ -1091,7 +1094,7 @@ export default function ConcretarApp() {
     { id: "asistencia", label: "Asistencia", icon: ClipboardCheck },
     { id: "liquidacion", label: "Liquidación", icon: Wallet },
     { id: "herramientas", label: "Herramientas", icon: Wrench },
-    { id: "materiales", label: "Materiales", icon: Package },
+    { id: "materiales", label: "Pedidos de Obra", icon: Package },
     { id: "ordenes", label: "Órdenes de Compra", icon: ShoppingCart },
     { id: "ingresos", label: "Ingresos", icon: TrendingUp },
     { id: "facturas", label: "Compras y Facturas", icon: Receipt },
@@ -2011,13 +2014,14 @@ export default function ConcretarApp() {
   }
 
   // ---------- Materiales: subcategorías, catálogo de precios, presupuesto por Excel ----------
-  const [vistaMateriales, setVistaMateriales] = useState("presupuestos");
+  const [vistaMateriales, setVistaMateriales] = useState("materiales");
   const [categoriaParaSubcat, setCategoriaParaSubcat] = useState(CATEGORIAS_PEDIDO[0]);
   const [nuevaSubcategoria, setNuevaSubcategoria] = useState("");
   const [categoriaParaTipo, setCategoriaParaTipo] = useState(CATEGORIAS_PEDIDO[0]);
   const [subcategoriaParaTipo, setSubcategoriaParaTipo] = useState("");
   const [nuevoTipo, setNuevoTipo] = useState("");
   const [obraPresupuestoId, setObraPresupuestoId] = useState(obras[0]?.id ?? "");
+  const [rubroEppFiltro, setRubroEppFiltro] = useState("Todos");
   const [filasImportadas, setFilasImportadas] = useState([]);
   const [resumenImportado, setResumenImportado] = useState(null);
   const [archivoNombre, setArchivoNombre] = useState("");
@@ -2225,22 +2229,25 @@ export default function ConcretarApp() {
     setSeleccionPresupuesto((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
+  // Arma (o completa) el pedido en curso a partir de las líneas de presupuesto tildadas.
+  // No pisa lo que ya se haya agregado desde otro rubro (manual o del catálogo de EPPs) —
+  // así podés ir sumando materiales, equipos/herramientas y EPPs al mismo pedido.
   function abrirArmadoPedido() {
     const seleccionadas = presupuestoMateriales.filter((m) => seleccionPresupuesto.includes(m.id));
-    const items = seleccionadas.map((m) => ({
+    const itemsPresupuesto = seleccionadas.map((m) => ({
       presupuestoId: m.id, categoria: m.categoria, subcategoria: m.subcategoria, tipo: m.tipo,
       material: m.material, unidad: m.unidad, cantidad: m.cantidad, precioUnitario: m.precioUnitario,
     }));
+    const itemsPrevios = pedidoItems.filter((it) => !it.presupuestoId);
     // Sugiere el proveedor más repetido según el catálogo (última vez que se compró ese material).
     const conteo = {};
     seleccionadas.forEach((m) => {
       const enCatalogo = catalogoMateriales.find((c) => c.nombre.toLowerCase() === m.material.toLowerCase() && c.categoria === m.categoria);
       if (enCatalogo?.ultimoProveedor) conteo[enCatalogo.ultimoProveedor] = (conteo[enCatalogo.ultimoProveedor] || 0) + 1;
     });
-    const sugerido = Object.entries(conteo).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
-    setPedidoItems(items);
+    const sugerido = Object.entries(conteo).sort((a, b) => b[1] - a[1])[0]?.[0] || pedidoProveedor;
+    setPedidoItems([...itemsPresupuesto, ...itemsPrevios]);
     setPedidoProveedor(sugerido);
-    setPedidoFechaNecesaria("");
     setShowPedidoForm(true);
   }
 
@@ -2253,7 +2260,16 @@ export default function ConcretarApp() {
   function agregarItemManualPedido() {
     if (!itemManualDraft.material.trim()) return;
     setPedidoItems((items) => [...items, { presupuestoId: null, ...itemManualDraft, material: itemManualDraft.material.trim() }]);
-    setItemManualDraft({ categoria: "Materiales", subcategoria: "", tipo: "", material: "", unidad: "", cantidad: 1, precioUnitario: 0 });
+    setItemManualDraft((d) => ({ ...d, subcategoria: d.subcategoria, tipo: "", material: "", unidad: "", cantidad: 1, precioUnitario: 0 }));
+    setShowPedidoForm(true);
+  }
+  // Agrega un ítem del catálogo (ej. un EPP ya cargado antes) directo al pedido en curso.
+  function agregarCatalogoAlPedido(item) {
+    setPedidoItems((items) => [...items, {
+      presupuestoId: null, categoria: item.categoria, subcategoria: item.subcategoria, tipo: item.tipo || "",
+      material: item.nombre, unidad: item.unidad || "und.", cantidad: 1, precioUnitario: item.ultimoPrecio || 0,
+    }]);
+    setShowPedidoForm(true);
   }
 
   async function confirmarPedido() {
@@ -2278,11 +2294,17 @@ export default function ConcretarApp() {
       items: itemsFinales,
       total: totalPedido,
     }, setPedidosMateriales);
-    // Las líneas del presupuesto que se usaron quedan marcadas como "ya pedidas"
     if (pedidoCreado) {
       for (const it of itemsFinales) {
         if (it.presupuestoId) {
+          // Las líneas del presupuesto que se usaron quedan marcadas como "ya pedidas".
           await updateRecord("presupuesto_materiales", it.presupuestoId, { pedidoId: pedidoCreado.id }, setPresupuestoMateriales);
+        } else if (!catalogoMateriales.some((c) => c.nombre.toLowerCase() === it.material.toLowerCase() && c.categoria === it.categoria)) {
+          // Lo que se tipeó a mano y todavía no estaba en el catálogo queda guardado para la próxima vez.
+          await addRecord("catalogo_materiales", {
+            categoria: it.categoria, subcategoria: it.subcategoria || "", tipo: it.tipo || "", nombre: it.material,
+            unidad: it.unidad, ultimoPrecio: it.precioUnitario, ultimoProveedor: pedidoProveedor || null,
+          }, setCatalogoMateriales);
         }
       }
     }
@@ -2614,7 +2636,7 @@ export default function ConcretarApp() {
                         {grupo.pedidos.slice(0, 4).map((p) => (
                           <button
                             key={p.id}
-                            onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }}
+                            onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(p.obraId); }}
                             className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white"
                           >
                             <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
@@ -2635,7 +2657,7 @@ export default function ConcretarApp() {
                         {grupo.pedidos.slice(0, 4).map((p) => (
                           <button
                             key={p.id}
-                            onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }}
+                            onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(p.obraId); }}
                             className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white"
                           >
                             <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
@@ -2656,7 +2678,7 @@ export default function ConcretarApp() {
                         {grupo.pedidos.slice(0, 4).map((p) => (
                           <button
                             key={p.id}
-                            onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }}
+                            onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(p.obraId); }}
                             className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white"
                           >
                             <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
@@ -3074,7 +3096,7 @@ export default function ConcretarApp() {
                           <AlertCard tone="rose" icon={Package} title={`${matVencidosObra.length} pedido${matVencidosObra.length > 1 ? "s" : ""} pendiente${matVencidosObra.length > 1 ? "s" : ""} para esta obra — vencido${matVencidosObra.length > 1 ? "s" : ""}`}>
                             <div className="space-y-1">
                               {matVencidosObra.map((p) => (
-                                <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
+                                <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
                                   <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
                                   <span className="flex shrink-0 items-center gap-1 font-semibold"><CalendarDays size={11} /> {fmtFecha(p.fechaNecesaria)}</span>
                                 </button>
@@ -3086,7 +3108,7 @@ export default function ConcretarApp() {
                           <AlertCard tone="amber" icon={Package} title={`${matProximosObra.length} pedido${matProximosObra.length > 1 ? "s" : ""} pendiente${matProximosObra.length > 1 ? "s" : ""} para esta obra — llega${matProximosObra.length > 1 ? "n" : ""} pronto`}>
                             <div className="space-y-1">
                               {matProximosObra.map((p) => (
-                                <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
+                                <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
                                   <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
                                   <span className="flex shrink-0 items-center gap-1 font-semibold"><CalendarDays size={11} /> {fmtFecha(p.fechaNecesaria)}</span>
                                 </button>
@@ -3098,7 +3120,7 @@ export default function ConcretarApp() {
                           <AlertCard tone="sky" icon={ShoppingCart} title={`${pedidosAprobarObra.length} pedido${pedidosAprobarObra.length > 1 ? "s" : ""} para esta obra esperando aprobación`}>
                             <div className="space-y-1">
                               {pedidosAprobarObra.map((p) => (
-                                <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
+                                <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
                                   <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
                                   <span className="flex shrink-0 items-center gap-1 font-semibold">
                                     {p.fechaNecesaria ? <><CalendarDays size={11} /> {fmtFecha(p.fechaNecesaria)}</> : fmtARS(p.total)}
@@ -3154,7 +3176,7 @@ export default function ConcretarApp() {
                   </Panel>
 
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(obraSel.id); }} className={btnGhost}>Ver Materiales de esta obra</button>
+                    <button onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(obraSel.id); }} className={btnGhost}>Ver Materiales de esta obra</button>
                     <button onClick={() => { setTab("personal"); }} className={btnGhost}>Ver Personal</button>
                   </div>
                 </>
@@ -4660,17 +4682,29 @@ export default function ConcretarApp() {
 
         {tab === "materiales" && (
           <div className="space-y-6">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Materiales</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Pedidos de Obra</h2>
 
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setVistaMateriales("presupuestos")}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "presupuestos" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                onClick={() => { setVistaMateriales("materiales"); setItemManualDraft((d) => ({ ...d, categoria: "Materiales", subcategoria: "", tipo: "" })); }}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "materiales" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
               >
-                Presupuestos por Obra
+                Materiales
                 {(materialesVencidos.length + materialesProximos.length) > 0 && (
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{materialesVencidos.length + materialesProximos.length}</span>
                 )}
+              </button>
+              <button
+                onClick={() => { setVistaMateriales("equipos"); setItemManualDraft((d) => ({ ...d, categoria: "Equipos", subcategoria: "", tipo: "" })); }}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "equipos" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Equipos y Herramientas
+              </button>
+              <button
+                onClick={() => { setVistaMateriales("epps"); setItemManualDraft((d) => ({ ...d, categoria: "Epps y Consumibles", subcategoria: "", tipo: "" })); }}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "epps" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Epps y Consumibles
               </button>
               <button
                 onClick={() => setVistaMateriales("catalogo")}
@@ -4695,7 +4729,7 @@ export default function ConcretarApp() {
               </button>
             </div>
 
-            {vistaMateriales === "presupuestos" && (
+            {["materiales", "equipos", "epps"].includes(vistaMateriales) && (
               <>
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="min-w-[200px]">
@@ -4705,18 +4739,24 @@ export default function ConcretarApp() {
                       </select>
                     </Field>
                   </div>
-                  <label className="flex cursor-pointer items-center gap-1.5 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
-                    <Upload size={16} /> Importar Excel
-                    <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleExcelUpload} className="hidden" />
-                  </label>
-                  {archivoNombre && <span className="flex items-center gap-1 text-xs text-slate-500"><FileSpreadsheet size={13} /> {archivoNombre}</span>}
+                  {vistaMateriales === "materiales" && (
+                    <>
+                      <label className="flex cursor-pointer items-center gap-1.5 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                        <Upload size={16} /> Importar Excel
+                        <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleExcelUpload} className="hidden" />
+                      </label>
+                      {archivoNombre && <span className="flex items-center gap-1 text-xs text-slate-500"><FileSpreadsheet size={13} /> {archivoNombre}</span>}
+                    </>
+                  )}
                 </div>
 
-                <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-                  Subí la Planilla Interna para Costeo tal cual la usás (hoja "Planilla final"). La app lee sola las secciones de Mano de Obra, Equipos/Otros y Materiales, agrupando por rubro según los títulos que ya usás adentro de la planilla (Materiales Civiles, Daisa, etc.). Cuando armés el pedido real, ahí elegís la fecha en que lo necesitás — 2 días antes te avisa en el Dashboard.
-                </div>
+                {vistaMateriales === "materiales" && (
+                  <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
+                    Subí la Planilla Interna para Costeo tal cual la usás (hoja "Planilla final"). La app lee sola las secciones de Mano de Obra, Equipos/Otros y Materiales, agrupando por rubro según los títulos que ya usás adentro de la planilla (Materiales Civiles, Daisa, etc.). Cuando armés el pedido real, ahí elegís la fecha en que lo necesitás — 2 días antes te avisa en el Dashboard.
+                  </div>
+                )}
 
-                {filasImportadas.length > 0 && (
+                {vistaMateriales === "materiales" && filasImportadas.length > 0 && (
                   <Panel
                     title={`Vista previa — Planilla Interna para "${obras.find((o) => o.id === Number(obraPresupuestoId))?.nombre}"`}
                     action={<button onClick={cancelarImportacion}><X size={16} /></button>}
@@ -4780,14 +4820,19 @@ export default function ConcretarApp() {
                 )}
 
                 {(() => {
-                  const lineasObra = presupuestoMateriales.filter((m) => m.obraId === Number(obraPresupuestoId));
+                  const categoriasActivas = CATEGORIAS_POR_VISTA[vistaMateriales] || [];
+                  const lineasObra = presupuestoMateriales.filter((m) => m.obraId === Number(obraPresupuestoId) && categoriasActivas.includes(m.categoria));
                   const totalObra = lineasObra.reduce((s, m) => s + (m.total || 0), 0);
                   const pedidosObra = pedidosMateriales.filter((p) => p.obraId === Number(obraPresupuestoId));
                   const pg = presupuestoGeneral.find((p) => p.obraId === Number(obraPresupuestoId));
                   const gastoRealObra = comprasFacturas.filter((c) => c.obraId === Number(obraPresupuestoId)).reduce((s, c) => s + (c.monto || 0), 0);
+                  const herramientasDisponibles = herramientas.filter((h) => h.estado === "Disponible");
+                  const catalogoEpps = catalogoMateriales
+                    .filter((m) => m.categoria === "Epps y Consumibles" && (rubroEppFiltro === "Todos" || (m.subcategoria || "General") === rubroEppFiltro))
+                    .sort((a, b) => a.nombre.localeCompare(b.nombre));
                   return (
                     <>
-                      {pg && (
+                      {pg && vistaMateriales === "materiales" && (
                         <Panel title="Presupuestado vs. Real">
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                             <div>
@@ -4821,15 +4866,68 @@ export default function ConcretarApp() {
                         </Panel>
                       )}
 
-                      {lineasObra.length === 0 ? (
+                      {vistaMateriales === "equipos" && (
+                        <Panel title="Herramientas ya disponibles (sin uso)">
+                          {herramientasDisponibles.length === 0 ? (
+                            <div className="text-xs text-slate-400">No hay ninguna herramienta libre ahora mismo — están todas en obra o en reparación.</div>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {herramientasDisponibles.map((h) => (
+                                <span key={h.id} title={h.categoria} className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs text-emerald-800">
+                                  {h.nombre} <span className="text-emerald-600">({h.numeroSerie})</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <div className="mt-2 text-[11px] text-slate-400">Antes de pedir un equipo o herramienta nueva, fijate si ya tenés uno libre acá — te ahorrás la compra, solo hace falta mandarlo por remito.</div>
+                        </Panel>
+                      )}
+
+                      {vistaMateriales === "epps" ? (
+                        <Panel
+                          title="Catálogo de Epps y Consumibles"
+                          action={
+                            <div className="flex items-center gap-2">
+                              <select value={rubroEppFiltro} onChange={(e) => setRubroEppFiltro(e.target.value)} className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs">
+                                <option value="Todos">Todos los rubros</option>
+                                {RUBROS_EPP.map((r) => <option key={r}>{r}</option>)}
+                              </select>
+                              {!showPedidoForm && (
+                                <button onClick={() => setShowPedidoForm(true)} className={btnGhost}>+ Cargar uno nuevo</button>
+                              )}
+                            </div>
+                          }
+                        >
+                          {catalogoEpps.length === 0 ? (
+                            <div className="text-xs text-slate-400">Todavía no hay Epps o consumibles cargados{rubroEppFiltro !== "Todos" ? ` para "${rubroEppFiltro}"` : ""}. Tocá "+ Cargar uno nuevo" para tipearlo — queda guardado para la próxima vez.</div>
+                          ) : (
+                            <div className="divide-y divide-stone-100">
+                              {catalogoEpps.map((it) => (
+                                <div key={it.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                                  <div>
+                                    <span className="font-medium text-slate-800">{it.nombre}</span>
+                                    <span className="ml-2 text-xs text-slate-400">{it.subcategoria || "General"} · {it.unidad || "und."}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <span className="font-mono text-xs text-slate-500">{fmtARS(it.ultimoPrecio)}</span>
+                                    <button onClick={() => agregarCatalogoAlPedido(it)} className={btnGhost}>+ Agregar al pedido</button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </Panel>
+                      ) : lineasObra.length === 0 ? (
                         <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
-                          Todavía no hay presupuesto importado para esta obra.
+                          Todavía no hay presupuesto importado para esta obra{vistaMateriales === "equipos" ? " (Equipos/Herramientas)" : ""}.
                         </div>
                       ) : (
                         <>
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Equipos + Materiales importados (sin IVA)</div>
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                {vistaMateriales === "equipos" ? "Equipos y herramientas importados (sin IVA)" : "Materiales importados (sin IVA)"}
+                              </div>
                               <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalObra)}</div>
                             </div>
                             {seleccionPresupuesto.length > 0 && (
@@ -4850,44 +4948,29 @@ export default function ConcretarApp() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {(() => {
-                                  let contador = 0;
-                                  return GRUPOS_CATEGORIA_PEDIDO.map((grupo) => {
-                                    const filas = lineasObra.filter((m) => grupo.categorias.includes(m.categoria));
-                                    if (filas.length === 0) return null;
-                                    return (
-                                      <Fragment key={grupo.label}>
-                                        <tr className="bg-stone-100">
-                                          <td colSpan={9} className="px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">{grupo.label}:</td>
-                                        </tr>
-                                        {filas.map((m) => {
-                                          contador += 1;
-                                          const numero = contador;
-                                          const yaPedido = !!m.pedidoId;
-                                          return (
-                                            <tr key={m.id} className={`border-t border-stone-100 ${yaPedido ? "opacity-50" : ""}`}>
-                                              <td className="px-3 py-2.5">
-                                                {yaPedido ? (
-                                                  <span title="Ya está en un pedido"><ShoppingCart size={13} className="text-slate-400" /></span>
-                                                ) : (
-                                                  <input type="checkbox" checked={seleccionPresupuesto.includes(m.id)} onChange={() => toggleSeleccionPresupuesto(m.id)} className="h-3.5 w-3.5" />
-                                                )}
-                                              </td>
-                                              <td className="px-3 py-2.5 text-right font-mono text-slate-400">{numero}</td>
-                                              <td className="px-4 py-2.5 text-slate-600">{m.subcategoria || "—"}</td>
-                                              <td className="px-4 py-2.5 font-medium text-slate-900">{m.material}</td>
-                                              <td className="px-4 py-2.5 text-slate-600">{m.unidad}</td>
-                                              <td className="px-4 py-2.5 text-right font-mono">{m.cantidad}</td>
-                                              <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
-                                              <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.total)}</td>
-                                              <td className="px-4 py-2.5">{!yaPedido && <button onClick={() => eliminarLineaPresupuesto(m.id)} className="text-slate-400 hover:text-rose-600"><X size={14} /></button>}</td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </Fragment>
-                                    );
-                                  });
-                                })()}
+                                {lineasObra.map((m, i) => {
+                                  const numero = i + 1;
+                                  const yaPedido = !!m.pedidoId;
+                                  return (
+                                    <tr key={m.id} className={`border-t border-stone-100 ${yaPedido ? "opacity-50" : ""}`}>
+                                      <td className="px-3 py-2.5">
+                                        {yaPedido ? (
+                                          <span title="Ya está en un pedido"><ShoppingCart size={13} className="text-slate-400" /></span>
+                                        ) : (
+                                          <input type="checkbox" checked={seleccionPresupuesto.includes(m.id)} onChange={() => toggleSeleccionPresupuesto(m.id)} className="h-3.5 w-3.5" />
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-right font-mono text-slate-400">{numero}</td>
+                                      <td className="px-4 py-2.5 text-slate-600">{m.subcategoria || "—"}</td>
+                                      <td className="px-4 py-2.5 font-medium text-slate-900">{m.material}</td>
+                                      <td className="px-4 py-2.5 text-slate-600">{m.unidad}</td>
+                                      <td className="px-4 py-2.5 text-right font-mono">{m.cantidad}</td>
+                                      <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
+                                      <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.total)}</td>
+                                      <td className="px-4 py-2.5">{!yaPedido && <button onClick={() => eliminarLineaPresupuesto(m.id)} className="text-slate-400 hover:text-rose-600"><X size={14} /></button>}</td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
