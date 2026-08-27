@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
-  Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck,
+  Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
   Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, Package, Upload, FileSpreadsheet, Trash2
 } from "lucide-react";
@@ -87,6 +87,7 @@ const CATEGORIAS_CONVENIO_UOCRA = ["Oficial Especializado", "Oficial", "Medio Of
 // (pasa por Contaduría). "En negro": se le puede pagar en mano desde "Pendientes
 // de pago". "Tantero": sigue igual, se liquida por grupo/avance, no por asistencia.
 const TIPOS_TRABAJADOR = ["Tantero", "En blanco", "En negro"];
+const ASEGURADO_POR = ["No", "ART", "Seg. Accidentes"];
 const ESTADOS_PERSONAL = ["Activo", "Licencia", "Baja"];
 const MANO_HABIL = ["Diestro", "Zurdo"];
 const TIPOS_SANGRE = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -493,14 +494,14 @@ export default function ConcretarApp() {
     { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", clienteId: 2, presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"], horaApertura: "07:30", diaCierre: "Viernes", horaCierre: "17:30" },
   ];
   const DEMO_PERSONAL = [
-    { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro" },
-    { id: 2, nombre: "Eduardo", apellido: "Sr", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En blanco" },
-    { id: 3, nombre: "Daniel", apellido: "Tello", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En blanco" },
-    { id: 4, nombre: "Pablo", apellido: "Robles", dni: "", telefono: "", categoria: "Gerente", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro" },
-    { id: 5, nombre: "Pepito", apellido: "Chespirito", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro" },
-    { id: 6, nombre: "Emi", apellido: "Perez", dni: "", telefono: "", categoria: "Logística", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro" },
-    { id: 7, nombre: "Mario", apellido: "González", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero" },
-    { id: 8, nombre: "Raúl", apellido: "Medina", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero" },
+    { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro", aseguradoPor: "ART" },
+    { id: 2, nombre: "Eduardo", apellido: "Sr", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En blanco", aseguradoPor: "Seg. Accidentes" },
+    { id: 3, nombre: "Daniel", apellido: "Tello", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En blanco", aseguradoPor: "ART" },
+    { id: 4, nombre: "Pablo", apellido: "Robles", dni: "", telefono: "", categoria: "Gerente", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro", aseguradoPor: "No" },
+    { id: 5, nombre: "Pepito", apellido: "Chespirito", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro", aseguradoPor: "No" },
+    { id: 6, nombre: "Emi", apellido: "Perez", dni: "", telefono: "", categoria: "Logística", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro", aseguradoPor: "ART" },
+    { id: 7, nombre: "Mario", apellido: "González", dni: "", telefono: "", categoria: "Oficial Especializado", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero", aseguradoPor: "Seg. Accidentes" },
+    { id: 8, nombre: "Raúl", apellido: "Medina", dni: "", telefono: "", categoria: "Oficial", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "Eléctrico", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "Tantero", aseguradoPor: "No" },
   ];
   const DEMO_COSTOS = [
     { id: 1, categoria: "Oficial Especializado", mes: "2026-07", costoHora: 7000 },
@@ -891,6 +892,7 @@ export default function ConcretarApp() {
   const [viewingPersonId, setViewingPersonId] = useState(null);
   const [modoSeleccionPdf, setModoSeleccionPdf] = useState(false);
   const [showCostosPanel, setShowCostosPanel] = useState(false);
+  const [showSegurosPanel, setShowSegurosPanel] = useState(false);
   const [seleccionadosPdf, setSeleccionadosPdf] = useState([]);
   const toggleSeleccionPdf = (id) =>
     setSeleccionadosPdf((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -1170,7 +1172,7 @@ export default function ConcretarApp() {
     estado: "Activo", direccion: "", fechaNacimiento: "", fotoPersona: null, dniFrente: null, dniDorso: null,
     manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "",
     especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "",
-    tipoTrabajador: "En negro",
+    tipoTrabajador: "En negro", aseguradoPor: "No",
   };
   const [personalForm, setPersonalForm] = useState(emptyPersonalForm);
   const [editingPersonalId, setEditingPersonalId] = useState(null);
@@ -1198,6 +1200,7 @@ export default function ConcretarApp() {
       talleGuantes: p.talleGuantes || "",
       talleCalzado: p.talleCalzado || "",
       tipoTrabajador: p.tipoTrabajador === "Empresa" ? "En negro" : (p.tipoTrabajador || "En negro"),
+      aseguradoPor: p.aseguradoPor || "No",
     });
     setEditingPersonalId(p.id);
     setShowPersonalForm(true);
@@ -1234,6 +1237,7 @@ export default function ConcretarApp() {
       talleGuantes: personalForm.talleGuantes,
       talleCalzado: personalForm.talleCalzado,
       tipoTrabajador: personalForm.tipoTrabajador,
+      aseguradoPor: personalForm.aseguradoPor,
     };
     if (editingPersonalId) {
       updateRecord("personal", editingPersonalId, payload, setPersonal);
@@ -3681,6 +3685,14 @@ export default function ConcretarApp() {
                 >
                   <DollarSign size={16} /> Precios Mano de Obra
                 </button>
+                <button
+                  onClick={() => setShowSegurosPanel((v) => !v)}
+                  className={`flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-semibold ${
+                    showSegurosPanel ? "border-slate-400 bg-stone-100 text-slate-700" : "border-stone-300 bg-white text-slate-700 hover:bg-stone-50"
+                  }`}
+                >
+                  <Shield size={16} /> Seguros/ART
+                </button>
                 {canEditarPersonal && (
                   <button
                     onClick={() => {
@@ -3788,6 +3800,78 @@ export default function ConcretarApp() {
               </Panel>
             )}
 
+            {showSegurosPanel && (
+              <Panel title="Seguros/ART" action={<button onClick={() => setShowSegurosPanel(false)}><X size={16} /></button>}>
+                {(() => {
+                  const activos = personal.filter((p) => p.estado === "Activo");
+                  const sinSeguro = activos.filter((p) => (p.aseguradoPor || "No") === "No");
+                  const conArt = activos.filter((p) => p.aseguradoPor === "ART");
+                  const conAccidentes = activos.filter((p) => p.aseguradoPor === "Seg. Accidentes");
+                  return (
+                    <>
+                      <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div className="rounded-lg border border-stone-200 bg-white p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">ART</div>
+                          <div className="mt-1 font-mono text-lg font-bold text-slate-900">{conArt.length}</div>
+                        </div>
+                        <div className="rounded-lg border border-stone-200 bg-white p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Seg. Accidentes</div>
+                          <div className="mt-1 font-mono text-lg font-bold text-slate-900">{conAccidentes.length}</div>
+                        </div>
+                        <div className={`rounded-lg border p-3 ${sinSeguro.length > 0 ? "border-rose-300 bg-rose-50" : "border-stone-200 bg-white"}`}>
+                          <div className={`text-[11px] font-semibold uppercase tracking-wide ${sinSeguro.length > 0 ? "text-rose-700" : "text-slate-500"}`}>Sin seguro</div>
+                          <div className={`mt-1 font-mono text-lg font-bold ${sinSeguro.length > 0 ? "text-rose-700" : "text-slate-900"}`}>{sinSeguro.length}</div>
+                        </div>
+                      </div>
+                      {activos.length === 0 ? (
+                        <div className="text-xs text-slate-400">No hay personal activo cargado.</div>
+                      ) : (
+                        <div className="overflow-x-auto rounded-lg border border-stone-200">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              <tr>
+                                <th className="px-2 py-1.5">Persona</th>
+                                <th className="px-2 py-1.5">Categoría</th>
+                                <th className="px-2 py-1.5">Asegurado por</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {[...activos]
+                                .sort((a, b) => {
+                                  const orden = { No: 0, ART: 1, "Seg. Accidentes": 2 };
+                                  const da = orden[a.aseguradoPor || "No"] ?? 0;
+                                  const db = orden[b.aseguradoPor || "No"] ?? 0;
+                                  return da - db || nombreCompletoDe(a).localeCompare(nombreCompletoDe(b));
+                                })
+                                .map((p) => (
+                                  <tr key={p.id} className="border-t border-stone-100">
+                                    <td className="px-2 py-1 font-medium text-slate-900">{nombreCompletoDe(p)}</td>
+                                    <td className="px-2 py-1 text-slate-600">{p.categoria}</td>
+                                    <td className="px-2 py-1">
+                                      <span
+                                        className={`inline-block rounded-full border-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+                                          (p.aseguradoPor || "No") === "No"
+                                            ? "border-rose-600 text-rose-700"
+                                            : p.aseguradoPor === "ART"
+                                            ? "border-sky-600 text-sky-700"
+                                            : "border-emerald-600 text-emerald-700"
+                                        }`}
+                                      >
+                                        {p.aseguradoPor || "No"}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </Panel>
+            )}
+
             {showPersonalForm && canCrearPersonal && (
               <Panel title={editingPersonalId ? "Editar personal" : "Añadir personal"} action={<button onClick={cancelPersonalForm}><X size={16} /></button>}>
                 <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitPersonalForm}>
@@ -3808,6 +3892,11 @@ export default function ConcretarApp() {
                   <Field label="Tipo de trabajador">
                     <select value={personalForm.tipoTrabajador} onChange={(e) => pf("tipoTrabajador")(e.target.value)} className={inputCls}>
                       {TIPOS_TRABAJADOR.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Asegurado por">
+                    <select value={personalForm.aseguradoPor} onChange={(e) => pf("aseguradoPor")(e.target.value)} className={inputCls}>
+                      {ASEGURADO_POR.map((a) => <option key={a}>{a}</option>)}
                     </select>
                   </Field>
                   <Field label="Estado">
@@ -4000,6 +4089,7 @@ export default function ConcretarApp() {
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tipo de sangre</div><div className="text-slate-800">{viewingPerson.tipoSangre || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tarjeta IERIC</div><div className="text-slate-800">{viewingPerson.tarjetaIeric || "No"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tipo de trabajador</div><div className="text-slate-800">{viewingPerson.tipoTrabajador === "Empresa" ? "En negro" : (viewingPerson.tipoTrabajador || "En negro")}</div></div>
+                <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Asegurado por</div><div className={(viewingPerson.aseguradoPor || "No") === "No" ? "font-semibold text-rose-600" : "text-slate-800"}>{viewingPerson.aseguradoPor || "No"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Especialidad</div><div className="flex items-center gap-1.5 text-slate-800"><EspecialidadIcon especialidad={viewingPerson.especialidad} size={14} />{viewingPerson.especialidad || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Talle pantalón</div><div className="text-slate-800">{viewingPerson.tallePantalon || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Talle camisa</div><div className="text-slate-800">{viewingPerson.talleCamisa || "—"}</div></div>
