@@ -1512,6 +1512,22 @@ export default function ConcretarApp() {
     return `${y}-${m}-${dd}`;
   }
 
+  // El personal "En blanco" se liquida por quincena (1 al 15 / 16 a fin de mes), no por semana.
+  function quincenaDeFecha(fechaStr) {
+    return Number(fechaStr.slice(8, 10)) <= 15 ? 1 : 2;
+  }
+  function rangoQuincena(mes, quincena) {
+    const [y, m] = mes.split("-").map(Number);
+    const ultimoDia = new Date(y, m, 0).getDate();
+    return quincena === 1
+      ? { desde: `${mes}-01`, hasta: `${mes}-15` }
+      : { desde: `${mes}-16`, hasta: `${mes}-${String(ultimoDia).padStart(2, "0")}` };
+  }
+  function etiquetaQuincena(mes, quincena) {
+    const { desde, hasta } = rangoQuincena(mes, quincena);
+    return `${quincena === 1 ? "1ra" : "2da"} quincena de ${nombreMes(mes)} (días ${Number(desde.slice(8, 10))} al ${Number(hasta.slice(8, 10))})`;
+  }
+
   // El personal "En blanco" no se paga en mano acá — su liquidación se cierra sí o sí
   // por la calculadora formal UOCRA (pestaña "Liquidación formal"), pasando por Contaduría.
   const pendientesTodasObras = asistencia.filter(
@@ -1533,6 +1549,31 @@ export default function ConcretarApp() {
     g.monto += montoDe(a);
   });
   const semanasOrdenadas = Object.keys(gruposSemana).sort((a, b) => new Date(b) - new Date(a));
+
+  // Personal "En blanco": queda pendiente por quincena (no por semana) hasta que se carga
+  // el costo real del recibo del contador en "Liquidación formal". Hay 5 días desde el
+  // cierre de la quincena para pagarles — pasado ese plazo se marca como vencido.
+  const asistenciaEnBlanco = asistencia.filter(
+    (a) => a.estado !== "Ausente" && (a.horas || 0) > 0 && CATEGORIAS_CONVENIO_UOCRA.includes(categoriaDe(a.nombre)) && tipoTrabajadorDe(a.nombre) === "En blanco"
+  );
+  const gruposEnBlanco = {}; // "obraId|mes|quincena" -> { obraId, mes, quincena, horas, personas:Set }
+  asistenciaEnBlanco.forEach((a) => {
+    const mes = a.fecha.slice(0, 7);
+    const quincena = quincenaDeFecha(a.fecha);
+    const key = `${a.obraId}|${mes}|${quincena}`;
+    if (!gruposEnBlanco[key]) gruposEnBlanco[key] = { obraId: a.obraId, mes, quincena, horas: 0, personas: new Set() };
+    gruposEnBlanco[key].horas += a.horas || 0;
+    gruposEnBlanco[key].personas.add(a.nombre);
+  });
+  const pendientesEnBlanco = Object.values(gruposEnBlanco)
+    .map((g) => {
+      const liquidacion = liquidacionesFormales.find((l) => l.obraId === g.obraId && l.mes === g.mes && l.quincena === g.quincena);
+      const { hasta } = rangoQuincena(g.mes, g.quincena);
+      const diasDesdeCierre = Math.round((fechaLocal(hoyISO()) - fechaLocal(hasta)) / 86400000);
+      return { ...g, personas: [...g.personas].sort(), hasta, diasDesdeCierre, cerrado: liquidacion?.costoRealBlanco != null, vencido: diasDesdeCierre > 5 };
+    })
+    .filter((g) => !g.cerrado)
+    .sort((a, b) => fechaLocal(b.hasta) - fechaLocal(a.hasta));
 
   const toggleSeleccionLiquidacion = (key) =>
     setSeleccionLiquidacion((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]));
@@ -1597,25 +1638,29 @@ export default function ConcretarApp() {
   // el pago informal que ya maneja "Pendientes de pago".
   const [obraFormalId, setObraFormalId] = useState(obras[0]?.id ?? "");
   const [mesFormal, setMesFormal] = useState(hoyISO().slice(0, 7));
+  const [quincenaFormal, setQuincenaFormal] = useState(quincenaDeFecha(hoyISO()));
   const [overridesFormal, setOverridesFormal] = useState({}); // nombre -> campos tocados a mano
   const [showFactoresLiquidacion, setShowFactoresLiquidacion] = useState(false);
   const [costoRealDraft, setCostoRealDraft] = useState(0);
   const [comprobanteRealDraft, setComprobanteRealDraft] = useState("");
   const [fechaRealDraft, setFechaRealDraft] = useState("");
 
-  const liquidacionFormalActual = liquidacionesFormales.find((l) => l.obraId === Number(obraFormalId) && l.mes === mesFormal);
+  const liquidacionFormalActual = liquidacionesFormales.find(
+    (l) => l.obraId === Number(obraFormalId) && l.mes === mesFormal && l.quincena === quincenaFormal
+  );
   useEffect(() => {
     setCostoRealDraft(liquidacionFormalActual?.costoRealBlanco ?? 0);
     setComprobanteRealDraft(liquidacionFormalActual?.comprobante ?? "");
     setFechaRealDraft(liquidacionFormalActual?.fechaConfirmacion ?? "");
-  }, [obraFormalId, mesFormal, liquidacionFormalActual?.id]);
+  }, [obraFormalId, mesFormal, quincenaFormal, liquidacionFormalActual?.id]);
 
   function esFeriado(fechaStr) {
     return feriados.some((f) => f.fecha === fechaStr);
   }
 
+  const rangoFormalActual = rangoQuincena(mesFormal, quincenaFormal);
   const asistenciaDelMesFormal = asistencia.filter(
-    (a) => a.obraId === Number(obraFormalId) && (a.fecha || "").slice(0, 7) === mesFormal
+    (a) => a.obraId === Number(obraFormalId) && a.fecha >= rangoFormalActual.desde && a.fecha <= rangoFormalActual.hasta
   );
   // Solo entra acá el personal marcado "En blanco" — el resto (en negro) se cierra
   // pagando en mano desde "Pendientes de pago", y los tanteros no pasan por asistencia.
@@ -1707,12 +1752,12 @@ export default function ConcretarApp() {
     if (liquidacionFormalActual) {
       updateRecord("liquidaciones_formales", liquidacionFormalActual.id, patch, setLiquidacionesFormales);
     } else {
-      addRecord("liquidaciones_formales", { obraId: Number(obraFormalId), mes: mesFormal, ...patch }, setLiquidacionesFormales);
+      addRecord("liquidaciones_formales", { obraId: Number(obraFormalId), mes: mesFormal, quincena: quincenaFormal, ...patch }, setLiquidacionesFormales);
     }
   }
   function guardarCostoRealLiquidacion() {
     if (!liquidacionFormalActual) {
-      alert("Primero generá uno de los PDF para guardar la estimación de este mes — después cargás el real acá.");
+      alert("Primero generá uno de los PDF para guardar la estimación de esta quincena — después cargás el real acá.");
       return;
     }
     updateRecord(
@@ -1733,7 +1778,7 @@ export default function ConcretarApp() {
     doc.setFontSize(16);
     doc.text("HORAS TRABAJADAS", 14, 14);
     doc.setFontSize(10);
-    doc.text(`${obra?.nombre || "Obra"} · ${nombreMes(mesFormal)} de ${mesFormal.slice(0, 4)}`, 14, 21);
+    doc.text(`${obra?.nombre || "Obra"} · ${etiquetaQuincena(mesFormal, quincenaFormal)}`, 14, 21);
     doc.setTextColor(20, 20, 20);
     autoTable(doc, {
       startY: 36,
@@ -1754,7 +1799,7 @@ export default function ConcretarApp() {
       ],
       14, finalY + 8
     );
-    doc.save(`Horas_${(obra?.nombre || "obra").replace(/\s+/g, "_")}_${mesFormal}.pdf`);
+    doc.save(`Horas_${(obra?.nombre || "obra").replace(/\s+/g, "_")}_${mesFormal}_Q${quincenaFormal}.pdf`);
   }
 
   function generarPdfLiquidacionFormal() {
@@ -1767,7 +1812,7 @@ export default function ConcretarApp() {
     doc.setFontSize(15);
     doc.text("LIQUIDACIÓN (simulación UOCRA — Zona A / San Juan)", 14, 14);
     doc.setFontSize(10);
-    doc.text(`${obra?.nombre || "Obra"} · ${nombreMes(mesFormal)} de ${mesFormal.slice(0, 4)}`, 14, 21);
+    doc.text(`${obra?.nombre || "Obra"} · ${etiquetaQuincena(mesFormal, quincenaFormal)}`, 14, 21);
     doc.setTextColor(20, 20, 20);
     autoTable(doc, {
       startY: 36,
@@ -1797,7 +1842,7 @@ export default function ConcretarApp() {
       ],
       14, finalY + 18
     );
-    doc.save(`Liquidacion_${(obra?.nombre || "obra").replace(/\s+/g, "_")}_${mesFormal}.pdf`);
+    doc.save(`Liquidacion_${(obra?.nombre || "obra").replace(/\s+/g, "_")}_${mesFormal}_Q${quincenaFormal}.pdf`);
   }
 
   // ---------- Tanteros (mano de obra por precio cerrado) ----------
@@ -4119,10 +4164,56 @@ export default function ConcretarApp() {
                   </div>
                 )}
 
-                {semanasOrdenadas.length === 0 ? (
-                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
-                    No hay días pendientes de pago en ninguna obra. 🎉
+                {pendientesEnBlanco.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Personal en blanco — pendiente de liquidación formal</div>
+                    <div className="space-y-2">
+                      {pendientesEnBlanco.map((g) => {
+                        const obra = obras.find((o) => o.id === g.obraId);
+                        const diasParaVencer = 5 - g.diasDesdeCierre;
+                        return (
+                          <div
+                            key={`${g.obraId}|${g.mes}|${g.quincena}`}
+                            className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 shadow-sm ${g.vencido ? "border-rose-300 bg-rose-50" : "border-stone-200 bg-white"}`}
+                          >
+                            <div>
+                              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                <Building2 size={14} className="text-amber-600" /> {obra?.nombre || "Obra"} — {etiquetaQuincena(g.mes, g.quincena)}
+                              </div>
+                              <div className="mt-1 text-xs text-slate-500">{g.personas.join(", ")} · {g.horas} hs</div>
+                              <div className={`mt-1 text-xs font-semibold ${g.vencido ? "text-rose-600" : g.diasDesdeCierre < 0 ? "text-slate-400" : "text-amber-700"}`}>
+                                {g.vencido
+                                  ? `Vencido — pasaron ${g.diasDesdeCierre} días desde el cierre de la quincena (el plazo para pagar es de 5).`
+                                  : g.diasDesdeCierre < 0
+                                  ? "Quincena todavía en curso."
+                                  : diasParaVencer === 0
+                                  ? "Vence hoy — quedan 5 días desde el cierre de la quincena para pagarles."
+                                  : `Vence en ${diasParaVencer} día(s) para pagarles.`}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => { setVistaLiquidacion("formal"); setObraFormalId(g.obraId); setMesFormal(g.mes); setQuincenaFormal(g.quincena); }}
+                              className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700"
+                            >
+                              <Receipt size={13} /> Ir a Liquidación formal
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
+                )}
+
+                {pendientesEnBlanco.length > 0 && semanasOrdenadas.length > 0 && (
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Personal en negro — pago en mano</div>
+                )}
+
+                {semanasOrdenadas.length === 0 ? (
+                  pendientesEnBlanco.length === 0 && (
+                    <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
+                      No hay días pendientes de pago en ninguna obra. 🎉
+                    </div>
+                  )
                 ) : (
                   semanasOrdenadas.map((semanaKey) => {
                     const obrasDeSemana = gruposSemana[semanaKey];
@@ -4404,10 +4495,10 @@ export default function ConcretarApp() {
             {vistaLiquidacion === "formal" && (
               <>
                 <div className="rounded-md border border-sky-300 bg-sky-50 px-4 py-3 text-xs text-sky-800">
-                  Simulación de liquidación formal (UOCRA CCT 76/75, Zona A / San Juan — Ley 22.250). Las horas parten de lo cargado en
-                  Asistencia pero son 100% editables, por si se declaran menos horas "en blanco" que las reales. No reemplaza el recibo
-                  oficial ni toca los pagos de "Pendientes de pago": usalo como guía interna, o generá el PDF de horas reales para que
-                  Contaduría haga la liquidación ella misma.
+                  Simulación de liquidación formal (UOCRA CCT 76/75, Zona A / San Juan — Ley 22.250), por quincena — así trabaja el
+                  personal en blanco. Las horas parten de lo cargado en Asistencia pero son 100% editables, por si se declaran menos
+                  horas "en blanco" que las reales. Esta quincena queda como pendiente en "Pendientes de pago" hasta que cargues acá el
+                  costo real del recibo del contador.
                 </div>
 
                 <div className="flex flex-wrap items-end gap-3">
@@ -4421,6 +4512,24 @@ export default function ConcretarApp() {
                   <div className="min-w-[160px]">
                     <Field label="Mes">
                       <input type="month" value={mesFormal} onChange={(e) => setMesFormal(e.target.value)} className={inputCls} />
+                    </Field>
+                  </div>
+                  <div>
+                    <Field label="Quincena">
+                      <div className="flex gap-1">
+                        <button
+                          type="button" onClick={() => setQuincenaFormal(1)}
+                          className={`rounded-md px-3 py-2 text-sm font-semibold ${quincenaFormal === 1 ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                        >
+                          1 al 15
+                        </button>
+                        <button
+                          type="button" onClick={() => setQuincenaFormal(2)}
+                          className={`rounded-md px-3 py-2 text-sm font-semibold ${quincenaFormal === 2 ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                        >
+                          16 al fin
+                        </button>
+                      </div>
                     </Field>
                   </div>
                   <button onClick={() => setShowFactoresLiquidacion((v) => !v)} className={btnGhost}>
@@ -4508,7 +4617,7 @@ export default function ConcretarApp() {
 
                 {filasFormal.length === 0 ? (
                   <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
-                    No hay asistencia cargada para esta obra en {nombreMes(mesFormal)} de {mesFormal.slice(0, 4)}.
+                    No hay asistencia de personal "En blanco" cargada para esta obra en la {etiquetaQuincena(mesFormal, quincenaFormal)}.
                   </div>
                 ) : (
                   <>
