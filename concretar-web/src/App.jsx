@@ -57,6 +57,13 @@ const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
 const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
 const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
 const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Otros"];
+// Agrupa las líneas del presupuesto al armar un pedido: Equipos y Herramientas
+// van juntos bajo un solo título, así queda más simple de leer que categoría por categoría.
+const GRUPOS_CATEGORIA_PEDIDO = [
+  { label: "Equipos/Herramientas", categorias: ["Equipos", "Herramientas"] },
+  { label: "Materiales", categorias: ["Materiales"] },
+  { label: "Otros", categorias: ["Otros"] },
+];
 const CATEGORIAS_HERRAMIENTA = ["Herramienta Eléctrica", "Herramienta Manual", "Equipo Eléctrico", "Equipo a Combustión"];
 const SI_NO = ["No", "Sí"];
 // Letra usada en el N° de serie automático (Tipo-Marca+N°). Cambiá acá si preferís otras letras.
@@ -4836,34 +4843,51 @@ export default function ConcretarApp() {
                               <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                 <tr>
                                   <th className="px-3 py-3"></th>
-                                  <th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Sub-categoría (rubro)</th><th className="px-4 py-3">Material</th>
+                                  <th className="px-3 py-3 text-right">#</th>
+                                  <th className="px-4 py-3">Rubro</th><th className="px-4 py-3">Descripción</th>
                                   <th className="px-4 py-3">Unidad</th><th className="px-4 py-3 text-right">Cantidad</th><th className="px-4 py-3 text-right">P. Unitario</th>
                                   <th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3"></th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {lineasObra.map((m) => {
-                                  const yaPedido = !!m.pedidoId;
-                                  return (
-                                    <tr key={m.id} className={`border-t border-stone-100 ${yaPedido ? "opacity-50" : ""}`}>
-                                      <td className="px-3 py-2.5">
-                                        {yaPedido ? (
-                                          <span title="Ya está en un pedido"><ShoppingCart size={13} className="text-slate-400" /></span>
-                                        ) : (
-                                          <input type="checkbox" checked={seleccionPresupuesto.includes(m.id)} onChange={() => toggleSeleccionPresupuesto(m.id)} className="h-3.5 w-3.5" />
-                                        )}
-                                      </td>
-                                      <td className="px-4 py-2.5 text-slate-600">{m.categoria}</td>
-                                      <td className="px-4 py-2.5 text-slate-600">{m.subcategoria || "—"}</td>
-                                      <td className="px-4 py-2.5 font-medium text-slate-900">{m.material}</td>
-                                      <td className="px-4 py-2.5 text-slate-600">{m.unidad}</td>
-                                      <td className="px-4 py-2.5 text-right font-mono">{m.cantidad}</td>
-                                      <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
-                                      <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.total)}</td>
-                                      <td className="px-4 py-2.5">{!yaPedido && <button onClick={() => eliminarLineaPresupuesto(m.id)} className="text-slate-400 hover:text-rose-600"><X size={14} /></button>}</td>
-                                    </tr>
-                                  );
-                                })}
+                                {(() => {
+                                  let contador = 0;
+                                  return GRUPOS_CATEGORIA_PEDIDO.map((grupo) => {
+                                    const filas = lineasObra.filter((m) => grupo.categorias.includes(m.categoria));
+                                    if (filas.length === 0) return null;
+                                    return (
+                                      <Fragment key={grupo.label}>
+                                        <tr className="bg-stone-100">
+                                          <td colSpan={9} className="px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">{grupo.label}:</td>
+                                        </tr>
+                                        {filas.map((m) => {
+                                          contador += 1;
+                                          const numero = contador;
+                                          const yaPedido = !!m.pedidoId;
+                                          return (
+                                            <tr key={m.id} className={`border-t border-stone-100 ${yaPedido ? "opacity-50" : ""}`}>
+                                              <td className="px-3 py-2.5">
+                                                {yaPedido ? (
+                                                  <span title="Ya está en un pedido"><ShoppingCart size={13} className="text-slate-400" /></span>
+                                                ) : (
+                                                  <input type="checkbox" checked={seleccionPresupuesto.includes(m.id)} onChange={() => toggleSeleccionPresupuesto(m.id)} className="h-3.5 w-3.5" />
+                                                )}
+                                              </td>
+                                              <td className="px-3 py-2.5 text-right font-mono text-slate-400">{numero}</td>
+                                              <td className="px-4 py-2.5 text-slate-600">{m.subcategoria || "—"}</td>
+                                              <td className="px-4 py-2.5 font-medium text-slate-900">{m.material}</td>
+                                              <td className="px-4 py-2.5 text-slate-600">{m.unidad}</td>
+                                              <td className="px-4 py-2.5 text-right font-mono">{m.cantidad}</td>
+                                              <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
+                                              <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.total)}</td>
+                                              <td className="px-4 py-2.5">{!yaPedido && <button onClick={() => eliminarLineaPresupuesto(m.id)} className="text-slate-400 hover:text-rose-600"><X size={14} /></button>}</td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </Fragment>
+                                    );
+                                  });
+                                })()}
                               </tbody>
                             </table>
                           </div>
