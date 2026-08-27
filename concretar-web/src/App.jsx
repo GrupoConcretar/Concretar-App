@@ -3692,17 +3692,17 @@ export default function ConcretarApp() {
                 </div>
 
                 <div className="overflow-x-auto rounded-lg border border-stone-200">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full text-left text-xs">
                     <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
-                        <th className="sticky left-0 bg-stone-50 px-4 py-3">Categoría</th>
-                        {mesesCostos.map((mes) => <th key={mes} className="px-2 py-3 text-right capitalize">{nombreMes(mes)}</th>)}
+                        <th className="sticky left-0 bg-stone-50 px-3 py-1.5">Categoría</th>
+                        {mesesCostos.map((mes) => <th key={mes} className="px-2 py-1.5 text-right capitalize">{nombreMes(mes)}</th>)}
                       </tr>
                     </thead>
                     <tbody>
                       {CATEGORIAS_PERSONAL.map((categoria) => (
                         <tr key={categoria} className="border-t border-stone-100">
-                          <td className="sticky left-0 bg-white px-4 py-2 font-medium text-slate-900">{categoria}</td>
+                          <td className="sticky left-0 bg-white px-3 py-1 font-medium text-slate-900">{categoria}</td>
                           {mesesCostos.map((mes) => {
                             const entrada = costosCategoria.find((c) => c.categoria === categoria && c.mes === mes);
                             return (
@@ -4035,27 +4035,27 @@ export default function ConcretarApp() {
             )}
 
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Nombre</th><th className="px-4 py-3">Centro de costo</th><th className="px-4 py-3">Hs</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Cargado por</th><th className="px-4 py-3"></th></tr>
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Nombre</th><th className="px-2 py-1.5">Centro de costo</th><th className="px-2 py-1.5">Hs</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Cargado por</th><th className="px-2 py-1.5"></th></tr>
                 </thead>
                 <tbody>
                   {[...asistencia].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((a) => {
                     const obra = obras.find((o) => o.id === a.obraId);
                     return (
                       <tr key={a.id} className="border-t border-stone-100">
-                        <td className="px-4 py-3 text-slate-600">{fmtFecha(a.fecha)}</td>
-                        <td className="px-4 py-3 font-medium text-slate-900">
+                        <td className="px-2 py-1 text-slate-600">{fmtFecha(a.fecha)}</td>
+                        <td className="px-2 py-1 font-medium text-slate-900">
                           <span className="flex items-center gap-1.5">
                             {a.nombre}
                             {a.editado && <span title={`Editado por ${a.editadoPor}: ${a.motivoEdicion}`}><AlertTriangle size={12} className="text-sky-500" /></span>}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{obra?.nombre}</td>
-                        <td className="px-4 py-3 font-mono text-slate-700">{a.horas}</td>
-                        <td className="px-4 py-3"><Badge estado={a.estado} /></td>
-                        <td className="px-4 py-3 text-slate-500">{a.cargadoPor}</td>
-                        <td className="px-4 py-3"><button onClick={() => startEditAsistencia(a)} className={btnGhost}>Editar</button></td>
+                        <td className="px-2 py-1 text-slate-600">{obra?.nombre}</td>
+                        <td className="px-2 py-1 font-mono text-slate-700">{a.horas}</td>
+                        <td className="px-2 py-1"><Badge estado={a.estado} /></td>
+                        <td className="px-2 py-1 text-slate-500">{a.cargadoPor}</td>
+                        <td className="px-2 py-1"><button onClick={() => startEditAsistencia(a)} className={btnGhost}>Editar</button></td>
                       </tr>
                     );
                   })}
@@ -4559,17 +4559,17 @@ export default function ConcretarApp() {
                         ))}
                       </div>
                       <div className="overflow-x-auto rounded-lg border border-stone-200">
-                        <table className="w-full text-left text-sm">
+                        <table className="w-full text-left text-xs">
                           <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                             <tr>
-                              <th className="sticky left-0 bg-stone-50 px-4 py-3">Categoría</th>
-                              {mesesCostos.map((mes) => <th key={mes} className="px-2 py-3 text-right capitalize">{nombreMes(mes)}</th>)}
+                              <th className="sticky left-0 bg-stone-50 px-3 py-1.5">Categoría</th>
+                              {mesesCostos.map((mes) => <th key={mes} className="px-2 py-1.5 text-right capitalize">{nombreMes(mes)}</th>)}
                             </tr>
                           </thead>
                           <tbody>
                             {CATEGORIAS_CONVENIO_UOCRA.map((categoria) => (
                               <tr key={categoria} className="border-t border-stone-100">
-                                <td className="sticky left-0 bg-white px-4 py-2 font-medium text-slate-900">{categoria}</td>
+                                <td className="sticky left-0 bg-white px-3 py-1 font-medium text-slate-900">{categoria}</td>
                                 {mesesCostos.map((mes) => {
                                   const entrada = basicosConvenio.find((c) => c.categoria === categoria && c.mes === mes);
                                   return (
@@ -5710,30 +5710,30 @@ export default function ConcretarApp() {
                             <div className="text-xs text-slate-400">Antes de pedir un equipo o herramienta nueva, fijate si ya tenés uno libre en el inventario — te ahorrás la compra, solo hace falta mandarlo por remito.</div>
                           ) : (
                             <div className="overflow-x-auto rounded-md border border-stone-200">
-                              <table className="w-full text-left text-sm">
+                              <table className="w-full text-left text-xs">
                                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                   <tr>
-                                    <th className="px-2 py-2"></th><th className="px-3 py-2">Herramienta</th><th className="px-3 py-2">Ubicación</th>
-                                    <th className="px-3 py-2">Estado</th><th className="px-3 py-2"></th>
+                                    <th className="px-2 py-1.5"></th><th className="px-2 py-1.5">Herramienta</th><th className="px-2 py-1.5">Ubicación</th>
+                                    <th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {herramientasOrdenadas.map((h) => (
                                     <tr key={h.id} className="border-t border-stone-100">
-                                      <td className="px-2 py-1.5">
+                                      <td className="px-2 py-1">
                                         {h.estado === "Disponible" && <span title="Libre, sin obra asignada"><CheckCircle2 size={14} className="text-emerald-600" /></span>}
                                       </td>
-                                      <td className="px-3 py-1.5">
+                                      <td className="px-2 py-1">
                                         <span className="flex items-center gap-1.5 font-medium text-slate-800">
                                           <CategoriaHerrIcon categoria={h.categoria} /> {h.nombre}
                                           <span className="font-mono text-xs text-slate-400">({h.numeroSerie || "s/n"})</span>
                                         </span>
                                       </td>
-                                      <td className="px-3 py-1.5 text-slate-600">
+                                      <td className="px-2 py-1 text-slate-600">
                                         <span className="inline-flex items-center gap-1"><MapPin size={11} className="text-amber-600" />{h.ubicacion}</span>
                                       </td>
-                                      <td className="px-3 py-1.5"><Badge estado={h.estado} /></td>
-                                      <td className="px-3 py-1.5"><button onClick={() => agregarHerramientaAlPedido(h)} className={btnGhost}>+ Agregar al pedido</button></td>
+                                      <td className="px-2 py-1"><Badge estado={h.estado} /></td>
+                                      <td className="px-2 py-1"><button onClick={() => agregarHerramientaAlPedido(h)} className={btnGhost}>+ Agregar al pedido</button></td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -6157,23 +6157,23 @@ export default function ConcretarApp() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                    <table className="w-full text-left text-sm">
+                    <table className="w-full text-left text-xs">
                       <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                         <tr>
-                          <th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Sub-categoría</th><th className="px-4 py-3">Tipo</th><th className="px-4 py-3">Material</th>
-                          <th className="px-4 py-3">Unidad</th><th className="px-4 py-3 text-right">Último precio</th><th className="px-4 py-3">Último proveedor</th>
+                          <th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5">Sub-categoría</th><th className="px-2 py-1.5">Tipo</th><th className="px-2 py-1.5">Material</th>
+                          <th className="px-2 py-1.5">Unidad</th><th className="px-2 py-1.5 text-right">Último precio</th><th className="px-2 py-1.5">Último proveedor</th>
                         </tr>
                       </thead>
                       <tbody>
                         {[...catalogoMateriales].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((m) => (
                           <tr key={m.id} className="border-t border-stone-100">
-                            <td className="px-4 py-2.5 text-slate-600">{m.categoria}</td>
-                            <td className="px-4 py-2.5 text-slate-600">{m.subcategoria || "—"}</td>
-                            <td className="px-4 py-2.5 text-slate-600">{m.tipo || "—"}</td>
-                            <td className="px-4 py-2.5 font-medium text-slate-900">{m.nombre}</td>
-                            <td className="px-4 py-2.5 text-slate-600">{m.unidad}</td>
-                            <td className="px-4 py-2.5 text-right font-mono">{fmtARS(m.ultimoPrecio)}</td>
-                            <td className="px-4 py-2.5 text-slate-500">{m.ultimoProveedor || <span className="text-slate-300">Sin datos aún</span>}</td>
+                            <td className="px-2 py-1 text-slate-600">{m.categoria}</td>
+                            <td className="px-2 py-1 text-slate-600">{m.subcategoria || "—"}</td>
+                            <td className="px-2 py-1 text-slate-600">{m.tipo || "—"}</td>
+                            <td className="px-2 py-1 font-medium text-slate-900">{m.nombre}</td>
+                            <td className="px-2 py-1 text-slate-600">{m.unidad}</td>
+                            <td className="px-2 py-1 text-right font-mono">{fmtARS(m.ultimoPrecio)}</td>
+                            <td className="px-2 py-1 text-slate-500">{m.ultimoProveedor || <span className="text-slate-300">Sin datos aún</span>}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -6342,29 +6342,29 @@ export default function ConcretarApp() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                    <table className="w-full text-left text-sm">
+                    <table className="w-full text-left text-xs">
                       <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                         <tr>
-                          <th className="px-4 py-3">Material</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3 text-right">Cantidad</th>
-                          <th className="px-4 py-3 text-right">Precio unitario</th><th className="px-4 py-3 text-right">Valor en stock</th><th className="px-4 py-3"></th>
+                          <th className="px-2 py-1.5">Material</th><th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5 text-right">Cantidad</th>
+                          <th className="px-2 py-1.5 text-right">Precio unitario</th><th className="px-2 py-1.5 text-right">Valor en stock</th><th className="px-2 py-1.5"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {stockMateriales.filter((s) => s.cantidad > 0).map((s) => (
                           <Fragment key={s.id}>
                             <tr className="border-t border-stone-100">
-                              <td className="px-4 py-2.5 font-medium text-slate-900">{s.material}</td>
-                              <td className="px-4 py-2.5 text-slate-600">{s.categoria}{s.subcategoria ? ` — ${s.subcategoria}` : ""}</td>
-                              <td className="px-4 py-2.5 text-right font-mono">{s.cantidad} {s.unidad}</td>
-                              <td className="px-4 py-2.5 text-right font-mono">{fmtARS(s.precioUnitario)}</td>
-                              <td className="px-4 py-2.5 text-right font-mono">{fmtARS(s.cantidad * s.precioUnitario)}</td>
-                              <td className="px-4 py-2.5">
+                              <td className="px-2 py-1 font-medium text-slate-900">{s.material}</td>
+                              <td className="px-2 py-1 text-slate-600">{s.categoria}{s.subcategoria ? ` — ${s.subcategoria}` : ""}</td>
+                              <td className="px-2 py-1 text-right font-mono">{s.cantidad} {s.unidad}</td>
+                              <td className="px-2 py-1 text-right font-mono">{fmtARS(s.precioUnitario)}</td>
+                              <td className="px-2 py-1 text-right font-mono">{fmtARS(s.cantidad * s.precioUnitario)}</td>
+                              <td className="px-2 py-1">
                                 <button onClick={() => { setAsignandoStockId(s.id); setObraParaStock(""); setCantidadParaStock(s.cantidad); }} className={btnGhost}>Asignar a obra</button>
                               </td>
                             </tr>
                             {asignandoStockId === s.id && (
                               <tr className="border-t border-stone-100 bg-stone-50">
-                                <td colSpan={6} className="px-4 py-3">
+                                <td colSpan={6} className="px-2 py-2">
                                   <div className="flex flex-wrap items-end gap-2">
                                     <div className="w-48">
                                       <Field label="Obra destino">
@@ -6531,23 +6531,23 @@ export default function ConcretarApp() {
             )}
 
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Proveedor</th><th className="px-4 py-3">Categoría</th><th className="px-4 py-3">Formalidad</th><th className="px-4 py-3">Cuenta</th><th className="px-4 py-3">Monto</th><th className="px-4 py-3">Estado</th></tr>
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Proveedor</th><th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th></tr>
                 </thead>
                 <tbody>
                   {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
                     const obra = obras.find((o) => o.id === c.obraId);
                     return (
                       <tr key={c.id} className="border-t border-stone-100">
-                        <td className="px-4 py-3 text-slate-600">{fmtFecha(c.fecha)}</td>
-                        <td className="px-4 py-3 text-slate-600">{obra?.nombre}</td>
-                        <td className="px-4 py-3 font-medium text-slate-900">{c.proveedor}</td>
-                        <td className="px-4 py-3 text-slate-600">{c.categoria}</td>
-                        <td className="px-4 py-3"><Badge estado={c.formalidad || "Blanco"} /></td>
-                        <td className="px-4 py-3 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta} />{c.cuenta || "—"}</span></td>
-                        <td className="px-4 py-3 text-right font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</td>
-                        <td className="px-4 py-3"><Badge estado={c.estado} /></td>
+                        <td className="px-2 py-1 text-slate-600">{fmtFecha(c.fecha)}</td>
+                        <td className="px-2 py-1 text-slate-600">{obra?.nombre}</td>
+                        <td className="px-2 py-1 font-medium text-slate-900">{c.proveedor}</td>
+                        <td className="px-2 py-1 text-slate-600">{c.categoria}</td>
+                        <td className="px-2 py-1"><Badge estado={c.formalidad || "Blanco"} /></td>
+                        <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta} />{c.cuenta || "—"}</span></td>
+                        <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</td>
+                        <td className="px-2 py-1"><Badge estado={c.estado} /></td>
                       </tr>
                     );
                   })}
@@ -6615,21 +6615,21 @@ export default function ConcretarApp() {
             )}
 
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Obra</th><th className="px-4 py-3">Concepto</th><th className="px-4 py-3">Formalidad</th><th className="px-4 py-3">Cuenta</th><th className="px-4 py-3">Monto</th></tr>
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Concepto</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Monto</th></tr>
                 </thead>
                 <tbody>
                   {ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((i) => {
                     const obra = obras.find((o) => o.id === i.obraId);
                     return (
                       <tr key={i.id} className="border-t border-stone-100">
-                        <td className="px-4 py-3 text-slate-600">{fmtFecha(i.fecha)}</td>
-                        <td className="px-4 py-3 text-slate-600">{obra?.nombre}</td>
-                        <td className="px-4 py-3 font-medium text-slate-900">{i.concepto}</td>
-                        <td className="px-4 py-3"><Badge estado={i.formalidad || "Blanco"} /></td>
-                        <td className="px-4 py-3 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}</span></td>
-                        <td className="px-4 py-3 text-right font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</td>
+                        <td className="px-2 py-1 text-slate-600">{fmtFecha(i.fecha)}</td>
+                        <td className="px-2 py-1 text-slate-600">{obra?.nombre}</td>
+                        <td className="px-2 py-1 font-medium text-slate-900">{i.concepto}</td>
+                        <td className="px-2 py-1"><Badge estado={i.formalidad || "Blanco"} /></td>
+                        <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}</span></td>
+                        <td className="px-2 py-1 text-right font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</td>
                       </tr>
                     );
                   })}
