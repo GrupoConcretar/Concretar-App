@@ -270,7 +270,7 @@ const btnGhost = "rounded-md border border-slate-300 px-2.5 py-1 text-xs font-se
 // Campo de plata: mientras escribís va agregando puntos de miles y ",00" de decimales
 // en vivo (1 -> 1,00 -> 10 -> 10,00 -> 1000 -> 1.000,00), como en una caja registradora.
 // Funciona tanto con formularios controlados (value+onChange) como con FormData (name).
-function MoneyInput({ name, value, onChange, onBlur, className, placeholder, required }) {
+function MoneyInput({ name, value, onChange, onBlur, className, placeholder, required, disabled }) {
   const [raw, setRaw] = useState(value !== undefined && value !== null && value !== "" ? String(Math.round(Number(value))) : "");
   function handleChange(e) {
     const digitos = e.target.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
@@ -288,7 +288,8 @@ function MoneyInput({ name, value, onChange, onBlur, className, placeholder, req
         onChange={handleChange}
         onBlur={() => onBlur && onBlur(num)}
         placeholder={placeholder || "0,00"}
-        className={className || inputCls}
+        disabled={disabled}
+        className={`${className || inputCls} ${disabled ? "cursor-not-allowed bg-stone-100 text-slate-400" : ""}`}
       />
       {name && <input type="hidden" name={name} value={num} required={required} />}
     </>
@@ -2029,6 +2030,9 @@ export default function ConcretarApp() {
   const [nuevoTipo, setNuevoTipo] = useState("");
   const [obraPresupuestoId, setObraPresupuestoId] = useState(obras[0]?.id ?? "");
   const [mostrarListaHerramientas, setMostrarListaHerramientas] = useState(false);
+  const [cantidadPedirStock, setCantidadPedirStock] = useState({});
+  const [filtroEppParte, setFiltroEppParte] = useState("Todas");
+  const [filtroEppTipo, setFiltroEppTipo] = useState("Todos");
 
   function agregarSubcategoria() {
     if (!nuevaSubcategoria.trim()) return;
@@ -2211,7 +2215,7 @@ export default function ConcretarApp() {
   // o comprar una segunda igual) — a diferencia del catálogo, no tiene precio de referencia.
   function agregarHerramientaAlPedido(h) {
     setPedidoItems((items) => [...items, {
-      presupuestoId: null, categoria: "Herramientas", subcategoria: h.categoria, tipo: "",
+      presupuestoId: null, categoria: "Herramientas", subcategoria: h.categoria, tipo: "", tipoEquipo: "Propio",
       material: `${h.nombre} (${h.numeroSerie || "s/n"})`, unidad: "und.", cantidad: 1, precioUnitario: 0,
     }]);
     setShowPedidoForm(true);
@@ -2230,7 +2234,7 @@ export default function ConcretarApp() {
     const itemsFinales = pedidoItems.map((it) => ({ ...it, total: (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0) }));
     const totalPedido = itemsFinales.reduce((s, it) => s + it.total, 0);
     const pedidoCreado = await addRecord("pedidos_materiales", {
-      obraId: Number(obraPresupuestoId),
+      obraId: obraPresupuestoId === "general" ? null : Number(obraPresupuestoId),
       fecha: hoyISO(),
       fechaNecesaria: pedidoFechaNecesaria,
       proveedor: pedidoProveedor,
@@ -2294,6 +2298,49 @@ export default function ConcretarApp() {
   function rechazarPedidoMaterial(pedido) {
     if (!window.confirm("¿Rechazar este pedido? El capataz va a tener que volver a armarlo si todavía lo necesita.")) return;
     updateRecord("pedidos_materiales", pedido.id, { estado: "Rechazado", aprobadoPor: currentRole, fechaAprobacion: hoyISO() }, setPedidosMateriales);
+  }
+
+  // Pedidos "Compra general" de Epps/Consumibles (sin obra) no pasan por remito: al
+  // recibirse quedan directo en el depósito (Stock), listos para que cada obra los pida.
+  async function recibirPedidoGeneralAStock(pedido) {
+    if (!window.confirm(`¿Marcar recibido? ${fmtARS(pedido.total)} en ${pedido.items.length} ítem(s) van a quedar en el depósito (pestaña Stock) hasta que alguna obra los pida.`)) return;
+    for (const it of pedido.items) {
+      const precio = it.precioUnitario || 0;
+      const facturaGeneral = await addRecord("compras_facturas", {
+        fecha: hoyISO(), obraId: null, ordenCompraId: null, proveedor: pedido.proveedor || "Sin especificar",
+        categoria: it.categoria, monto: (Number(it.cantidad) || 0) * precio, comprobante: pedido.comprobante || "",
+        estado: "Pendiente", formalidad: "Blanco", cuenta: "Banco",
+      }, setComprasFacturas);
+      const loteExistente = stockMateriales.find((s) => s.material.toLowerCase() === it.material.toLowerCase() && s.categoria === it.categoria && s.precioUnitario === precio);
+      if (loteExistente) {
+        await updateRecord("stock_materiales", loteExistente.id, { cantidad: loteExistente.cantidad + (Number(it.cantidad) || 0) }, setStockMateriales);
+      } else {
+        await addRecord("stock_materiales", {
+          material: it.material, categoria: it.categoria, subcategoria: it.subcategoria || "",
+          unidad: it.unidad, cantidad: Number(it.cantidad) || 0, precioUnitario: precio,
+          facturaGeneralId: facturaGeneral?.id ?? null, fechaIngreso: hoyISO(),
+        }, setStockMateriales);
+      }
+    }
+    await updateRecord("pedidos_materiales", pedido.id, { estado: "Recibido" }, setPedidosMateriales);
+  }
+
+  // Una obra pide una cantidad de algo que ya está en el depósito: descuenta el stock
+  // y mueve ese gasto al centro de costos de la obra (reduciendo la factura general
+  // en la misma proporción, para no contarlo dos veces).
+  async function pedirDeStockParaObra(lote, cantidad, obraId) {
+    const cant = Math.max(0, Math.min(Number(cantidad) || 0, lote.cantidad));
+    if (cant <= 0 || !obraId) return;
+    const monto = cant * lote.precioUnitario;
+    await updateRecord("stock_materiales", lote.id, { cantidad: lote.cantidad - cant }, setStockMateriales);
+    if (lote.facturaGeneralId) {
+      const facturaGeneral = comprasFacturas.find((c) => c.id === lote.facturaGeneralId);
+      if (facturaGeneral) await updateRecord("compras_facturas", facturaGeneral.id, { monto: Math.max(0, facturaGeneral.monto - monto) }, setComprasFacturas);
+    }
+    await addRecord("compras_facturas", {
+      fecha: hoyISO(), obraId, ordenCompraId: null, proveedor: "Depósito interno", categoria: lote.categoria,
+      monto, comprobante: "Pedido desde depósito", estado: "Pendiente", formalidad: "Blanco", cuenta: "Banco",
+    }, setComprasFacturas);
   }
 
   // ---------- Orden de Compra en PDF ----------
@@ -2361,7 +2408,16 @@ export default function ConcretarApp() {
   function actualizarPrecioFactura(idx, valor) {
     setItemsFacturaDraft((items) => items.map((it, i) => (i === idx ? { ...it, precioUnitario: valor, total: (Number(it.cantidad) || 0) * (Number(valor) || 0) } : it)));
   }
+  // Logística marca cada equipo/herramienta como propio (ya lo tenemos, sin costo) o
+  // alquilado (el alquiler se carga como gasto real de la obra).
+  function actualizarTipoEquipoFactura(idx, valor) {
+    setItemsFacturaDraft((items) => items.map((it, i) => (i === idx ? { ...it, tipoEquipo: valor, precioUnitario: valor === "Propio" ? 0 : it.precioUnitario, total: valor === "Propio" ? 0 : it.total } : it)));
+  }
   async function confirmarFacturaReal(pedido) {
+    if (itemsFacturaDraft.some((it) => ["Equipos", "Herramientas"].includes(it.categoria) && !it.tipoEquipo)) {
+      alert("Marcá cada equipo/herramienta como Propio o Alquilado antes de confirmar.");
+      return;
+    }
     setGuardandoFactura(true);
     const itemsFinal = itemsFacturaDraft.map((it) => ({ ...it, total: (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0) }));
     const totalReal = itemsFinal.reduce((s, it) => s + it.total, 0);
@@ -2380,7 +2436,9 @@ export default function ConcretarApp() {
 
   // ---------- Consolidación de pedidos entre obras + generación de remitos por proveedor ----------
   const idsPedidosConRemito = new Set(remitos.filter((r) => r.pedidoMaterialId).map((r) => r.pedidoMaterialId));
-  const pedidosSinEnviar = pedidosMateriales.filter((p) => (p.estado === "Aprobado" || p.estado === "Facturado") && !idsPedidosConRemito.has(p.id));
+  // Los pedidos "compra general" (obraId null) no tienen una obra destino a la que
+  // mandar un remito — se reciben directo al depósito (recibirPedidoGeneralAStock).
+  const pedidosSinEnviar = pedidosMateriales.filter((p) => (p.estado === "Aprobado" || p.estado === "Facturado") && p.obraId != null && !idsPedidosConRemito.has(p.id));
 
   function proveedorSugerido(pedido) {
     if (pedido.proveedor) return pedido.proveedor;
@@ -4730,6 +4788,9 @@ export default function ConcretarApp() {
                   <div className="min-w-[200px]">
                     <Field label="Obra">
                       <select value={obraPresupuestoId} onChange={(e) => setObraPresupuestoId(e.target.value)} className={inputCls}>
+                        {["epps", "consumibles"].includes(vistaMateriales) && (
+                          <option value="general">Compra general (sin obra — va a depósito)</option>
+                        )}
                         {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                       </select>
                     </Field>
@@ -4742,13 +4803,22 @@ export default function ConcretarApp() {
                   </div>
                 )}
 
+                {["epps", "consumibles"].includes(vistaMateriales) && obraPresupuestoId === "general" && (
+                  <div className="rounded-md border border-dashed border-sky-300 bg-sky-50 px-4 py-2 text-xs text-sky-800">
+                    Esto es para comprar en volumen para toda la empresa. Al recibirse, queda en el depósito (pestaña "Stock") — cada obra lo va a ir pidiendo de ahí a medida que lo necesite, y el gasto recién se imputa a su centro de costos en ese momento.
+                  </div>
+                )}
+
                 {(() => {
+                  const esGeneral = ["epps", "consumibles"].includes(vistaMateriales) && obraPresupuestoId === "general";
+                  const obraIdActual = esGeneral ? null : Number(obraPresupuestoId);
                   const categoriasActivas = CATEGORIAS_POR_VISTA[vistaMateriales] || [];
-                  const lineasObra = presupuestoMateriales.filter((m) => m.obraId === Number(obraPresupuestoId) && categoriasActivas.includes(m.categoria));
+                  const lineasObra = presupuestoMateriales.filter((m) => m.obraId === obraIdActual && categoriasActivas.includes(m.categoria));
                   const totalObra = lineasObra.reduce((s, m) => s + (m.total || 0), 0);
-                  const pedidosObra = pedidosMateriales.filter((p) => p.obraId === Number(obraPresupuestoId));
-                  const pg = presupuestoGeneral.find((p) => p.obraId === Number(obraPresupuestoId));
-                  const gastoRealObra = comprasFacturas.filter((c) => c.obraId === Number(obraPresupuestoId)).reduce((s, c) => s + (c.monto || 0), 0);
+                  const pedidosObra = pedidosMateriales.filter((p) => p.obraId === obraIdActual);
+                  const pg = presupuestoGeneral.find((p) => p.obraId === obraIdActual);
+                  const gastoRealObra = comprasFacturas.filter((c) => c.obraId === obraIdActual).reduce((s, c) => s + (c.monto || 0), 0);
+                  const stockEppsOConsumibles = stockMateriales.filter((s) => s.cantidad > 0 && categoriasActivas.includes(s.categoria));
                   const herramientasOrdenadas = [...herramientas].sort((a, b) => {
                     const libreA = a.estado === "Disponible" ? 0 : 1;
                     const libreB = b.estado === "Disponible" ? 0 : 1;
@@ -4756,7 +4826,11 @@ export default function ConcretarApp() {
                   });
                   const catalogoEppsOConsumibles = catalogoMateriales
                     .filter((m) => categoriasActivas.includes(m.categoria))
+                    .filter((m) => vistaMateriales !== "epps" || filtroEppParte === "Todas" || (m.subcategoria || "Sin parte asignada") === filtroEppParte)
+                    .filter((m) => vistaMateriales !== "epps" || filtroEppTipo === "Todos" || (m.tipo || "Sin tipo") === filtroEppTipo)
                     .sort((a, b) => a.nombre.localeCompare(b.nombre));
+                  const partesCuerpoEpp = subcategoriasMat.filter((s) => s.categoria === "Epps").map((s) => s.nombre);
+                  const tiposEppDeLaParte = filtroEppParte === "Todas" ? [] : tiposMaterial.filter((t) => t.categoria === "Epps" && t.subcategoria === filtroEppParte).map((t) => t.nombre);
                   return (
                     <>
                       {pg && vistaMateriales === "materiales" && (
@@ -4839,6 +4913,36 @@ export default function ConcretarApp() {
                         </Panel>
                       )}
 
+                      {["epps", "consumibles"].includes(vistaMateriales) && !esGeneral && stockEppsOConsumibles.length > 0 && (
+                        <Panel title="Pedir del depósito">
+                          <div className="mb-2 text-[11px] text-slate-400">Esto ya está comprado y en stock — al pedirlo, se descuenta acá y el gasto pasa a esta obra.</div>
+                          <div className="divide-y divide-stone-100">
+                            {stockEppsOConsumibles.map((s) => (
+                              <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                                <div>
+                                  <span className="font-medium text-slate-800">{s.material}</span>
+                                  <span className="ml-2 text-xs text-slate-400">{s.cantidad} {s.unidad} disponibles · {fmtARS(s.precioUnitario)} c/u</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number" min="1" max={s.cantidad}
+                                    value={cantidadPedirStock[s.id] ?? 1}
+                                    onChange={(e) => setCantidadPedirStock((c) => ({ ...c, [s.id]: e.target.value }))}
+                                    className="w-20 rounded border border-stone-300 px-1.5 py-1 text-right"
+                                  />
+                                  <button
+                                    onClick={() => { pedirDeStockParaObra(s, cantidadPedirStock[s.id] ?? 1, obraIdActual); setCantidadPedirStock((c) => ({ ...c, [s.id]: 1 })); }}
+                                    className={btnGhost}
+                                  >
+                                    Pedir para esta obra
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </Panel>
+                      )}
+
                       {["epps", "consumibles"].includes(vistaMateriales) ? (
                         <Panel
                           title={`Catálogo de ${vistaMateriales === "epps" ? "Epps" : "Consumibles"}`}
@@ -4848,15 +4952,40 @@ export default function ConcretarApp() {
                             )
                           }
                         >
+                          {vistaMateriales === "epps" && (
+                            <div className="mb-3 flex flex-wrap gap-2">
+                              <select
+                                value={filtroEppParte}
+                                onChange={(e) => { setFiltroEppParte(e.target.value); setFiltroEppTipo("Todos"); }}
+                                className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs"
+                              >
+                                <option value="Todas">Toda parte del cuerpo</option>
+                                {partesCuerpoEpp.map((p) => <option key={p}>{p}</option>)}
+                              </select>
+                              {filtroEppParte !== "Todas" && tiposEppDeLaParte.length > 0 && (
+                                <select
+                                  value={filtroEppTipo}
+                                  onChange={(e) => setFiltroEppTipo(e.target.value)}
+                                  className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs"
+                                >
+                                  <option value="Todos">Todo tipo</option>
+                                  {tiposEppDeLaParte.map((t) => <option key={t}>{t}</option>)}
+                                </select>
+                              )}
+                            </div>
+                          )}
                           {catalogoEppsOConsumibles.length === 0 ? (
-                            <div className="text-xs text-slate-400">Todavía no hay {vistaMateriales === "epps" ? "Epps" : "Consumibles"} cargados. Tocá "+ Cargar uno nuevo" para tipearlo — queda guardado para la próxima vez.</div>
+                            <div className="text-xs text-slate-400">Todavía no hay {vistaMateriales === "epps" ? "Epps" : "Consumibles"} cargados{filtroEppParte !== "Todas" ? ` para "${filtroEppParte}"` : ""}. Tocá "+ Cargar uno nuevo" para tipearlo — queda guardado para la próxima vez.</div>
                           ) : (
                             <div className="divide-y divide-stone-100">
                               {catalogoEppsOConsumibles.map((it) => (
                                 <div key={it.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                                   <div>
                                     <span className="font-medium text-slate-800">{it.nombre}</span>
-                                    <span className="ml-2 text-xs text-slate-400">{it.unidad || "und."}</span>
+                                    <span className="ml-2 text-xs text-slate-400">
+                                      {vistaMateriales === "epps" && it.subcategoria ? `${it.subcategoria}${it.tipo ? ` · ${it.tipo}` : ""} · ` : ""}
+                                      {it.unidad || "und."}
+                                    </span>
                                   </div>
                                   <div className="flex items-center gap-3">
                                     <span className="font-mono text-xs text-slate-500">{fmtARS(it.ultimoPrecio)}</span>
@@ -4988,10 +5117,10 @@ export default function ConcretarApp() {
                                 </select>
                               </Field>
                             </div>
-                            {!["Epps", "Consumibles"].includes(itemManualDraft.categoria) && (
+                            {itemManualDraft.categoria !== "Consumibles" && (
                               <>
                                 <div className="w-32">
-                                  <Field label="Sub-categoría">
+                                  <Field label={itemManualDraft.categoria === "Epps" ? "Parte del cuerpo" : "Sub-categoría"}>
                                     <select value={itemManualDraft.subcategoria} onChange={(e) => setItemManualDraft((d) => ({ ...d, subcategoria: e.target.value, tipo: "" }))} className={inputCls}>
                                       <option value="">--</option>
                                       {subcategoriasMat.filter((s) => s.categoria === itemManualDraft.categoria).map((s) => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
@@ -4999,7 +5128,7 @@ export default function ConcretarApp() {
                                   </Field>
                                 </div>
                                 <div className="w-32">
-                                  <Field label="Tipo">
+                                  <Field label={itemManualDraft.categoria === "Epps" ? "Tipo específico" : "Tipo"}>
                                     <select value={itemManualDraft.tipo} onChange={(e) => setItemManualDraft((d) => ({ ...d, tipo: e.target.value }))} className={inputCls}>
                                       <option value="">--</option>
                                       {tiposMaterial.filter((t) => t.categoria === itemManualDraft.categoria && t.subcategoria === itemManualDraft.subcategoria).map((t) => <option key={t.id} value={t.nombre}>{t.nombre}</option>)}
@@ -5056,6 +5185,7 @@ export default function ConcretarApp() {
                                     <div>
                                       <span className="font-semibold text-slate-900">{p.proveedor || "Proveedor sin especificar"}</span>
                                       <span className="ml-2"><Badge estado={p.estado} /></span>
+                                      {p.obraId == null && <span className="ml-2 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Compra general</span>}
                                     </div>
                                     <span className="text-xs text-slate-400">{fmtFecha(p.fecha)} · {p.items.length} ítem(s) · <span className="font-mono font-semibold text-slate-600">{fmtARS(p.total)}</span></span>
                                   </div>
@@ -5086,9 +5216,15 @@ export default function ConcretarApp() {
                                       <button onClick={() => generarOrdenCompraPDF(p)} className={btnGhost}>
                                         <span className="flex items-center gap-1"><FileDown size={13} /> Orden de Compra (PDF)</span>
                                       </button>
-                                      <button onClick={() => abrirCargaFactura(p)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-                                        <Receipt size={13} /> Cargar factura real
-                                      </button>
+                                      {p.obraId == null ? (
+                                        <button onClick={() => recibirPedidoGeneralAStock(p)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                                          <Package size={13} /> Marcar recibido en depósito
+                                        </button>
+                                      ) : (
+                                        <button onClick={() => abrirCargaFactura(p)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                                          <Receipt size={13} /> Cargar factura real
+                                        </button>
+                                      )}
                                     </div>
                                   )}
                                   {p.estado === "Facturado" && (
@@ -5101,21 +5237,40 @@ export default function ConcretarApp() {
                                     <div className="mt-3 rounded-md border border-stone-200 bg-stone-50 p-3">
                                       <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Corregí los precios con la factura real</div>
                                       <div className="space-y-1.5">
-                                        {itemsFacturaDraft.map((it, idx) => (
-                                          <div key={idx} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                                            <span className="text-slate-700">{it.material} <span className="text-slate-400">({it.cantidad} {it.unidad})</span></span>
-                                            <div className="flex items-center gap-1">
-                                              <span className="text-slate-400">$</span>
-                                              <MoneyInput
-                                                value={it.precioUnitario}
-                                                onChange={(v) => actualizarPrecioFactura(idx, v)}
-                                                className="w-24 rounded border border-stone-300 px-1.5 py-1 text-right"
-                                              />
-                                              <span className="w-24 text-right font-mono text-slate-600">{fmtARS((Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0))}</span>
+                                        {itemsFacturaDraft.map((it, idx) => {
+                                          const esEquipo = ["Equipos", "Herramientas"].includes(it.categoria);
+                                          return (
+                                            <div key={idx} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                              <span className="text-slate-700">{it.material} <span className="text-slate-400">({it.cantidad} {it.unidad})</span></span>
+                                              <div className="flex items-center gap-1">
+                                                {esEquipo && (
+                                                  <select
+                                                    value={it.tipoEquipo || ""}
+                                                    onChange={(e) => actualizarTipoEquipoFactura(idx, e.target.value)}
+                                                    className="rounded border border-stone-300 px-1 py-1 text-[11px]"
+                                                  >
+                                                    <option value="">¿Propio o alquilado?</option>
+                                                    <option value="Propio">Propio</option>
+                                                    <option value="Alquilado">Alquilado</option>
+                                                  </select>
+                                                )}
+                                                <span className="text-slate-400">$</span>
+                                                <MoneyInput
+                                                  key={`${idx}-${it.tipoEquipo || ""}`}
+                                                  value={it.precioUnitario}
+                                                  onChange={(v) => actualizarPrecioFactura(idx, v)}
+                                                  disabled={esEquipo && it.tipoEquipo === "Propio"}
+                                                  className="w-24 rounded border border-stone-300 px-1.5 py-1 text-right"
+                                                />
+                                                <span className="w-24 text-right font-mono text-slate-600">{fmtARS((Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0))}</span>
+                                              </div>
                                             </div>
-                                          </div>
-                                        ))}
+                                          );
+                                        })}
                                       </div>
+                                      {itemsFacturaDraft.some((it) => ["Equipos", "Herramientas"].includes(it.categoria) && !it.tipoEquipo) && (
+                                        <div className="mt-1 text-[11px] text-amber-700">Faltan marcar como Propio o Alquilado los equipos/herramientas de arriba.</div>
+                                      )}
                                       <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                                         <input
                                           value={comprobanteDraft}
