@@ -4342,39 +4342,50 @@ export default function ConcretarApp() {
                 {pendientesEnBlanco.length > 0 && (
                   <div>
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Personal en blanco — pendiente de liquidación formal</div>
-                    <div className="space-y-2">
-                      {pendientesEnBlanco.map((g) => {
-                        const obra = obras.find((o) => o.id === g.obraId);
-                        const diasParaVencer = 5 - g.diasDesdeCierre;
-                        return (
-                          <div
-                            key={`${g.obraId}|${g.mes}|${g.quincena}`}
-                            className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 shadow-sm ${g.vencido ? "border-rose-300 bg-rose-50" : "border-stone-200 bg-white"}`}
-                          >
-                            <div>
-                              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                <Building2 size={14} className="text-amber-600" /> {obra?.nombre || "Obra"} — {etiquetaQuincena(g.mes, g.quincena)}
-                              </div>
-                              <div className="mt-1 text-xs text-slate-500">{g.personas.join(", ")} · {g.horas} hs</div>
-                              <div className={`mt-1 text-xs font-semibold ${g.vencido ? "text-rose-600" : g.diasDesdeCierre < 0 ? "text-slate-400" : "text-amber-700"}`}>
-                                {g.vencido
-                                  ? `Vencido — pasaron ${g.diasDesdeCierre} días desde el cierre de la quincena (el plazo para pagar es de 5).`
-                                  : g.diasDesdeCierre < 0
-                                  ? "Quincena todavía en curso."
-                                  : diasParaVencer === 0
-                                  ? "Vence hoy — quedan 5 días desde el cierre de la quincena para pagarles."
-                                  : `Vence en ${diasParaVencer} día(s) para pagarles.`}
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => { setVistaLiquidacion("formal"); setObraFormalId(g.obraId); setMesFormal(g.mes); setQuincenaFormal(g.quincena); }}
-                              className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700"
-                            >
-                              <Receipt size={13} /> Ir a Liquidación formal
-                            </button>
-                          </div>
-                        );
-                      })}
+                    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-2 py-1.5">Obra</th>
+                            <th className="px-2 py-1.5">Quincena</th>
+                            <th className="px-2 py-1.5">Personas</th>
+                            <th className="px-2 py-1.5 text-right">Hs.</th>
+                            <th className="px-2 py-1.5">Estado</th>
+                            <th className="px-2 py-1.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pendientesEnBlanco.map((g) => {
+                            const obra = obras.find((o) => o.id === g.obraId);
+                            const diasParaVencer = 5 - g.diasDesdeCierre;
+                            return (
+                              <tr key={`${g.obraId}|${g.mes}|${g.quincena}`} className={`border-t border-stone-100 ${g.vencido ? "bg-rose-50" : ""}`}>
+                                <td className="px-2 py-1 font-medium text-slate-900">{obra?.nombre || "Obra"}</td>
+                                <td className="px-2 py-1 text-slate-600">{etiquetaQuincena(g.mes, g.quincena)}</td>
+                                <td className="px-2 py-1 text-slate-600">{g.personas.join(", ")}</td>
+                                <td className="px-2 py-1 text-right font-mono text-slate-700">{g.horas}</td>
+                                <td className={`px-2 py-1 font-semibold ${g.vencido ? "text-rose-600" : g.diasDesdeCierre < 0 ? "text-slate-400" : "text-amber-700"}`}>
+                                  {g.vencido
+                                    ? `Vencido (${g.diasDesdeCierre} d)`
+                                    : g.diasDesdeCierre < 0
+                                    ? "En curso"
+                                    : diasParaVencer === 0
+                                    ? "Vence hoy"
+                                    : `Vence en ${diasParaVencer} d`}
+                                </td>
+                                <td className="px-2 py-1">
+                                  <button
+                                    onClick={() => { setVistaLiquidacion("formal"); setObraFormalId(g.obraId); setMesFormal(g.mes); setQuincenaFormal(g.quincena); }}
+                                    className={btnGhost}
+                                  >
+                                    Ir a Liquidación formal
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}
@@ -4392,51 +4403,54 @@ export default function ConcretarApp() {
                 ) : (
                   semanasOrdenadas.map((semanaKey) => {
                     const obrasDeSemana = gruposSemana[semanaKey];
-                    const totalSemana = Object.values(obrasDeSemana).reduce(
-                      (s, trabajadores) => s + Object.values(trabajadores).reduce((s2, t) => s2 + t.monto, 0),
-                      0
-                    );
+                    const filasSemana = [];
+                    Object.keys(obrasDeSemana).forEach((obraId) => {
+                      const obra = obras.find((o) => o.id === Number(obraId));
+                      const trabajadores = obrasDeSemana[obraId];
+                      Object.keys(trabajadores).forEach((nombre) => {
+                        filasSemana.push({ obraId, obraNombre: obra?.nombre || "Obra", nombre, ...trabajadores[nombre] });
+                      });
+                    });
+                    const totalSemana = filasSemana.reduce((s, f) => s + f.monto, 0);
                     return (
                       <Panel
                         key={semanaKey}
                         title={`Semana del ${fmtFecha(semanaKey)}`}
                         action={<span className="font-mono text-sm font-bold text-slate-800">{fmtARS(totalSemana)}</span>}
                       >
-                        <div className="space-y-5">
-                          {Object.keys(obrasDeSemana).map((obraId) => {
-                            const obra = obras.find((o) => o.id === Number(obraId));
-                            const trabajadores = obrasDeSemana[obraId];
-                            const totalObra = Object.values(trabajadores).reduce((s, t) => s + t.monto, 0);
-                            return (
-                              <div key={obraId}>
-                                <div className="mb-2 flex items-center justify-between border-b border-stone-200 pb-1.5">
-                                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700"><Building2 size={14} className="text-amber-600" />{obra?.nombre || "Obra"}</span>
-                                  <span className="font-mono text-sm font-semibold text-slate-700">{fmtARS(totalObra)}</span>
-                                </div>
-                                <div className="space-y-1">
-                                  {Object.keys(trabajadores).map((nombre) => {
-                                    const t = trabajadores[nombre];
-                                    const key = `${semanaKey}|${obraId}|${nombre}`;
-                                    const seleccionado = seleccionLiquidacion.includes(key);
-                                    return (
-                                      <div
-                                        key={key}
-                                        onClick={() => toggleSeleccionLiquidacion(key)}
-                                        className={`flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm ${seleccionado ? "bg-amber-50" : "hover:bg-stone-50"}`}
-                                      >
-                                        <span className="flex items-center gap-2">
-                                          <input type="checkbox" checked={seleccionado} onChange={() => toggleSeleccionLiquidacion(key)} className="h-3.5 w-3.5" />
-                                          <span className="font-medium text-slate-900">{nombre}</span>
-                                          <span className="text-xs text-slate-400">({t.horas} hs)</span>
-                                        </span>
-                                        <span className="font-mono text-slate-800">{fmtARS(t.monto)}</span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
+                        <div className="overflow-x-auto rounded-md border border-stone-200">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              <tr>
+                                <th className="px-2 py-1.5"></th>
+                                <th className="px-2 py-1.5">Persona</th>
+                                <th className="px-2 py-1.5">Obra</th>
+                                <th className="px-2 py-1.5 text-right">Hs.</th>
+                                <th className="px-2 py-1.5 text-right">Monto</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filasSemana.map((f) => {
+                                const key = `${semanaKey}|${f.obraId}|${f.nombre}`;
+                                const seleccionado = seleccionLiquidacion.includes(key);
+                                return (
+                                  <tr
+                                    key={key}
+                                    onClick={() => toggleSeleccionLiquidacion(key)}
+                                    className={`cursor-pointer border-t border-stone-100 ${seleccionado ? "bg-amber-50" : "hover:bg-stone-50"}`}
+                                  >
+                                    <td className="px-2 py-1">
+                                      <input type="checkbox" checked={seleccionado} onChange={() => toggleSeleccionLiquidacion(key)} className="h-3.5 w-3.5" />
+                                    </td>
+                                    <td className="px-2 py-1 font-medium text-slate-900">{f.nombre}</td>
+                                    <td className="px-2 py-1 text-slate-600">{f.obraNombre}</td>
+                                    <td className="px-2 py-1 text-right font-mono text-slate-500">{f.horas}</td>
+                                    <td className="px-2 py-1 text-right font-mono text-slate-800">{fmtARS(f.monto)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       </Panel>
                     );
