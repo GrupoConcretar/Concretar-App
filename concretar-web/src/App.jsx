@@ -366,6 +366,54 @@ function PhotoInput({ label, value, onChange }) {
   );
 }
 
+// Sube un PDF o una foto (recibo, comprobante) y lo guarda como data URL —
+// mismo mecanismo que PhotoInput, pero sin forzar una vista previa de imagen.
+function ArchivoInput({ label, value, nombreArchivo, onChange }) {
+  const esImagen = value && !nombreArchivo?.toLowerCase().endsWith(".pdf");
+  return (
+    <div className="flex flex-col gap-1 text-sm">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <div className="flex items-center gap-3">
+        {value ? (
+          esImagen ? (
+            <img src={value} alt={label} className="h-14 w-14 rounded-md border border-stone-300 object-cover" />
+          ) : (
+            <a href={value} target="_blank" rel="noreferrer" className="flex h-14 w-14 flex-col items-center justify-center rounded-md border border-stone-300 text-center text-[9px] text-slate-500 hover:bg-stone-50">
+              <FileDown size={16} className="text-slate-400" />
+              PDF
+            </a>
+          )
+        ) : (
+          <div className="flex h-14 w-14 items-center justify-center rounded-md border border-dashed border-stone-300 text-center text-[9px] text-slate-400">Sin archivo</div>
+        )}
+        <div className="flex flex-col gap-1">
+          {nombreArchivo && <span className="max-w-[180px] truncate text-xs text-slate-500">{nombreArchivo}</span>}
+          <input
+            type="file"
+            accept="application/pdf,image/*"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                const dataUrl = await readFileAsDataURL(file);
+                onChange(dataUrl, file.name, file.type);
+              } catch {
+                alert("No se pudo leer el archivo.");
+              }
+            }}
+            className="w-44 text-xs text-slate-600"
+          />
+          {value && (
+            <button type="button" onClick={() => onChange(null, null, null)} className="text-left text-xs text-rose-600 hover:underline">
+              Quitar
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Panel({ title, action, children }) {
   return (
     <div className="rounded-lg border border-stone-200 bg-white shadow-sm">
@@ -649,6 +697,7 @@ export default function ConcretarApp() {
   const [basicosConvenio, setBasicosConvenio] = useState(isSupabaseConfigured ? [] : DEMO_BASICOS_CONVENIO);
   const [configLiquidacion, setConfigLiquidacion] = useState(isSupabaseConfigured ? [] : DEMO_CONFIG_LIQUIDACION);
   const [liquidacionesFormales, setLiquidacionesFormales] = useState(isSupabaseConfigured ? [] : []);
+  const [recibosLiquidacion, setRecibosLiquidacion] = useState(isSupabaseConfigured ? [] : []);
   const [asistencia, setAsistencia] = useState(isSupabaseConfigured ? [] : DEMO_ASISTENCIA);
   const [herramientas, setHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_HERRAMIENTAS);
   const [combosHerramientas, setCombosHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_COMBOS);
@@ -686,7 +735,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -694,13 +743,14 @@ export default function ConcretarApp() {
           sbSelect("proveedores"), sbSelect("remitos"), sbSelect("auditorias_herramientas"), sbSelect("feriados"), sbSelect("clientes"),
           sbSelect("subcategorias_material"), sbSelect("tipos_material"), sbSelect("catalogo_materiales"), sbSelect("presupuesto_materiales"),
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
-          sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"),
+          sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
         ]);
         setObras(o);
         setPersonal(p);
         setCostosCategoria(cc);
         setBasicosConvenio(bc);
         setLiquidacionesFormales(lf);
+        setRecibosLiquidacion(rl);
         setConfigLiquidacion(cl);
         setAsistencia(a);
         setHerramientas(h);
@@ -839,6 +889,31 @@ export default function ConcretarApp() {
   const toggleSeleccionPdf = (id) =>
     setSeleccionadosPdf((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const viewingPerson = personal.find((p) => p.id === viewingPersonId) || null;
+  // Historial de pagos de esta persona: semanas en negro ya pagadas (Pendientes de pago)
+  // + quincenas en blanco ya liquidadas (Liquidación formal, con el costo real cargado).
+  const historialPagosPersona = viewingPerson
+    ? (() => {
+        const nombreCompleto = nombreCompletoDe(viewingPerson);
+        const negroPorSemana = {};
+        asistencia
+          .filter((a) => a.nombre === nombreCompleto && a.estadoPago === "Pagado")
+          .forEach((a) => {
+            const key = claveSemana(a.fecha);
+            if (!negroPorSemana[key]) negroPorSemana[key] = { fecha: key, tipo: "Negro", monto: 0 };
+            negroPorSemana[key].monto += a.montoAbonado || 0;
+          });
+        const negro = Object.values(negroPorSemana).map((n) => ({ ...n, periodo: `Semana del ${fmtFecha(n.fecha)}` }));
+        const blanco = liquidacionesFormales
+          .filter((l) => l.nombre === nombreCompleto && l.costoRealBlanco != null)
+          .map((l) => ({
+            fecha: rangoQuincena(l.mes, l.quincena).desde,
+            tipo: "Blanco",
+            monto: l.costoRealBlanco,
+            periodo: etiquetaQuincena(l.mes, l.quincena),
+          }));
+        return [...negro, ...blanco].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+      })()
+    : [];
 
   function nombreCompletoDe(p) {
     return [p.nombre, p.apellido].filter(Boolean).join(" ") || "—";
@@ -1567,10 +1642,15 @@ export default function ConcretarApp() {
   });
   const pendientesEnBlanco = Object.values(gruposEnBlanco)
     .map((g) => {
-      const liquidacion = liquidacionesFormales.find((l) => l.obraId === g.obraId && l.mes === g.mes && l.quincena === g.quincena);
+      const personasArr = [...g.personas].sort();
+      // Cerrado solo cuando TODAS las personas de esa obra+quincena ya tienen costo real cargado.
+      const cerrado = personasArr.every((nombre) => {
+        const l = liquidacionesFormales.find((x) => x.obraId === g.obraId && x.mes === g.mes && x.quincena === g.quincena && x.nombre === nombre);
+        return l?.costoRealBlanco != null;
+      });
       const { hasta } = rangoQuincena(g.mes, g.quincena);
       const diasDesdeCierre = Math.round((fechaLocal(hoyISO()) - fechaLocal(hasta)) / 86400000);
-      return { ...g, personas: [...g.personas].sort(), hasta, diasDesdeCierre, cerrado: liquidacion?.costoRealBlanco != null, vencido: diasDesdeCierre > 5 };
+      return { ...g, personas: personasArr, hasta, diasDesdeCierre, cerrado, vencido: diasDesdeCierre > 5 };
     })
     .filter((g) => !g.cerrado)
     .sort((a, b) => fechaLocal(b.hasta) - fechaLocal(a.hasta));
@@ -1632,27 +1712,14 @@ export default function ConcretarApp() {
   }
 
   // ---------- Liquidación formal (UOCRA CCT 76/75 Zona A — San Juan, Ley 22.250) ----------
-  // Simulación de recibo: parte de las horas reales cargadas en Asistencia pero son
-  // 100% editables (a veces se declaran menos horas "en blanco" que las reales).
-  // No escribe nada en asistencia — es una calculadora de referencia, no reemplaza
-  // el pago informal que ya maneja "Pendientes de pago".
+  // Una fila por persona (no un total agrupado): "Hs. presentes" viene de Asistencia y no
+  // se edita acá; "Hs. en recibo" es lo declarado en blanco (por defecto la mitad de las
+  // presentes) y se puede tocar a mano — la diferencia queda como horas en negro. Cada
+  // campo se guarda solo, sin un botón de "guardar" aparte.
   const [obraFormalId, setObraFormalId] = useState(obras[0]?.id ?? "");
   const [mesFormal, setMesFormal] = useState(hoyISO().slice(0, 7));
   const [quincenaFormal, setQuincenaFormal] = useState(quincenaDeFecha(hoyISO()));
-  const [overridesFormal, setOverridesFormal] = useState({}); // nombre -> campos tocados a mano
   const [showFactoresLiquidacion, setShowFactoresLiquidacion] = useState(false);
-  const [costoRealDraft, setCostoRealDraft] = useState(0);
-  const [comprobanteRealDraft, setComprobanteRealDraft] = useState("");
-  const [fechaRealDraft, setFechaRealDraft] = useState("");
-
-  const liquidacionFormalActual = liquidacionesFormales.find(
-    (l) => l.obraId === Number(obraFormalId) && l.mes === mesFormal && l.quincena === quincenaFormal
-  );
-  useEffect(() => {
-    setCostoRealDraft(liquidacionFormalActual?.costoRealBlanco ?? 0);
-    setComprobanteRealDraft(liquidacionFormalActual?.comprobante ?? "");
-    setFechaRealDraft(liquidacionFormalActual?.fechaConfirmacion ?? "");
-  }, [obraFormalId, mesFormal, quincenaFormal, liquidacionFormalActual?.id]);
 
   function esFeriado(fechaStr) {
     return feriados.some((f) => f.fecha === fechaStr);
@@ -1668,108 +1735,89 @@ export default function ConcretarApp() {
     .filter((nombre) => CATEGORIAS_CONVENIO_UOCRA.includes(categoriaDe(nombre)) && tipoTrabajadorDe(nombre) === "En blanco")
     .sort();
 
-  // Como Asistencia guarda un total de horas por día (no el detalle horario), el
-  // reparto normal/50%/100% es una estimación: domingo y feriado van enteros al 100%,
-  // el resto de los días hasta 9hs (jornada legal del CCT) va normal y el excedente al 50%.
-  function calcularDefaultsFormal(nombre) {
-    const registros = asistenciaDelMesFormal.filter((a) => a.nombre === nombre);
-    let normales = 0, extra50 = 0, extra100 = 0;
-    registros.forEach((a) => {
-      const horas = a.horas || 0;
-      if (horas <= 0) return;
-      const esDomingoOFeriado = fechaLocal(a.fecha).getDay() === 0 || esFeriado(a.fecha);
-      if (esDomingoOFeriado) {
-        extra100 += horas;
-      } else {
-        normales += Math.min(horas, 9);
-        extra50 += Math.max(0, horas - 9);
-      }
-    });
-    const huboAusenciaInjustificada = registros.some((a) => a.estado === "Ausente");
-    return { horasNormales: normales, horasExtra50: extra50, horasExtra100: extra100, presentismo: !huboAusenciaInjustificada, primerAnio: false };
+  function registroFormalDe(nombre) {
+    return liquidacionesFormales.find(
+      (l) => l.obraId === Number(obraFormalId) && l.mes === mesFormal && l.quincena === quincenaFormal && l.nombre === nombre
+    );
   }
-  function valoresFormalDe(nombre) {
-    return { ...calcularDefaultsFormal(nombre), ...(overridesFormal[nombre] || {}) };
+  function guardarCampoFormal(nombre, patch) {
+    const existente = registroFormalDe(nombre);
+    if (existente) {
+      updateRecord("liquidaciones_formales", existente.id, patch, setLiquidacionesFormales);
+    } else {
+      addRecord(
+        "liquidaciones_formales",
+        { obraId: Number(obraFormalId), mes: mesFormal, quincena: quincenaFormal, nombre, horasRecibo: null, presentismo: false, ...patch },
+        setLiquidacionesFormales
+      );
+    }
   }
-  function actualizarOverrideFormal(nombre, campo, valor) {
-    setOverridesFormal((prev) => ({
-      ...prev,
-      [nombre]: { ...calcularDefaultsFormal(nombre), ...prev[nombre], [campo]: valor },
-    }));
-  }
+  const actualizarHorasRecibo = (nombre, valor) => guardarCampoFormal(nombre, { horasRecibo: valor });
+  const actualizarPresentismoFormal = (nombre, valor) => guardarCampoFormal(nombre, { presentismo: valor });
+  const guardarCostoRealPersona = (nombre, valor) => guardarCampoFormal(nombre, { costoRealBlanco: valor, fechaConfirmacion: hoyISO() });
 
   const filasFormal = nombresDelMesFormal.map((nombre) => {
     const categoria = categoriaDe(nombre) || CATEGORIAS_PERSONAL[0];
-    const v = valoresFormalDe(nombre);
+    const registrosAsistencia = asistenciaDelMesFormal.filter((a) => a.nombre === nombre);
+    const horasReales = registrosAsistencia.reduce((s, a) => s + (a.horas || 0), 0);
+    const diasTrabajados = new Set(registrosAsistencia.map((a) => a.fecha)).size;
+    const registro = registroFormalDe(nombre);
+    const horasRecibo = registro?.horasRecibo ?? Math.round((horasReales / 2) * 100) / 100;
+    const presentismo = registro?.presentismo ?? false;
+    const horasNegro = Math.max(0, horasReales - horasRecibo);
+
     const basicoHora = basicoConvenioDeCategoria(categoria, `${mesFormal}-01`);
-    const valorHora50 = basicoHora * (1 + (cfgLiq.horaExtra50Pct || 0) / 100);
-    const valorHora100 = basicoHora * (1 + (cfgLiq.horaExtra100Pct || 0) / 100);
-    const montoBasico = v.horasNormales * basicoHora;
-    const montoExtra50 = v.horasExtra50 * valorHora50;
-    const montoExtra100 = v.horasExtra100 * valorHora100;
-    const montoPresentismo = v.presentismo ? montoBasico * ((cfgLiq.presentismoPct || 0) / 100) : 0;
-    const bruto = montoBasico + montoExtra50 + montoExtra100 + montoPresentismo;
+    // Lo que no se declara en blanco se sigue pagando informal, al valor que la empresa
+    // ya paga hoy por hora (costosCategoria) — así el Gerente ve el gasto total aproximado.
+    const costoHoraInformal = costoHoraDeCategoria(categoria, `${mesFormal}-01`);
+    const montoBasico = horasRecibo * basicoHora;
+    const montoPresentismo = presentismo ? montoBasico * ((cfgLiq.presentismoPct || 0) / 100) : 0;
+    const bruto = montoBasico + montoPresentismo;
     const aportesPct = (cfgLiq.aporteJubilacionPct || 0) + (cfgLiq.aporteObraSocialPct || 0) + (cfgLiq.aportePamiPct || 0) + (cfgLiq.aporteSindicalPct || 0);
     const aportes = bruto * (aportesPct / 100);
     const neto = bruto - aportes;
     const contribPct = (cfgLiq.contribObraSocialPct || 0) + (cfgLiq.contribEmpresariaPct || 0) + (cfgLiq.contribJubilacionPct || 0);
     const contribuciones = bruto * (contribPct / 100);
-    const fondoCesePct = v.primerAnio ? (cfgLiq.fondoCesePrimerAnioPct || 0) : (cfgLiq.fondoCesePosteriorPct || 0);
-    const fondoCese = bruto * (fondoCesePct / 100);
+    // Sin dato de antigüedad por persona, se usa siempre el Fondo de Cese "posterior" (8%).
+    const fondoCese = bruto * ((cfgLiq.fondoCesePosteriorPct || 0) / 100);
     const costoEmpresa = bruto + contribuciones + fondoCese + (cfgLiq.iericMontoFijo || 0);
-    const horasReales = asistenciaDelMesFormal.filter((a) => a.nombre === nombre).reduce((s, a) => s + (a.horas || 0), 0);
-    const diasTrabajados = new Set(asistenciaDelMesFormal.filter((a) => a.nombre === nombre).map((a) => a.fecha)).size;
-    // Lo que no se declara en blanco se sigue pagando informal, al valor que la empresa
-    // ya paga hoy por hora (costosCategoria) — así el Gerente ve el gasto total aproximado.
-    const horasBlanco = v.horasNormales + v.horasExtra50 + v.horasExtra100;
-    const horasNegro = Math.max(0, horasReales - horasBlanco);
-    const costoHoraInformal = costoHoraDeCategoria(categoria, `${mesFormal}-01`);
     const costoNegro = horasNegro * costoHoraInformal;
+    const costoRealBlanco = registro?.costoRealBlanco ?? null;
+
     return {
       nombre, categoria, horasReales, diasTrabajados, basicoHora,
-      horasNormales: v.horasNormales, horasExtra50: v.horasExtra50, horasExtra100: v.horasExtra100,
-      presentismo: v.presentismo, primerAnio: v.primerAnio,
-      montoBasico, montoExtra50, montoExtra100, montoPresentismo, bruto, aportes, neto, contribuciones, fondoCese, costoEmpresa,
-      horasBlanco, horasNegro, costoNegro,
+      horasRecibo, horasNegro, presentismo,
+      montoBasico, montoPresentismo, bruto, aportes, neto, contribuciones, fondoCese, costoEmpresa, costoNegro,
+      costoRealBlanco, cerrado: costoRealBlanco != null,
     };
   });
   const totalesFormal = filasFormal.reduce(
     (acc, f) => ({
       bruto: acc.bruto + f.bruto, aportes: acc.aportes + f.aportes, neto: acc.neto + f.neto, costoEmpresa: acc.costoEmpresa + f.costoEmpresa,
-      horasBlanco: acc.horasBlanco + f.horasBlanco, horasNegro: acc.horasNegro + f.horasNegro, costoNegro: acc.costoNegro + f.costoNegro,
+      horasRecibo: acc.horasRecibo + f.horasRecibo, horasNegro: acc.horasNegro + f.horasNegro, costoNegro: acc.costoNegro + f.costoNegro,
     }),
-    { bruto: 0, aportes: 0, neto: 0, costoEmpresa: 0, horasBlanco: 0, horasNegro: 0, costoNegro: 0 }
+    { bruto: 0, aportes: 0, neto: 0, costoEmpresa: 0, horasRecibo: 0, horasNegro: 0, costoNegro: 0 }
   );
   const gastoAproximadoTotal = totalesFormal.costoEmpresa + totalesFormal.costoNegro;
 
-  function guardarEstimacionLiquidacion() {
-    const patch = {
-      horasBlanco: totalesFormal.horasBlanco,
-      horasNegro: totalesFormal.horasNegro,
-      costoAproximadoBlanco: totalesFormal.costoEmpresa,
-      costoAproximadoNegro: totalesFormal.costoNegro,
-    };
-    if (liquidacionFormalActual) {
-      updateRecord("liquidaciones_formales", liquidacionFormalActual.id, patch, setLiquidacionesFormales);
-    } else {
-      addRecord("liquidaciones_formales", { obraId: Number(obraFormalId), mes: mesFormal, quincena: quincenaFormal, ...patch }, setLiquidacionesFormales);
-    }
-  }
-  function guardarCostoRealLiquidacion() {
-    if (!liquidacionFormalActual) {
-      alert("Primero generá uno de los PDF para guardar la estimación de esta quincena — después cargás el real acá.");
+  // El recibo (PDF o foto) es uno solo por obra+quincena — se guarda para consulta.
+  const reciboFormalActual = recibosLiquidacion.find(
+    (r) => r.obraId === Number(obraFormalId) && r.mes === mesFormal && r.quincena === quincenaFormal
+  );
+  function guardarReciboFormal(dataUrl, nombreArchivo, tipoArchivo) {
+    if (!dataUrl) {
+      if (reciboFormalActual) deleteRecord("recibos_liquidacion", reciboFormalActual.id, setRecibosLiquidacion);
       return;
     }
-    updateRecord(
-      "liquidaciones_formales",
-      liquidacionFormalActual.id,
-      { costoRealBlanco: costoRealDraft, comprobante: comprobanteRealDraft, fechaConfirmacion: fechaRealDraft || hoyISO() },
-      setLiquidacionesFormales
-    );
+    const patch = { archivo: dataUrl, nombreArchivo, tipoArchivo, fechaCarga: hoyISO() };
+    if (reciboFormalActual) {
+      updateRecord("recibos_liquidacion", reciboFormalActual.id, patch, setRecibosLiquidacion);
+    } else {
+      addRecord("recibos_liquidacion", { obraId: Number(obraFormalId), mes: mesFormal, quincena: quincenaFormal, ...patch }, setRecibosLiquidacion);
+    }
   }
 
   function generarPdfHorasReales() {
-    guardarEstimacionLiquidacion();
     const obra = obras.find((o) => o.id === Number(obraFormalId));
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     doc.setFillColor(2, 29, 52);
@@ -1782,9 +1830,9 @@ export default function ConcretarApp() {
     doc.setTextColor(20, 20, 20);
     autoTable(doc, {
       startY: 36,
-      head: [["Persona", "Categoría", "Días trabajados", "Horas reales", "Horas en blanco (a liquidar)", "Horas en negro"]],
-      body: filasFormal.map((f) => [f.nombre, f.categoria, String(f.diasTrabajados), String(f.horasReales), String(f.horasBlanco), String(f.horasNegro)]),
-      foot: [["", "", "", "TOTAL", String(totalesFormal.horasBlanco), String(totalesFormal.horasNegro)]],
+      head: [["Persona", "Categoría", "Días trabajados", "Horas presentes", "Horas en recibo", "Horas en negro"]],
+      body: filasFormal.map((f) => [f.nombre, f.categoria, String(f.diasTrabajados), String(f.horasReales), String(f.horasRecibo), String(f.horasNegro)]),
+      foot: [["", "", "", "TOTAL", String(totalesFormal.horasRecibo), String(totalesFormal.horasNegro)]],
       headStyles: { fillColor: [2, 29, 52] },
       footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
       styles: { fontSize: 9 },
@@ -1794,8 +1842,8 @@ export default function ConcretarApp() {
     doc.setTextColor(120, 120, 120);
     doc.text(
       [
-        "\"Horas en blanco\" es lo que hay que liquidar formalmente; \"Horas en negro\" es el resto de las horas reales trabajadas.",
-        "Horas reales según asistencia registrada en obra, sin ajustes.",
+        "\"Horas en recibo\" es lo que hay que liquidar formalmente; \"Horas en negro\" es el resto de las horas presentes.",
+        "Horas presentes según asistencia registrada en obra, sin ajustes.",
       ],
       14, finalY + 8
     );
@@ -1803,7 +1851,6 @@ export default function ConcretarApp() {
   }
 
   function generarPdfLiquidacionFormal() {
-    guardarEstimacionLiquidacion();
     const obra = obras.find((o) => o.id === Number(obraFormalId));
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     doc.setFillColor(2, 29, 52);
@@ -1816,12 +1863,13 @@ export default function ConcretarApp() {
     doc.setTextColor(20, 20, 20);
     autoTable(doc, {
       startY: 36,
-      head: [["Persona", "Categ.", "Hs. blanco", "Hs. negro", "Bruto (blanco)", "Aportes", "Neto (blanco)", "Costo empresa (blanco)", "Costo aprox. (negro)"]],
+      head: [["Persona", "Categ.", "Hs. en recibo", "Hs. en negro", "Bruto", "Aportes", "Neto", "Costo empresa", "Costo aprox. (negro)", "Costo real"]],
       body: filasFormal.map((f) => [
-        f.nombre, f.categoria, String(f.horasBlanco), String(f.horasNegro),
+        f.nombre, f.categoria, String(f.horasRecibo), String(f.horasNegro),
         fmtARS(f.bruto), fmtARS(f.aportes), fmtARS(f.neto), fmtARS(f.costoEmpresa), fmtARS(f.costoNegro),
+        f.costoRealBlanco != null ? fmtARS(f.costoRealBlanco) : "—",
       ]),
-      foot: [["", "", "", "TOTAL", fmtARS(totalesFormal.bruto), fmtARS(totalesFormal.aportes), fmtARS(totalesFormal.neto), fmtARS(totalesFormal.costoEmpresa), fmtARS(totalesFormal.costoNegro)]],
+      foot: [["", "", "", "TOTAL", fmtARS(totalesFormal.bruto), fmtARS(totalesFormal.aportes), fmtARS(totalesFormal.neto), fmtARS(totalesFormal.costoEmpresa), fmtARS(totalesFormal.costoNegro), ""]],
       headStyles: { fillColor: [2, 29, 52] },
       footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
       styles: { fontSize: 7.5 },
@@ -3971,6 +4019,32 @@ export default function ConcretarApp() {
                   )}
                 </div>
               )}
+
+              {historialPagosPersona.length > 0 && (
+                <div className="mt-4">
+                  <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Historial de pagos</div>
+                  <div className="overflow-x-auto rounded-lg border border-stone-200">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-2 py-1.5">Período</th>
+                          <th className="px-2 py-1.5">Estado</th>
+                          <th className="px-2 py-1.5 text-right">Ganó</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {historialPagosPersona.map((h, i) => (
+                          <tr key={i} className="border-t border-stone-100">
+                            <td className="px-2 py-1 text-slate-700">{h.periodo}</td>
+                            <td className="px-2 py-1"><Badge estado={h.tipo} /></td>
+                            <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800">{fmtARS(h.monto)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -4597,8 +4671,6 @@ export default function ConcretarApp() {
 
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                       <PctField label="Presentismo" value={cfgLiq.presentismoPct} onSave={(v) => actualizarConfigLiquidacion("presentismoPct", v)} />
-                      <PctField label="Hora extra día hábil" value={cfgLiq.horaExtra50Pct} onSave={(v) => actualizarConfigLiquidacion("horaExtra50Pct", v)} />
-                      <PctField label="Hora extra sáb./dom./feriado" value={cfgLiq.horaExtra100Pct} onSave={(v) => actualizarConfigLiquidacion("horaExtra100Pct", v)} />
                       <PctField label="Aporte jubilación (trabajador)" value={cfgLiq.aporteJubilacionPct} onSave={(v) => actualizarConfigLiquidacion("aporteJubilacionPct", v)} />
                       <PctField label="Aporte obra social (trabajador)" value={cfgLiq.aporteObraSocialPct} onSave={(v) => actualizarConfigLiquidacion("aporteObraSocialPct", v)} />
                       <PctField label="Aporte PAMI / Ley 19032" value={cfgLiq.aportePamiPct} onSave={(v) => actualizarConfigLiquidacion("aportePamiPct", v)} />
@@ -4606,8 +4678,8 @@ export default function ConcretarApp() {
                       <PctField label="Contrib. obra social (patronal)" value={cfgLiq.contribObraSocialPct} onSave={(v) => actualizarConfigLiquidacion("contribObraSocialPct", v)} />
                       <PctField label="Contrib. empresaria al gremio" value={cfgLiq.contribEmpresariaPct} onSave={(v) => actualizarConfigLiquidacion("contribEmpresariaPct", v)} />
                       <PctField label="Contrib. jubilatoria (patronal)" value={cfgLiq.contribJubilacionPct} onSave={(v) => actualizarConfigLiquidacion("contribJubilacionPct", v)} confirmar />
-                      <PctField label="Fondo de Cese Laboral — 1er año" value={cfgLiq.fondoCesePrimerAnioPct} onSave={(v) => actualizarConfigLiquidacion("fondoCesePrimerAnioPct", v)} />
-                      <PctField label="Fondo de Cese Laboral — después" value={cfgLiq.fondoCesePosteriorPct} onSave={(v) => actualizarConfigLiquidacion("fondoCesePosteriorPct", v)} />
+                      <PctField label="Fondo de Cese Laboral — 1er año (referencia)" value={cfgLiq.fondoCesePrimerAnioPct} onSave={(v) => actualizarConfigLiquidacion("fondoCesePrimerAnioPct", v)} />
+                      <PctField label="Fondo de Cese Laboral — después (usado)" value={cfgLiq.fondoCesePosteriorPct} onSave={(v) => actualizarConfigLiquidacion("fondoCesePosteriorPct", v)} />
                       <Field label="IERIC (a confirmar)">
                         <MoneyInput className={inputCls} value={cfgLiq.iericMontoFijo ?? 0} onBlur={(v) => actualizarConfigLiquidacion("iericMontoFijo", v)} />
                       </Field>
@@ -4623,9 +4695,9 @@ export default function ConcretarApp() {
                   <>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                       <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Costo en blanco (aprox.)</div>
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Costo en recibo (aprox.)</div>
                         <div className="mt-1 font-mono text-lg font-bold text-slate-900">{fmtARS(totalesFormal.costoEmpresa)}</div>
-                        <div className="text-[11px] text-slate-400">{totalesFormal.horasBlanco} hs a liquidar</div>
+                        <div className="text-[11px] text-slate-400">{totalesFormal.horasRecibo} hs a liquidar</div>
                       </div>
                       <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Costo en negro (aprox.)</div>
@@ -4635,17 +4707,25 @@ export default function ConcretarApp() {
                       <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-4 shadow-sm">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-800">Gasto aproximado total</div>
                         <div className="mt-1 font-mono text-lg font-bold text-amber-900">{fmtARS(gastoAproximadoTotal)}</div>
-                        <div className="text-[11px] text-amber-700">Blanco + negro — estimado, no el recibo real</div>
+                        <div className="text-[11px] text-amber-700">Recibo + negro — estimado, no el recibo real</div>
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <button onClick={generarPdfHorasReales} className={btnGhost}>
-                        <span className="flex items-center gap-1"><FileDown size={13} /> PDF horas (blanco / negro) para el contador</span>
-                      </button>
-                      <button onClick={generarPdfLiquidacionFormal} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700">
-                        <FileDown size={13} /> PDF liquidación simulada
-                      </button>
+                    <div className="flex flex-wrap items-end justify-between gap-4">
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={generarPdfHorasReales} className={btnGhost}>
+                          <span className="flex items-center gap-1"><FileDown size={13} /> PDF horas (recibo / negro) para el contador</span>
+                        </button>
+                        <button onClick={generarPdfLiquidacionFormal} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700">
+                          <FileDown size={13} /> PDF liquidación simulada
+                        </button>
+                      </div>
+                      <ArchivoInput
+                        label="Recibo del contador (PDF o foto)"
+                        value={reciboFormalActual?.archivo}
+                        nombreArchivo={reciboFormalActual?.nombreArchivo}
+                        onChange={guardarReciboFormal}
+                      />
                     </div>
 
                     <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
@@ -4654,96 +4734,75 @@ export default function ConcretarApp() {
                           <tr>
                             <th className="px-2 py-2">Persona</th>
                             <th className="px-2 py-2">Categoría</th>
-                            <th className="px-2 py-2 text-right">Hs. reales</th>
-                            <th className="px-2 py-2 text-right">Hs. normales</th>
-                            <th className="px-2 py-2 text-right">Hs. 50%</th>
-                            <th className="px-2 py-2 text-right">Hs. 100%</th>
+                            <th className="px-2 py-2 text-right">Hs. presentes</th>
+                            <th className="px-2 py-2 text-right">Hs. en recibo</th>
                             <th className="px-2 py-2 text-right">Hs. en negro</th>
                             <th className="px-2 py-2 text-center">Presentismo</th>
-                            <th className="px-2 py-2 text-center">1er año</th>
                             <th className="px-2 py-2 text-right">Bruto</th>
                             <th className="px-2 py-2 text-right">Neto</th>
                             <th className="px-2 py-2 text-right">Costo empresa</th>
                             <th className="px-2 py-2 text-right">Costo negro (aprox.)</th>
+                            <th className="px-2 py-2 text-right">Costo real (recibo)</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {filasFormal.map((f) => (
-                            <tr key={f.nombre} className="border-t border-stone-100">
-                              <td className="px-2 py-1.5 font-medium text-slate-900">{f.nombre}</td>
-                              <td className="px-2 py-1.5 text-slate-600">{f.categoria}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-slate-400">{f.horasReales}</td>
-                              <td className="px-2 py-1.5 text-right">
-                                <input type="number" value={f.horasNormales} onChange={(e) => actualizarOverrideFormal(f.nombre, "horasNormales", Number(e.target.value))} className="w-16 rounded border border-stone-300 px-1 py-0.5 text-right" />
-                              </td>
-                              <td className="px-2 py-1.5 text-right">
-                                <input type="number" value={f.horasExtra50} onChange={(e) => actualizarOverrideFormal(f.nombre, "horasExtra50", Number(e.target.value))} className="w-16 rounded border border-stone-300 px-1 py-0.5 text-right" />
-                              </td>
-                              <td className="px-2 py-1.5 text-right">
-                                <input type="number" value={f.horasExtra100} onChange={(e) => actualizarOverrideFormal(f.nombre, "horasExtra100", Number(e.target.value))} className="w-16 rounded border border-stone-300 px-1 py-0.5 text-right" />
-                              </td>
-                              <td className="px-2 py-1.5 text-right font-mono text-slate-500">{f.horasNegro}</td>
-                              <td className="px-2 py-1.5 text-center">
-                                <input type="checkbox" checked={f.presentismo} onChange={(e) => actualizarOverrideFormal(f.nombre, "presentismo", e.target.checked)} />
-                              </td>
-                              <td className="px-2 py-1.5 text-center">
-                                <input type="checkbox" checked={f.primerAnio} onChange={(e) => actualizarOverrideFormal(f.nombre, "primerAnio", e.target.checked)} />
-                              </td>
-                              <td className="px-2 py-1.5 text-right font-mono">{fmtARS(f.bruto)}</td>
-                              <td className="px-2 py-1.5 text-right font-mono font-semibold">{fmtARS(f.neto)}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-slate-500">{fmtARS(f.costoEmpresa)}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-slate-500">{fmtARS(f.costoNegro)}</td>
-                            </tr>
-                          ))}
+                          {filasFormal.map((f) => {
+                            const diffReal = f.costoRealBlanco != null ? f.costoRealBlanco - f.costoEmpresa : null;
+                            return (
+                              <tr key={f.nombre} className="border-t border-stone-100">
+                                <td className="px-2 py-1.5 font-medium text-slate-900">{f.nombre}</td>
+                                <td className="px-2 py-1.5 text-slate-600">{f.categoria}</td>
+                                <td className="px-2 py-1.5 text-right font-mono text-slate-400">{f.horasReales}</td>
+                                <td className="px-2 py-1.5 text-right">
+                                  <input
+                                    key={`${f.nombre}-${f.horasRecibo}`}
+                                    type="number" defaultValue={f.horasRecibo}
+                                    onBlur={(e) => actualizarHorasRecibo(f.nombre, Number(e.target.value))}
+                                    className="w-16 rounded border border-stone-300 px-1 py-0.5 text-right"
+                                  />
+                                </td>
+                                <td className="px-2 py-1.5 text-right font-mono text-slate-500">{f.horasNegro}</td>
+                                <td className="px-2 py-1.5 text-center">
+                                  <input type="checkbox" checked={f.presentismo} onChange={(e) => actualizarPresentismoFormal(f.nombre, e.target.checked)} />
+                                </td>
+                                <td className="px-2 py-1.5 text-right font-mono">{fmtARS(f.bruto)}</td>
+                                <td className="px-2 py-1.5 text-right font-mono font-semibold">{fmtARS(f.neto)}</td>
+                                <td className="px-2 py-1.5 text-right font-mono text-slate-500">{fmtARS(f.costoEmpresa)}</td>
+                                <td className="px-2 py-1.5 text-right font-mono text-slate-500">{fmtARS(f.costoNegro)}</td>
+                                <td className="px-2 py-1.5 text-right">
+                                  <MoneyInput
+                                    key={`${f.nombre}-${f.costoRealBlanco ?? 0}`}
+                                    value={f.costoRealBlanco ?? 0}
+                                    onBlur={(v) => guardarCostoRealPersona(f.nombre, v)}
+                                    className="w-24 rounded border border-stone-300 px-1.5 py-1 text-right"
+                                  />
+                                  {diffReal != null && (
+                                    <div className={`mt-0.5 text-[10px] ${diffReal > 0 ? "text-rose-600" : "text-emerald-700"}`}>
+                                      {diffReal > 0 ? "+" : ""}{fmtARS(diffReal)} vs. aprox.
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                         <tfoot>
                           <tr className="border-t-2 border-stone-200 font-semibold">
-                            <td className="px-2 py-2" colSpan={9}>Total</td>
+                            <td className="px-2 py-2" colSpan={6}>Total</td>
                             <td className="px-2 py-2 text-right font-mono">{fmtARS(totalesFormal.bruto)}</td>
                             <td className="px-2 py-2 text-right font-mono">{fmtARS(totalesFormal.neto)}</td>
                             <td className="px-2 py-2 text-right font-mono">{fmtARS(totalesFormal.costoEmpresa)}</td>
                             <td className="px-2 py-2 text-right font-mono">{fmtARS(totalesFormal.costoNegro)}</td>
+                            <td className="px-2 py-2"></td>
                           </tr>
                         </tfoot>
                       </table>
                     </div>
                     <div className="text-[11px] text-slate-400">
-                      "Hs. reales" es de referencia (lo cargado en Asistencia) y no se edita acá. Las columnas de horas declaradas parten de una
-                      estimación (domingo/feriado al 100%, resto hasta 9hs/día normal y excedente al 50%) pero podés cambiarlas libremente —
-                      lo que no quede en "normales/50%/100%" se cuenta como horas en negro.
+                      "Hs. presentes" es de referencia (lo cargado en Asistencia) y no se edita acá. "Hs. en recibo" arranca en la mitad de las
+                      presentes pero se puede cambiar libremente — lo que no quede ahí se cuenta como horas en negro. "Costo real (recibo)" se
+                      carga a mano una vez que el contador liquida — mientras esté vacío, esta quincena sigue figurando como pendiente de pago.
                     </div>
-
-                    <Panel title="Gasto real (según el recibo del contador)">
-                      <div className="mb-3 text-xs text-slate-500">
-                        Cuando el contador liquide los sueldos, cargá acá el monto real del recibo — reemplaza el estimado como el gasto
-                        final de este mes en esta obra. {liquidacionFormalActual?.costoAproximadoBlanco != null && (
-                          <>Estimado guardado: <strong>{fmtARS(liquidacionFormalActual.costoAproximadoBlanco)}</strong> en blanco.</>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                        <Field label="Costo real en blanco (recibo)">
-                          <MoneyInput className={inputCls} value={costoRealDraft} onChange={setCostoRealDraft} />
-                        </Field>
-                        <Field label="N° de comprobante / recibo">
-                          <input value={comprobanteRealDraft} onChange={(e) => setComprobanteRealDraft(e.target.value)} className={inputCls} />
-                        </Field>
-                        <Field label="Fecha del recibo">
-                          <input type="date" value={fechaRealDraft} onChange={(e) => setFechaRealDraft(e.target.value)} className={inputCls} />
-                        </Field>
-                      </div>
-                      <div className="mt-3 flex items-center gap-3">
-                        <button onClick={guardarCostoRealLiquidacion} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
-                          Guardar gasto real
-                        </button>
-                        {liquidacionFormalActual?.costoRealBlanco != null && (
-                          <span className="text-xs text-slate-500">
-                            Diferencia vs. estimado: <strong className={liquidacionFormalActual.costoRealBlanco > liquidacionFormalActual.costoAproximadoBlanco ? "text-rose-600" : "text-emerald-700"}>
-                              {fmtARS(liquidacionFormalActual.costoRealBlanco - liquidacionFormalActual.costoAproximadoBlanco)}
-                            </strong>
-                          </span>
-                        )}
-                      </div>
-                    </Panel>
                   </>
                 )}
               </>
