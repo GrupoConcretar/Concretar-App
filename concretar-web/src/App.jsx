@@ -56,17 +56,17 @@ const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"]
 const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
 const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
 const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
-const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Epps y Consumibles", "Otros"];
-// La pestaña "Pedidos de Obra" arma el pedido en 3 pasos (rubros). Cada uno filtra
-// las líneas del presupuesto importado por estas categorías.
+const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Epps", "Consumibles", "Otros"];
+// La pestaña "Pedidos de Obra" arma el pedido en pasos (rubros). Cada uno filtra
+// las líneas del presupuesto importado (o el catálogo propio, en el caso de Epps
+// y Consumibles) por estas categorías. Epps y Consumibles no se ordenan por rubro
+// de obra porque un mismo ítem suele servir para varios rubros a la vez.
 const CATEGORIAS_POR_VISTA = {
   materiales: ["Materiales"],
   equipos: ["Equipos", "Herramientas"],
-  epps: ["Epps y Consumibles"],
+  epps: ["Epps"],
+  consumibles: ["Consumibles"],
 };
-// Rubros para clasificar EPPs/consumibles — los mismos que ya se usan para las
-// cajas de herramientas personales, más "General" para lo que sirve en cualquier obra.
-const RUBROS_EPP = ["General", ...TIPOS_CAJA];
 const CATEGORIAS_HERRAMIENTA = ["Herramienta Eléctrica", "Herramienta Manual", "Equipo Eléctrico", "Equipo a Combustión"];
 const SI_NO = ["No", "Sí"];
 // Letra usada en el N° de serie automático (Tipo-Marca+N°). Cambiá acá si preferís otras letras.
@@ -1214,6 +1214,25 @@ export default function ConcretarApp() {
     setArchivoObraNombre("");
     if (obraFileInputRef.current) obraFileInputRef.current.value = "";
   }
+  // Vuelca el Excel importado (Equipos/Herramientas/Materiales) a una obra puntual.
+  // Se usa tanto al crear una obra nueva como al editar una que todavía no tenía presupuesto cargado.
+  async function importarPresupuestoAObra(obraId) {
+    if (!resumenObraImportado) return;
+    await addRecord("presupuesto_general", { obraId, ...resumenObraImportado, fechaImportacion: hoyISO() }, setPresupuestoGeneral);
+    for (const it of itemsObraImportados) {
+      await addRecord("presupuesto_materiales", { obraId, ...it, origen: "Excel" }, setPresupuestoMateriales);
+      if (it.subcategoria && !subcategoriasMat.some((s) => s.categoria === it.categoria && s.nombre === it.subcategoria)) {
+        await addRecord("subcategorias_material", { categoria: it.categoria, nombre: it.subcategoria }, setSubcategoriasMat);
+      }
+      const existente = catalogoMateriales.find((m) => m.nombre.toLowerCase() === it.material.toLowerCase() && m.categoria === it.categoria);
+      if (existente) {
+        if (it.precioUnitario > 0) await updateRecord("catalogo_materiales", existente.id, { ultimoPrecio: it.precioUnitario, subcategoria: it.subcategoria || existente.subcategoria, unidad: it.unidad || existente.unidad }, setCatalogoMateriales);
+      } else {
+        await addRecord("catalogo_materiales", { categoria: it.categoria, subcategoria: it.subcategoria, tipo: "", nombre: it.material, unidad: it.unidad, ultimoPrecio: it.precioUnitario, ultimoProveedor: null }, setCatalogoMateriales);
+      }
+    }
+  }
+
   async function submitNuevaObra(e) {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -1230,21 +1249,7 @@ export default function ConcretarApp() {
       diaCierre: f.get("diaCierre"),
       horaCierre: f.get("horaCierre"),
     }, setObras);
-    if (nuevaObra && resumenObraImportado) {
-      await addRecord("presupuesto_general", { obraId: nuevaObra.id, ...resumenObraImportado, fechaImportacion: hoyISO() }, setPresupuestoGeneral);
-      for (const it of itemsObraImportados) {
-        await addRecord("presupuesto_materiales", { obraId: nuevaObra.id, ...it, origen: "Excel" }, setPresupuestoMateriales);
-        if (it.subcategoria && !subcategoriasMat.some((s) => s.categoria === it.categoria && s.nombre === it.subcategoria)) {
-          await addRecord("subcategorias_material", { categoria: it.categoria, nombre: it.subcategoria }, setSubcategoriasMat);
-        }
-        const existente = catalogoMateriales.find((m) => m.nombre.toLowerCase() === it.material.toLowerCase() && m.categoria === it.categoria);
-        if (existente) {
-          if (it.precioUnitario > 0) await updateRecord("catalogo_materiales", existente.id, { ultimoPrecio: it.precioUnitario, subcategoria: it.subcategoria || existente.subcategoria, unidad: it.unidad || existente.unidad }, setCatalogoMateriales);
-        } else {
-          await addRecord("catalogo_materiales", { categoria: it.categoria, subcategoria: it.subcategoria, tipo: "", nombre: it.material, unidad: it.unidad, ultimoPrecio: it.precioUnitario, ultimoProveedor: null }, setCatalogoMateriales);
-        }
-      }
-    }
+    if (nuevaObra) await importarPresupuestoAObra(nuevaObra.id);
     e.target.reset();
     quitarExcelNuevaObra();
     setCreandoObra(false);
@@ -1290,17 +1295,19 @@ export default function ConcretarApp() {
     setShowObraForm(false);
     setViewingObraId(null);
   }
-  function guardarEdicionObra(e, obra) {
+  async function guardarEdicionObra(e, obra) {
     e.preventDefault();
     const f = new FormData(e.target);
     const nuevoClienteId = f.get("clienteId") ? Number(f.get("clienteId")) : null;
-    updateRecord("obras", obra.id, {
+    await updateRecord("obras", obra.id, {
       nombre: f.get("nombre"),
       clienteId: nuevoClienteId,
       cliente: clientes.find((c) => c.id === nuevoClienteId)?.razonSocial || obra.cliente,
       presupuesto: Number(f.get("presupuesto")) || obra.presupuesto,
       encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
     }, setObras);
+    await importarPresupuestoAObra(obra.id);
+    quitarExcelNuevaObra();
     setEditandoObraId(null);
   }
   const [showHerrForm, setShowHerrForm] = useState(false);
@@ -2021,12 +2028,7 @@ export default function ConcretarApp() {
   const [subcategoriaParaTipo, setSubcategoriaParaTipo] = useState("");
   const [nuevoTipo, setNuevoTipo] = useState("");
   const [obraPresupuestoId, setObraPresupuestoId] = useState(obras[0]?.id ?? "");
-  const [rubroEppFiltro, setRubroEppFiltro] = useState("Todos");
-  const [filasImportadas, setFilasImportadas] = useState([]);
-  const [resumenImportado, setResumenImportado] = useState(null);
-  const [archivoNombre, setArchivoNombre] = useState("");
-  const [importando, setImportando] = useState(false);
-  const fileInputRef = useRef(null);
+  const [mostrarListaHerramientas, setMostrarListaHerramientas] = useState(false);
 
   function agregarSubcategoria() {
     if (!nuevaSubcategoria.trim()) return;
@@ -2145,72 +2147,6 @@ export default function ConcretarApp() {
     };
   }
 
-  function handleExcelUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    setArchivoNombre(file.name);
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const data = new Uint8Array(evt.target.result);
-        const wb = XLSX.read(data, { type: "array", cellDates: true });
-        const { resumen, items } = parsePresupuestoGeneral(wb);
-        if (items.length === 0) {
-          alert("No se pudo leer ningún ítem de Equipos o Materiales. Revisá que sea la Planilla Interna de Costeo (hoja \"Planilla final\").");
-        }
-        setResumenImportado(resumen);
-        setFilasImportadas(items);
-      } catch (err) {
-        alert("No se pudo leer el archivo. Revisá que sea la Planilla Interna de Costeo en formato .xlsx.");
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  }
-
-  async function confirmarImportacion() {
-    if (filasImportadas.length === 0 || !obraPresupuestoId) return;
-    setImportando(true);
-    // Presupuesto general de la obra (referencia para comparar presupuestado vs. real)
-    const existentePG = presupuestoGeneral.find((p) => p.obraId === Number(obraPresupuestoId));
-    if (existentePG) {
-      await updateRecord("presupuesto_general", existentePG.id, { ...resumenImportado, fechaImportacion: hoyISO() }, setPresupuestoGeneral);
-    } else {
-      await addRecord("presupuesto_general", { obraId: Number(obraPresupuestoId), ...resumenImportado, fechaImportacion: hoyISO() }, setPresupuestoGeneral);
-    }
-    for (const f of filasImportadas) {
-      await addRecord("presupuesto_materiales", { obraId: Number(obraPresupuestoId), ...f, origen: "Excel" }, setPresupuestoMateriales);
-      // Da de alta la sub-categoría detectada en el catálogo, si todavía no existía.
-      if (f.subcategoria && !subcategoriasMat.some((s) => s.categoria === f.categoria && s.nombre === f.subcategoria)) {
-        await addRecord("subcategorias_material", { categoria: f.categoria, nombre: f.subcategoria }, setSubcategoriasMat);
-      }
-      const existente = catalogoMateriales.find((m) => m.nombre.toLowerCase() === f.material.toLowerCase() && m.categoria === f.categoria);
-      if (existente) {
-        if (f.precioUnitario > 0) {
-          await updateRecord("catalogo_materiales", existente.id, {
-            ultimoPrecio: f.precioUnitario,
-            subcategoria: f.subcategoria || existente.subcategoria,
-            unidad: f.unidad || existente.unidad,
-          }, setCatalogoMateriales);
-        }
-      } else {
-        await addRecord("catalogo_materiales", {
-          categoria: f.categoria, subcategoria: f.subcategoria, tipo: "", nombre: f.material, unidad: f.unidad, ultimoPrecio: f.precioUnitario, ultimoProveedor: null,
-        }, setCatalogoMateriales);
-      }
-    }
-    setFilasImportadas([]);
-    setResumenImportado(null);
-    setArchivoNombre("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    setImportando(false);
-  }
-
-  function cancelarImportacion() {
-    setFilasImportadas([]);
-    setArchivoNombre("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
   function eliminarLineaPresupuesto(id) {
     if (!window.confirm("¿Sacar esta línea del presupuesto?")) return;
     deleteRecord("presupuesto_materiales", id, setPresupuestoMateriales);
@@ -2268,6 +2204,15 @@ export default function ConcretarApp() {
     setPedidoItems((items) => [...items, {
       presupuestoId: null, categoria: item.categoria, subcategoria: item.subcategoria, tipo: item.tipo || "",
       material: item.nombre, unidad: item.unidad || "und.", cantidad: 1, precioUnitario: item.ultimoPrecio || 0,
+    }]);
+    setShowPedidoForm(true);
+  }
+  // Pedido puntual sobre una herramienta real del inventario (ej. reponer una rota,
+  // o comprar una segunda igual) — a diferencia del catálogo, no tiene precio de referencia.
+  function agregarHerramientaAlPedido(h) {
+    setPedidoItems((items) => [...items, {
+      presupuestoId: null, categoria: "Herramientas", subcategoria: h.categoria, tipo: "",
+      material: `${h.nombre} (${h.numeroSerie || "s/n"})`, unidad: "und.", cantidad: 1, precioUnitario: 0,
     }]);
     setShowPedidoForm(true);
   }
@@ -2959,9 +2904,53 @@ export default function ConcretarApp() {
                             {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
                           </select>
                         </Field>
+
+                        {!presupuestoGeneral.some((p) => p.obraId === o.id) && (
+                          <div className="rounded-md border border-dashed border-amber-300 bg-amber-50 p-4">
+                            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800">Todavía no tiene presupuesto — importalo ahora si querés</div>
+                            <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-stone-50">
+                              <Upload size={16} /> Subir Planilla Interna (.xlsx)
+                              <input ref={obraFileInputRef} type="file" accept=".xlsx,.xls" onChange={handleExcelUploadNuevaObra} className="hidden" />
+                            </label>
+                            {archivoObraNombre && (
+                              <div className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                                <FileSpreadsheet size={13} /> {archivoObraNombre}
+                                <button type="button" onClick={quitarExcelNuevaObra} className="text-slate-400 hover:text-rose-600"><X size={13} /></button>
+                              </div>
+                            )}
+                            {resumenObraImportado && (
+                              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                <div className="rounded-md border border-stone-200 bg-white p-2">
+                                  <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Mano de Obra</div>
+                                  <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.totalManoObra)}</div>
+                                </div>
+                                <div className="rounded-md border border-stone-200 bg-white p-2">
+                                  <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Equipos</div>
+                                  <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.totalEquipos)}</div>
+                                </div>
+                                {resumenObraImportado.totalHerramientas > 0 && (
+                                  <div className="rounded-md border border-stone-200 bg-white p-2">
+                                    <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Herramientas</div>
+                                    <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.totalHerramientas)}</div>
+                                  </div>
+                                )}
+                                <div className="rounded-md border border-stone-200 bg-white p-2">
+                                  <div className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Materiales</div>
+                                  <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.totalMateriales)}</div>
+                                </div>
+                                <div className="rounded-md border border-amber-300 bg-white p-2 sm:col-span-2">
+                                  <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">Total con IVA</div>
+                                  <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.precioTotalConIva)}</div>
+                                </div>
+                                <div className="text-[11px] text-slate-500 sm:col-span-2 sm:self-center">{itemsObraImportados.length} ítem(s) de Equipos/Herramientas/Materiales detectados.</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         <div className="flex gap-2">
                           <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
-                          <button type="button" onClick={() => setEditandoObraId(null)} className={btnGhost}>Cancelar</button>
+                          <button type="button" onClick={() => { quitarExcelNuevaObra(); setEditandoObraId(null); }} className={btnGhost}>Cancelar</button>
                         </div>
                       </form>
                     ) : (
@@ -4701,10 +4690,16 @@ export default function ConcretarApp() {
                 Equipos y Herramientas
               </button>
               <button
-                onClick={() => { setVistaMateriales("epps"); setItemManualDraft((d) => ({ ...d, categoria: "Epps y Consumibles", subcategoria: "", tipo: "" })); }}
+                onClick={() => { setVistaMateriales("epps"); setItemManualDraft((d) => ({ ...d, categoria: "Epps", subcategoria: "", tipo: "" })); }}
                 className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "epps" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
               >
-                Epps y Consumibles
+                Epps
+              </button>
+              <button
+                onClick={() => { setVistaMateriales("consumibles"); setItemManualDraft((d) => ({ ...d, categoria: "Consumibles", subcategoria: "", tipo: "" })); }}
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "consumibles" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                Consumibles
               </button>
               <button
                 onClick={() => setVistaMateriales("catalogo")}
@@ -4729,7 +4724,7 @@ export default function ConcretarApp() {
               </button>
             </div>
 
-            {["materiales", "equipos", "epps"].includes(vistaMateriales) && (
+            {["materiales", "equipos", "epps", "consumibles"].includes(vistaMateriales) && (
               <>
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="min-w-[200px]">
@@ -4739,84 +4734,12 @@ export default function ConcretarApp() {
                       </select>
                     </Field>
                   </div>
-                  {vistaMateriales === "materiales" && (
-                    <>
-                      <label className="flex cursor-pointer items-center gap-1.5 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
-                        <Upload size={16} /> Importar Excel
-                        <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleExcelUpload} className="hidden" />
-                      </label>
-                      {archivoNombre && <span className="flex items-center gap-1 text-xs text-slate-500"><FileSpreadsheet size={13} /> {archivoNombre}</span>}
-                    </>
-                  )}
                 </div>
 
-                {vistaMateriales === "materiales" && (
-                  <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-                    Subí la Planilla Interna para Costeo tal cual la usás (hoja "Planilla final"). La app lee sola las secciones de Mano de Obra, Equipos/Otros y Materiales, agrupando por rubro según los títulos que ya usás adentro de la planilla (Materiales Civiles, Daisa, etc.). Cuando armés el pedido real, ahí elegís la fecha en que lo necesitás — 2 días antes te avisa en el Dashboard.
+                {vistaMateriales === "materiales" && !presupuestoGeneral.some((p) => p.obraId === Number(obraPresupuestoId)) && (
+                  <div className="rounded-md border border-dashed border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+                    Esta obra todavía no tiene presupuesto cargado. Se importa desde "Obras" → editar la obra, con la Planilla Interna para Costeo.
                   </div>
-                )}
-
-                {vistaMateriales === "materiales" && filasImportadas.length > 0 && (
-                  <Panel
-                    title={`Vista previa — Planilla Interna para "${obras.find((o) => o.id === Number(obraPresupuestoId))?.nombre}"`}
-                    action={<button onClick={cancelarImportacion}><X size={16} /></button>}
-                  >
-                    {resumenImportado && (
-                      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                        <div className="rounded-md border border-stone-200 bg-stone-50 p-3">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Mano de Obra</div>
-                          <div className="font-mono font-bold text-slate-900">{fmtARS(resumenImportado.totalManoObra)}</div>
-                        </div>
-                        <div className="rounded-md border border-stone-200 bg-stone-50 p-3">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Equipos</div>
-                          <div className="font-mono font-bold text-slate-900">{fmtARS(resumenImportado.totalEquipos)}</div>
-                        </div>
-                        <div className="rounded-md border border-stone-200 bg-stone-50 p-3">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Materiales</div>
-                          <div className="font-mono font-bold text-slate-900">{fmtARS(resumenImportado.totalMateriales)}</div>
-                        </div>
-                        <div className="rounded-md border border-amber-300 bg-amber-50 p-3">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Precio total sin IVA</div>
-                          <div className="font-mono font-bold text-slate-900">{fmtARS(resumenImportado.precioTotalSinIva)}</div>
-                        </div>
-                        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 sm:col-span-2">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Precio total con IVA</div>
-                          <div className="font-mono font-bold text-slate-900">{fmtARS(resumenImportado.precioTotalConIva)}</div>
-                        </div>
-                      </div>
-                    )}
-                    <div className="mb-2 text-[11px] text-slate-400">{filasImportadas.length} ítem(s) de Equipos y Materiales detectados (Mano de Obra queda como referencia, no se pide a proveedores):</div>
-                    <div className="max-h-72 overflow-y-auto rounded-md border border-stone-200">
-                      <table className="w-full text-left text-xs">
-                        <thead className="sticky top-0 bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                          <tr>
-                            <th className="px-2 py-2">Categ.</th><th className="px-2 py-2">Sub-categoría (rubro)</th><th className="px-2 py-2">Material</th>
-                            <th className="px-2 py-2">Unidad</th><th className="px-2 py-2 text-right">Cant.</th><th className="px-2 py-2 text-right">P. Unit.</th>
-                            <th className="px-2 py-2 text-right">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filasImportadas.map((f, i) => (
-                            <tr key={i} className="border-t border-stone-100">
-                              <td className="px-2 py-1.5">{f.categoria}</td>
-                              <td className="px-2 py-1.5">{f.subcategoria || "—"}</td>
-                              <td className="px-2 py-1.5 font-medium text-slate-800">{f.material}</td>
-                              <td className="px-2 py-1.5">{f.unidad}</td>
-                              <td className="px-2 py-1.5 text-right font-mono">{f.cantidad}</td>
-                              <td className="px-2 py-1.5 text-right font-mono">{fmtARS(f.precioUnitario)}</td>
-                              <td className="px-2 py-1.5 text-right font-mono">{fmtARS(f.total)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      <button disabled={importando} onClick={confirmarImportacion} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
-                        {importando ? "Importando..." : "Confirmar importación"}
-                      </button>
-                      <button onClick={cancelarImportacion} className={btnGhost}>Cancelar</button>
-                    </div>
-                  </Panel>
                 )}
 
                 {(() => {
@@ -4826,9 +4749,13 @@ export default function ConcretarApp() {
                   const pedidosObra = pedidosMateriales.filter((p) => p.obraId === Number(obraPresupuestoId));
                   const pg = presupuestoGeneral.find((p) => p.obraId === Number(obraPresupuestoId));
                   const gastoRealObra = comprasFacturas.filter((c) => c.obraId === Number(obraPresupuestoId)).reduce((s, c) => s + (c.monto || 0), 0);
-                  const herramientasDisponibles = herramientas.filter((h) => h.estado === "Disponible");
-                  const catalogoEpps = catalogoMateriales
-                    .filter((m) => m.categoria === "Epps y Consumibles" && (rubroEppFiltro === "Todos" || (m.subcategoria || "General") === rubroEppFiltro))
+                  const herramientasOrdenadas = [...herramientas].sort((a, b) => {
+                    const libreA = a.estado === "Disponible" ? 0 : 1;
+                    const libreB = b.estado === "Disponible" ? 0 : 1;
+                    return libreA - libreB || a.nombre.localeCompare(b.nombre);
+                  });
+                  const catalogoEppsOConsumibles = catalogoMateriales
+                    .filter((m) => categoriasActivas.includes(m.categoria))
                     .sort((a, b) => a.nombre.localeCompare(b.nombre));
                   return (
                     <>
@@ -4867,46 +4794,69 @@ export default function ConcretarApp() {
                       )}
 
                       {vistaMateriales === "equipos" && (
-                        <Panel title="Herramientas ya disponibles (sin uso)">
-                          {herramientasDisponibles.length === 0 ? (
-                            <div className="text-xs text-slate-400">No hay ninguna herramienta libre ahora mismo — están todas en obra o en reparación.</div>
+                        <Panel
+                          title="Herramientas y equipos del inventario"
+                          action={
+                            <button onClick={() => setMostrarListaHerramientas((v) => !v)} className={btnGhost}>
+                              {mostrarListaHerramientas ? "Ocultar" : "Ver todas"}
+                            </button>
+                          }
+                        >
+                          {!mostrarListaHerramientas ? (
+                            <div className="text-xs text-slate-400">Antes de pedir un equipo o herramienta nueva, fijate si ya tenés uno libre en el inventario — te ahorrás la compra, solo hace falta mandarlo por remito.</div>
                           ) : (
-                            <div className="flex flex-wrap gap-2">
-                              {herramientasDisponibles.map((h) => (
-                                <span key={h.id} title={h.categoria} className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs text-emerald-800">
-                                  {h.nombre} <span className="text-emerald-600">({h.numeroSerie})</span>
-                                </span>
-                              ))}
+                            <div className="overflow-x-auto rounded-md border border-stone-200">
+                              <table className="w-full text-left text-sm">
+                                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                  <tr>
+                                    <th className="px-2 py-2"></th><th className="px-3 py-2">Herramienta</th><th className="px-3 py-2">Ubicación</th>
+                                    <th className="px-3 py-2">Estado</th><th className="px-3 py-2"></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {herramientasOrdenadas.map((h) => (
+                                    <tr key={h.id} className="border-t border-stone-100">
+                                      <td className="px-2 py-1.5">
+                                        {h.estado === "Disponible" && <span title="Libre, sin obra asignada"><CheckCircle2 size={14} className="text-emerald-600" /></span>}
+                                      </td>
+                                      <td className="px-3 py-1.5">
+                                        <span className="flex items-center gap-1.5 font-medium text-slate-800">
+                                          <CategoriaHerrIcon categoria={h.categoria} /> {h.nombre}
+                                          <span className="font-mono text-xs text-slate-400">({h.numeroSerie || "s/n"})</span>
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-1.5 text-slate-600">
+                                        <span className="inline-flex items-center gap-1"><MapPin size={11} className="text-amber-600" />{h.ubicacion}</span>
+                                      </td>
+                                      <td className="px-3 py-1.5"><Badge estado={h.estado} /></td>
+                                      <td className="px-3 py-1.5"><button onClick={() => agregarHerramientaAlPedido(h)} className={btnGhost}>+ Agregar al pedido</button></td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
                           )}
-                          <div className="mt-2 text-[11px] text-slate-400">Antes de pedir un equipo o herramienta nueva, fijate si ya tenés uno libre acá — te ahorrás la compra, solo hace falta mandarlo por remito.</div>
                         </Panel>
                       )}
 
-                      {vistaMateriales === "epps" ? (
+                      {["epps", "consumibles"].includes(vistaMateriales) ? (
                         <Panel
-                          title="Catálogo de Epps y Consumibles"
+                          title={`Catálogo de ${vistaMateriales === "epps" ? "Epps" : "Consumibles"}`}
                           action={
-                            <div className="flex items-center gap-2">
-                              <select value={rubroEppFiltro} onChange={(e) => setRubroEppFiltro(e.target.value)} className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs">
-                                <option value="Todos">Todos los rubros</option>
-                                {RUBROS_EPP.map((r) => <option key={r}>{r}</option>)}
-                              </select>
-                              {!showPedidoForm && (
-                                <button onClick={() => setShowPedidoForm(true)} className={btnGhost}>+ Cargar uno nuevo</button>
-                              )}
-                            </div>
+                            !showPedidoForm && (
+                              <button onClick={() => setShowPedidoForm(true)} className={btnGhost}>+ Cargar uno nuevo</button>
+                            )
                           }
                         >
-                          {catalogoEpps.length === 0 ? (
-                            <div className="text-xs text-slate-400">Todavía no hay Epps o consumibles cargados{rubroEppFiltro !== "Todos" ? ` para "${rubroEppFiltro}"` : ""}. Tocá "+ Cargar uno nuevo" para tipearlo — queda guardado para la próxima vez.</div>
+                          {catalogoEppsOConsumibles.length === 0 ? (
+                            <div className="text-xs text-slate-400">Todavía no hay {vistaMateriales === "epps" ? "Epps" : "Consumibles"} cargados. Tocá "+ Cargar uno nuevo" para tipearlo — queda guardado para la próxima vez.</div>
                           ) : (
                             <div className="divide-y divide-stone-100">
-                              {catalogoEpps.map((it) => (
+                              {catalogoEppsOConsumibles.map((it) => (
                                 <div key={it.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                                   <div>
                                     <span className="font-medium text-slate-800">{it.nombre}</span>
-                                    <span className="ml-2 text-xs text-slate-400">{it.subcategoria || "General"} · {it.unidad || "und."}</span>
+                                    <span className="ml-2 text-xs text-slate-400">{it.unidad || "und."}</span>
                                   </div>
                                   <div className="flex items-center gap-3">
                                     <span className="font-mono text-xs text-slate-500">{fmtARS(it.ultimoPrecio)}</span>
@@ -5038,22 +4988,26 @@ export default function ConcretarApp() {
                                 </select>
                               </Field>
                             </div>
-                            <div className="w-32">
-                              <Field label="Sub-categoría">
-                                <select value={itemManualDraft.subcategoria} onChange={(e) => setItemManualDraft((d) => ({ ...d, subcategoria: e.target.value, tipo: "" }))} className={inputCls}>
-                                  <option value="">--</option>
-                                  {subcategoriasMat.filter((s) => s.categoria === itemManualDraft.categoria).map((s) => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
-                                </select>
-                              </Field>
-                            </div>
-                            <div className="w-32">
-                              <Field label="Tipo">
-                                <select value={itemManualDraft.tipo} onChange={(e) => setItemManualDraft((d) => ({ ...d, tipo: e.target.value }))} className={inputCls}>
-                                  <option value="">--</option>
-                                  {tiposMaterial.filter((t) => t.categoria === itemManualDraft.categoria && t.subcategoria === itemManualDraft.subcategoria).map((t) => <option key={t.id} value={t.nombre}>{t.nombre}</option>)}
-                                </select>
-                              </Field>
-                            </div>
+                            {!["Epps", "Consumibles"].includes(itemManualDraft.categoria) && (
+                              <>
+                                <div className="w-32">
+                                  <Field label="Sub-categoría">
+                                    <select value={itemManualDraft.subcategoria} onChange={(e) => setItemManualDraft((d) => ({ ...d, subcategoria: e.target.value, tipo: "" }))} className={inputCls}>
+                                      <option value="">--</option>
+                                      {subcategoriasMat.filter((s) => s.categoria === itemManualDraft.categoria).map((s) => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+                                    </select>
+                                  </Field>
+                                </div>
+                                <div className="w-32">
+                                  <Field label="Tipo">
+                                    <select value={itemManualDraft.tipo} onChange={(e) => setItemManualDraft((d) => ({ ...d, tipo: e.target.value }))} className={inputCls}>
+                                      <option value="">--</option>
+                                      {tiposMaterial.filter((t) => t.categoria === itemManualDraft.categoria && t.subcategoria === itemManualDraft.subcategoria).map((t) => <option key={t.id} value={t.nombre}>{t.nombre}</option>)}
+                                    </select>
+                                  </Field>
+                                </div>
+                              </>
+                            )}
                             <div className="flex-1 min-w-[140px]">
                               <Field label="Material">
                                 <input value={itemManualDraft.material} onChange={(e) => setItemManualDraft((d) => ({ ...d, material: e.target.value }))} placeholder="Nombre..." className={inputCls} />
