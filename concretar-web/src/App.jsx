@@ -67,6 +67,9 @@ const CATEGORIAS_POR_VISTA = {
   epps: ["Epps"],
   consumibles: ["Consumibles"],
 };
+// Cuando el capataz agrega un ítem a mano no elige categoría — se infiere de la pestaña
+// en la que está parado (Materiales / Equipos y Herramientas / Epps / Consumibles).
+const CATEGORIA_DE_VISTA = { materiales: "Materiales", equipos: "Equipos", epps: "Epps", consumibles: "Consumibles" };
 const CATEGORIAS_HERRAMIENTA = ["Herramienta Eléctrica", "Herramienta Manual", "Equipo Eléctrico", "Equipo a Combustión"];
 const SI_NO = ["No", "Sí"];
 // Letra usada en el N° de serie automático (Tipo-Marca+N°). Cambiá acá si preferís otras letras.
@@ -107,12 +110,15 @@ const DESVIO_ALERTA_PCT = 10;
 const DESVIO_DANGER_PCT = 20;
 
 // Roles que pueden "iniciar sesión" (simulado hasta que armemos el login real)
-const ROLES = ["Gerente", "Recursos Humanos", "HyS", "Capataz", "Contador", "Otro (sin acceso)"];
+const ROLES = ["Gerente", "Recursos Humanos", "HyS", "Capataz", "Logística", "Contador", "Otro (sin acceso)"];
 const ROLES_ALTA_PERSONAL = ["Gerente", "Recursos Humanos", "HyS", "Capataz"];
 const ROLES_EDITAR_PERSONAL = ["Gerente", "Recursos Humanos"];
 const ROLES_EDITAR_COSTOS = ["Gerente", "Recursos Humanos"];
 const ROLES_LIQUIDACION = ["Gerente", "Contador"];
 const ROLES_FINANZAS = ["Gerente", "Contador"];
+// Precios de pedidos de obra: el capataz arma el pedido a ciegas (sin precios ni proveedor),
+// eso lo ve y lo carga Logística cuando el pedido llega aprobado.
+const ROLES_VEN_PRECIOS_PEDIDO = ["Gerente", "Contador", "Logística"];
 const FORMALIDADES = ["Blanco", "Negro"];
 const CUENTAS = ["Efectivo", "Banco", "Mercado Pago"];
 
@@ -1549,6 +1555,8 @@ export default function ConcretarApp() {
 
   // ---------- Resumen de Cuentas (blanco/negro x efectivo/banco/MP) ----------
   const canVerFinanzas = ROLES_FINANZAS.includes(currentRole);
+  // El capataz arma el pedido de obra sin ver precios ni proveedor — eso es cosa de Logística.
+  const canVerPreciosPedido = ROLES_VEN_PRECIOS_PEDIDO.includes(currentRole);
 
   function saldoCuenta(cuenta, formalidad) {
     const totalIngresos = ingresos
@@ -2023,6 +2031,9 @@ export default function ConcretarApp() {
 
   // ---------- Materiales: subcategorías, catálogo de precios, presupuesto por Excel ----------
   const [vistaMateriales, setVistaMateriales] = useState("materiales");
+  useEffect(() => {
+    if (!canVerPreciosPedido && ["catalogo", "consolidar", "stock"].includes(vistaMateriales)) setVistaMateriales("materiales");
+  }, [canVerPreciosPedido, vistaMateriales]);
   const [categoriaParaSubcat, setCategoriaParaSubcat] = useState(CATEGORIAS_PEDIDO[0]);
   const [nuevaSubcategoria, setNuevaSubcategoria] = useState("");
   const [categoriaParaTipo, setCategoriaParaTipo] = useState(CATEGORIAS_PEDIDO[0]);
@@ -2199,7 +2210,9 @@ export default function ConcretarApp() {
   }
   function agregarItemManualPedido() {
     if (!itemManualDraft.material.trim()) return;
-    setPedidoItems((items) => [...items, { presupuestoId: null, ...itemManualDraft, material: itemManualDraft.material.trim() }]);
+    const categoriaFinal = canVerPreciosPedido ? itemManualDraft.categoria : (CATEGORIA_DE_VISTA[vistaMateriales] || itemManualDraft.categoria);
+    const precioFinal = canVerPreciosPedido ? itemManualDraft.precioUnitario : 0;
+    setPedidoItems((items) => [...items, { presupuestoId: null, ...itemManualDraft, categoria: categoriaFinal, precioUnitario: precioFinal, material: itemManualDraft.material.trim() }]);
     setItemManualDraft((d) => ({ ...d, subcategoria: d.subcategoria, tipo: "", material: "", unidad: "", cantidad: 1, precioUnitario: 0 }));
     setShowPedidoForm(true);
   }
@@ -2401,6 +2414,9 @@ export default function ConcretarApp() {
   const [totalFacturaRapido, setTotalFacturaRapido] = useState(0);
   const [facturaRevision, setFacturaRevision] = useState(0);
   const [guardandoFactura, setGuardandoFactura] = useState(false);
+  // El capataz arma el pedido sin proveedor — Logística confirma acá el que se cotizó
+  // inicialmente (sugerido según el catálogo) o elige otro antes de cargar los precios.
+  const [proveedorFacturaDraft, setProveedorFacturaDraft] = useState("");
 
   function abrirCargaFactura(pedido) {
     setFacturandoPedidoId(pedido.id);
@@ -2408,6 +2424,7 @@ export default function ConcretarApp() {
     setComprobanteDraft("");
     setTotalFacturaRapido(0);
     setFacturaRevision(0);
+    setProveedorFacturaDraft(pedido.proveedor || "");
   }
   function actualizarPrecioFactura(idx, valor) {
     setItemsFacturaDraft((items) => items.map((it, i) => (i === idx ? { ...it, precioUnitario: valor, total: (Number(it.cantidad) || 0) * (Number(valor) || 0) } : it)));
@@ -2441,13 +2458,13 @@ export default function ConcretarApp() {
     setGuardandoFactura(true);
     const itemsFinal = itemsFacturaDraft.map((it) => ({ ...it, total: (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0) }));
     const totalReal = itemsFinal.reduce((s, it) => s + it.total, 0);
-    await updateRecord("pedidos_materiales", pedido.id, { items: itemsFinal, total: totalReal, estado: "Facturado", comprobante: comprobanteDraft }, setPedidosMateriales);
+    await updateRecord("pedidos_materiales", pedido.id, { items: itemsFinal, total: totalReal, proveedor: proveedorFacturaDraft, estado: "Facturado", comprobante: comprobanteDraft }, setPedidosMateriales);
     // El gasto real se imputa recién cuando se recibe el remito (ahí se sabe cuánto entró
     // a esta obra y cuánto quedó en stock general) — acá solo corregimos los precios.
     for (const it of itemsFinal) {
       const existente = catalogoMateriales.find((m) => m.nombre.toLowerCase() === it.material.toLowerCase() && m.categoria === it.categoria);
       if (existente && it.precioUnitario > 0) {
-        await updateRecord("catalogo_materiales", existente.id, { ultimoPrecio: it.precioUnitario, ultimoProveedor: pedido.proveedor || existente.ultimoProveedor }, setCatalogoMateriales);
+        await updateRecord("catalogo_materiales", existente.id, { ultimoPrecio: it.precioUnitario, ultimoProveedor: proveedorFacturaDraft || existente.ultimoProveedor }, setCatalogoMateriales);
       }
     }
     setFacturandoPedidoId(null);
@@ -4779,27 +4796,31 @@ export default function ConcretarApp() {
               >
                 Consumibles
               </button>
-              <button
-                onClick={() => setVistaMateriales("catalogo")}
-                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "catalogo" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
-              >
-                Catálogo y precios
-              </button>
-              <button
-                onClick={() => setVistaMateriales("consolidar")}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "consolidar" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
-              >
-                Consolidar Pedidos
-                {(pedidosSinEnviar.length + remitosMaterialesPendientes.length) > 0 && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{pedidosSinEnviar.length + remitosMaterialesPendientes.length}</span>
-                )}
-              </button>
-              <button
-                onClick={() => setVistaMateriales("stock")}
-                className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "stock" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
-              >
-                Stock
-              </button>
+              {canVerPreciosPedido && (
+                <>
+                  <button
+                    onClick={() => setVistaMateriales("catalogo")}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "catalogo" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                  >
+                    Catálogo y precios
+                  </button>
+                  <button
+                    onClick={() => setVistaMateriales("consolidar")}
+                    className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "consolidar" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                  >
+                    Consolidar Pedidos
+                    {(pedidosSinEnviar.length + remitosMaterialesPendientes.length) > 0 && (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{pedidosSinEnviar.length + remitosMaterialesPendientes.length}</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setVistaMateriales("stock")}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold ${vistaMateriales === "stock" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                  >
+                    Stock
+                  </button>
+                </>
+              )}
             </div>
 
             {["materiales", "equipos", "epps", "consumibles"].includes(vistaMateriales) && (
@@ -4853,7 +4874,147 @@ export default function ConcretarApp() {
                   const tiposEppDeLaParte = filtroEppParte === "Todas" ? [] : tiposMaterial.filter((t) => t.categoria === "Epps" && t.subcategoria === filtroEppParte).map((t) => t.nombre);
                   return (
                     <>
-                      {pg && vistaMateriales === "materiales" && (
+                      {showPedidoForm && (
+                        <Panel title="Armar pedido" action={<button onClick={() => setShowPedidoForm(false)}><X size={16} /></button>}>
+                          {canVerPreciosPedido ? (
+                            <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-md">
+                              <div>
+                                <Field label="Proveedor">
+                                  <select value={pedidoProveedor} onChange={(e) => setPedidoProveedor(e.target.value)} className={inputCls}>
+                                    <option value="">Sin especificar</option>
+                                    {pedidoProveedor && !proveedores.some((p) => p.razonSocial === pedidoProveedor) && (
+                                      <option value={pedidoProveedor}>{pedidoProveedor} (sugerido)</option>
+                                    )}
+                                    {proveedores.filter((p) => p.esTaller !== "Sí").map((p) => <option key={p.id} value={p.razonSocial}>{p.razonSocial}</option>)}
+                                  </select>
+                                </Field>
+                                {pedidoProveedor && (
+                                  <div className="mt-1 text-[11px] text-slate-400">Sugerido según la última compra — cambialo si conseguiste mejor precio.</div>
+                                )}
+                              </div>
+                              <Field label="¿Cuándo lo necesitás?">
+                                <input type="date" required value={pedidoFechaNecesaria} onChange={(e) => setPedidoFechaNecesaria(e.target.value)} className={inputCls} />
+                              </Field>
+                            </div>
+                          ) : (
+                            <div className="mb-4 max-w-xs">
+                              <Field label="¿Cuándo lo necesitás?">
+                                <input type="date" required value={pedidoFechaNecesaria} onChange={(e) => setPedidoFechaNecesaria(e.target.value)} className={inputCls} />
+                              </Field>
+                              <div className="mt-1 text-[11px] text-slate-400">El proveedor y los precios los define Logística cuando el pedido esté aprobado.</div>
+                            </div>
+                          )}
+
+                          <div className="overflow-x-auto rounded-md border border-stone-200">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                <tr>
+                                  <th className="px-2 py-2">Material</th><th className="px-2 py-2">Unidad</th>
+                                  <th className="px-2 py-2 text-right">Cantidad</th>
+                                  {canVerPreciosPedido && (<><th className="px-2 py-2 text-right">P. Unitario</th><th className="px-2 py-2 text-right">Total</th></>)}
+                                  <th className="px-2 py-2"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {pedidoItems.map((it, idx) => (
+                                  <tr key={idx} className="border-t border-stone-100">
+                                    <td className="px-2 py-1.5 font-medium text-slate-800">
+                                      {it.material}
+                                      {!it.presupuestoId && <span className="ml-1 rounded bg-sky-100 px-1 text-[9px] font-semibold text-sky-700">MANUAL</span>}
+                                    </td>
+                                    <td className="px-2 py-1.5">{it.unidad}</td>
+                                    <td className="px-2 py-1.5 text-right">
+                                      <input type="number" value={it.cantidad} onChange={(e) => actualizarCantidadPedido(idx, "cantidad", Number(e.target.value))} className="w-20 rounded border border-stone-300 px-1.5 py-1 text-right" />
+                                    </td>
+                                    {canVerPreciosPedido && (
+                                      <>
+                                        <td className="px-2 py-1.5 text-right">
+                                          <MoneyInput value={it.precioUnitario} onChange={(v) => actualizarCantidadPedido(idx, "precioUnitario", v)} className="w-24 rounded border border-stone-300 px-1.5 py-1 text-right" />
+                                        </td>
+                                        <td className="px-2 py-1.5 text-right font-mono">{fmtARS((Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0))}</td>
+                                      </>
+                                    )}
+                                    <td className="px-2 py-1.5"><button onClick={() => quitarItemPedido(idx)} className="text-slate-400 hover:text-rose-600"><X size={13} /></button></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="mt-3 flex items-end gap-2 rounded-md border border-dashed border-stone-300 p-3">
+                            {canVerPreciosPedido && (
+                              <div className="w-28">
+                                <Field label="Categoría">
+                                  <select value={itemManualDraft.categoria} onChange={(e) => setItemManualDraft((d) => ({ ...d, categoria: e.target.value, subcategoria: "", tipo: "" }))} className={inputCls}>
+                                    {CATEGORIAS_PEDIDO.map((c) => <option key={c}>{c}</option>)}
+                                  </select>
+                                </Field>
+                              </div>
+                            )}
+                            {canVerPreciosPedido && itemManualDraft.categoria !== "Consumibles" && (
+                              <>
+                                <div className="w-32">
+                                  <Field label={itemManualDraft.categoria === "Epps" ? "Parte del cuerpo" : "Sub-categoría"}>
+                                    <select value={itemManualDraft.subcategoria} onChange={(e) => setItemManualDraft((d) => ({ ...d, subcategoria: e.target.value, tipo: "" }))} className={inputCls}>
+                                      <option value="">--</option>
+                                      {subcategoriasMat.filter((s) => s.categoria === itemManualDraft.categoria).map((s) => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
+                                    </select>
+                                  </Field>
+                                </div>
+                                <div className="w-32">
+                                  <Field label={itemManualDraft.categoria === "Epps" ? "Tipo específico" : "Tipo"}>
+                                    <select value={itemManualDraft.tipo} onChange={(e) => setItemManualDraft((d) => ({ ...d, tipo: e.target.value }))} className={inputCls}>
+                                      <option value="">--</option>
+                                      {tiposMaterial.filter((t) => t.categoria === itemManualDraft.categoria && t.subcategoria === itemManualDraft.subcategoria).map((t) => <option key={t.id} value={t.nombre}>{t.nombre}</option>)}
+                                    </select>
+                                  </Field>
+                                </div>
+                              </>
+                            )}
+                            <div className="flex-1 min-w-[140px]">
+                              <Field label="¿Qué querés pedir?">
+                                <input value={itemManualDraft.material} onChange={(e) => setItemManualDraft((d) => ({ ...d, material: e.target.value }))} placeholder="Nombre..." className={inputCls} />
+                              </Field>
+                            </div>
+                            <div className="w-20">
+                              <Field label="Unidad">
+                                <input value={itemManualDraft.unidad} onChange={(e) => setItemManualDraft((d) => ({ ...d, unidad: e.target.value }))} className={inputCls} />
+                              </Field>
+                            </div>
+                            <div className="w-20">
+                              <Field label="Cant.">
+                                <input type="number" value={itemManualDraft.cantidad} onChange={(e) => setItemManualDraft((d) => ({ ...d, cantidad: Number(e.target.value) }))} className={inputCls} />
+                              </Field>
+                            </div>
+                            {canVerPreciosPedido && (
+                              <div className="w-28">
+                                <Field label="P. Unitario">
+                                  <MoneyInput value={itemManualDraft.precioUnitario} onChange={(v) => setItemManualDraft((d) => ({ ...d, precioUnitario: v }))} className={inputCls} />
+                                </Field>
+                              </div>
+                            )}
+                            <button type="button" onClick={agregarItemManualPedido} className={btnGhost}>+ Agregar</button>
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-400">
+                            {canVerPreciosPedido
+                              ? "Esto es para algo que no estaba en el presupuesto original — se agrega igual, a mano. No hace falta el precio ahora: lo carga Logística/Contabilidad cuando llega la compra."
+                              : "Esto es para algo que no estaba en el presupuesto original — no hace falta precio ni categoría, eso lo completa Logística."}
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
+                            {canVerPreciosPedido ? (
+                              <div className="font-mono text-lg font-bold text-slate-900">
+                                Total: {fmtARS(pedidoItems.reduce((s, it) => s + (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0), 0))}
+                              </div>
+                            ) : <div />}
+                            <button disabled={enviandoPedido} onClick={confirmarPedido} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+                              {enviandoPedido ? "Guardando..." : "Confirmar pedido"}
+                            </button>
+                          </div>
+                        </Panel>
+                      )}
+
+                      {pg && vistaMateriales === "materiales" && canVerPreciosPedido && (
                         <Panel title="Presupuestado vs. Real">
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                             <div>
@@ -4941,7 +5102,7 @@ export default function ConcretarApp() {
                               <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                                 <div>
                                   <span className="font-medium text-slate-800">{s.material}</span>
-                                  <span className="ml-2 text-xs text-slate-400">{s.cantidad} {s.unidad} disponibles · {fmtARS(s.precioUnitario)} c/u</span>
+                                  <span className="ml-2 text-xs text-slate-400">{s.cantidad} {s.unidad} disponibles{canVerPreciosPedido ? ` · ${fmtARS(s.precioUnitario)} c/u` : ""}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <input
@@ -5019,7 +5180,7 @@ export default function ConcretarApp() {
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-3">
-                                    <span className="font-mono text-xs text-slate-500">{fmtARS(it.ultimoPrecio)}</span>
+                                    {canVerPreciosPedido && <span className="font-mono text-xs text-slate-500">{fmtARS(it.ultimoPrecio)}</span>}
                                     <button onClick={() => agregarCatalogoAlPedido(it)} className={btnGhost}>+ Agregar al pedido</button>
                                   </div>
                                 </div>
@@ -5034,12 +5195,14 @@ export default function ConcretarApp() {
                       ) : (
                         <>
                           <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                {vistaMateriales === "equipos" ? "Equipos y herramientas importados (sin IVA)" : "Materiales importados (sin IVA)"}
+                            {canVerPreciosPedido && (
+                              <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                  {vistaMateriales === "equipos" ? "Equipos y herramientas importados (sin IVA)" : "Materiales importados (sin IVA)"}
+                                </div>
+                                <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalObra)}</div>
                               </div>
-                              <div className="mt-1 font-mono text-xl font-bold text-slate-900">{fmtARS(totalObra)}</div>
-                            </div>
+                            )}
                             {seleccionPresupuesto.length > 0 && (
                               <button onClick={abrirArmadoPedido} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                                 <ShoppingCart size={16} /> Armar pedido con {seleccionPresupuesto.length} ítem(s)
@@ -5053,8 +5216,9 @@ export default function ConcretarApp() {
                                   <th className="px-2 py-1.5"></th>
                                   <th className="px-2 py-1.5 text-right">#</th>
                                   <th className="px-2 py-1.5">Rubro</th><th className="px-2 py-1.5">Descripción</th>
-                                  <th className="px-2 py-1.5">Unidad</th><th className="px-2 py-1.5 text-right">Cantidad</th><th className="px-2 py-1.5 text-right">P. Unitario</th>
-                                  <th className="px-2 py-1.5 text-right">Total</th><th className="px-2 py-1.5"></th>
+                                  <th className="px-2 py-1.5">Unidad</th><th className="px-2 py-1.5 text-right">Cantidad</th>
+                                  {canVerPreciosPedido && (<><th className="px-2 py-1.5 text-right">P. Unitario</th><th className="px-2 py-1.5 text-right">Total</th></>)}
+                                  <th className="px-2 py-1.5"></th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -5080,8 +5244,12 @@ export default function ConcretarApp() {
                                       <td className="px-2 py-1 font-medium text-slate-900">{m.material}</td>
                                       <td className="px-2 py-1 text-slate-600">{m.unidad}</td>
                                       <td className="px-2 py-1 text-right font-mono">{m.cantidad}</td>
-                                      <td className="px-2 py-1 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
-                                      <td className="px-2 py-1 text-right font-mono">{fmtARS(m.total)}</td>
+                                      {canVerPreciosPedido && (
+                                        <>
+                                          <td className="px-2 py-1 text-right font-mono">{fmtARS(m.precioUnitario)}</td>
+                                          <td className="px-2 py-1 text-right font-mono">{fmtARS(m.total)}</td>
+                                        </>
+                                      )}
                                       <td className="px-2 py-1">{!yaPedido && <button onClick={() => eliminarLineaPresupuesto(m.id)} className="text-slate-400 hover:text-rose-600"><X size={13} /></button>}</td>
                                     </tr>
                                   );
@@ -5090,122 +5258,6 @@ export default function ConcretarApp() {
                             </table>
                           </div>
                         </>
-                      )}
-
-                      {showPedidoForm && (
-                        <Panel title="Armar pedido" action={<button onClick={() => setShowPedidoForm(false)}><X size={16} /></button>}>
-                          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:max-w-md">
-                            <div>
-                              <Field label="Proveedor">
-                                <select value={pedidoProveedor} onChange={(e) => setPedidoProveedor(e.target.value)} className={inputCls}>
-                                  <option value="">Sin especificar</option>
-                                  {pedidoProveedor && !proveedores.some((p) => p.razonSocial === pedidoProveedor) && (
-                                    <option value={pedidoProveedor}>{pedidoProveedor} (sugerido)</option>
-                                  )}
-                                  {proveedores.filter((p) => p.esTaller !== "Sí").map((p) => <option key={p.id} value={p.razonSocial}>{p.razonSocial}</option>)}
-                                </select>
-                              </Field>
-                              {pedidoProveedor && (
-                                <div className="mt-1 text-[11px] text-slate-400">Sugerido según la última compra — cambialo si conseguiste mejor precio.</div>
-                              )}
-                            </div>
-                            <Field label="¿Cuándo lo necesitás?">
-                              <input type="date" required value={pedidoFechaNecesaria} onChange={(e) => setPedidoFechaNecesaria(e.target.value)} className={inputCls} />
-                            </Field>
-                          </div>
-
-                          <div className="overflow-x-auto rounded-md border border-stone-200">
-                            <table className="w-full text-left text-xs">
-                              <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                                <tr>
-                                  <th className="px-2 py-2">Material</th><th className="px-2 py-2">Unidad</th>
-                                  <th className="px-2 py-2 text-right">Cantidad</th><th className="px-2 py-2 text-right">P. Unitario</th>
-                                  <th className="px-2 py-2 text-right">Total</th><th className="px-2 py-2"></th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {pedidoItems.map((it, idx) => (
-                                  <tr key={idx} className="border-t border-stone-100">
-                                    <td className="px-2 py-1.5 font-medium text-slate-800">
-                                      {it.material}
-                                      {!it.presupuestoId && <span className="ml-1 rounded bg-sky-100 px-1 text-[9px] font-semibold text-sky-700">MANUAL</span>}
-                                    </td>
-                                    <td className="px-2 py-1.5">{it.unidad}</td>
-                                    <td className="px-2 py-1.5 text-right">
-                                      <input type="number" value={it.cantidad} onChange={(e) => actualizarCantidadPedido(idx, "cantidad", Number(e.target.value))} className="w-20 rounded border border-stone-300 px-1.5 py-1 text-right" />
-                                    </td>
-                                    <td className="px-2 py-1.5 text-right">
-                                      <MoneyInput value={it.precioUnitario} onChange={(v) => actualizarCantidadPedido(idx, "precioUnitario", v)} className="w-24 rounded border border-stone-300 px-1.5 py-1 text-right" />
-                                    </td>
-                                    <td className="px-2 py-1.5 text-right font-mono">{fmtARS((Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0))}</td>
-                                    <td className="px-2 py-1.5"><button onClick={() => quitarItemPedido(idx)} className="text-slate-400 hover:text-rose-600"><X size={13} /></button></td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-
-                          <div className="mt-3 flex items-end gap-2 rounded-md border border-dashed border-stone-300 p-3">
-                            <div className="w-28">
-                              <Field label="Categoría">
-                                <select value={itemManualDraft.categoria} onChange={(e) => setItemManualDraft((d) => ({ ...d, categoria: e.target.value, subcategoria: "", tipo: "" }))} className={inputCls}>
-                                  {CATEGORIAS_PEDIDO.map((c) => <option key={c}>{c}</option>)}
-                                </select>
-                              </Field>
-                            </div>
-                            {itemManualDraft.categoria !== "Consumibles" && (
-                              <>
-                                <div className="w-32">
-                                  <Field label={itemManualDraft.categoria === "Epps" ? "Parte del cuerpo" : "Sub-categoría"}>
-                                    <select value={itemManualDraft.subcategoria} onChange={(e) => setItemManualDraft((d) => ({ ...d, subcategoria: e.target.value, tipo: "" }))} className={inputCls}>
-                                      <option value="">--</option>
-                                      {subcategoriasMat.filter((s) => s.categoria === itemManualDraft.categoria).map((s) => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
-                                    </select>
-                                  </Field>
-                                </div>
-                                <div className="w-32">
-                                  <Field label={itemManualDraft.categoria === "Epps" ? "Tipo específico" : "Tipo"}>
-                                    <select value={itemManualDraft.tipo} onChange={(e) => setItemManualDraft((d) => ({ ...d, tipo: e.target.value }))} className={inputCls}>
-                                      <option value="">--</option>
-                                      {tiposMaterial.filter((t) => t.categoria === itemManualDraft.categoria && t.subcategoria === itemManualDraft.subcategoria).map((t) => <option key={t.id} value={t.nombre}>{t.nombre}</option>)}
-                                    </select>
-                                  </Field>
-                                </div>
-                              </>
-                            )}
-                            <div className="flex-1 min-w-[140px]">
-                              <Field label="Material">
-                                <input value={itemManualDraft.material} onChange={(e) => setItemManualDraft((d) => ({ ...d, material: e.target.value }))} placeholder="Nombre..." className={inputCls} />
-                              </Field>
-                            </div>
-                            <div className="w-20">
-                              <Field label="Unidad">
-                                <input value={itemManualDraft.unidad} onChange={(e) => setItemManualDraft((d) => ({ ...d, unidad: e.target.value }))} className={inputCls} />
-                              </Field>
-                            </div>
-                            <div className="w-20">
-                              <Field label="Cant.">
-                                <input type="number" value={itemManualDraft.cantidad} onChange={(e) => setItemManualDraft((d) => ({ ...d, cantidad: Number(e.target.value) }))} className={inputCls} />
-                              </Field>
-                            </div>
-                            <div className="w-28">
-                              <Field label="P. Unitario">
-                                <MoneyInput value={itemManualDraft.precioUnitario} onChange={(v) => setItemManualDraft((d) => ({ ...d, precioUnitario: v }))} className={inputCls} />
-                              </Field>
-                            </div>
-                            <button type="button" onClick={agregarItemManualPedido} className={btnGhost}>+ Agregar</button>
-                          </div>
-                          <div className="mt-1 text-[11px] text-slate-400">Esto es para algo que no estaba en el presupuesto original — se agrega igual, a mano. No hace falta el precio ahora: lo carga Logística/Contabilidad cuando llega la compra.</div>
-
-                          <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
-                            <div className="font-mono text-lg font-bold text-slate-900">
-                              Total: {fmtARS(pedidoItems.reduce((s, it) => s + (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0), 0))}
-                            </div>
-                            <button disabled={enviandoPedido} onClick={confirmarPedido} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
-                              {enviandoPedido ? "Guardando..." : "Confirmar pedido"}
-                            </button>
-                          </div>
-                        </Panel>
                       )}
 
                       {pedidosObra.length > 0 && (
@@ -5219,12 +5271,12 @@ export default function ConcretarApp() {
                                 <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
-                                      <span className="font-semibold text-slate-900">{p.proveedor || "Proveedor sin especificar"}</span>
+                                      <span className="font-semibold text-slate-900">{canVerPreciosPedido ? (p.proveedor || "Proveedor sin especificar") : `Pedido #${p.id}`}</span>
                                       <span className="ml-2"><Badge estado={p.estado} /></span>
                                       {p.obraId == null && <span className="ml-2 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Compra general</span>}
                                       {p.items.length > 0 && p.items.every((it) => !it.presupuestoId) && <span className="ml-2 rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">Fuera de presupuesto</span>}
                                     </div>
-                                    <span className="text-xs text-slate-400">{fmtFecha(p.fecha)} · {p.items.length} ítem(s) · <span className="font-mono font-semibold text-slate-600">{fmtARS(p.total)}</span></span>
+                                    <span className="text-xs text-slate-400">{fmtFecha(p.fecha)} · {p.items.length} ítem(s){canVerPreciosPedido && <> · <span className="font-mono font-semibold text-slate-600">{fmtARS(p.total)}</span></>}</span>
                                   </div>
                                   <div className="mt-2 text-xs text-slate-500">{p.items.map((it) => it.material).join(", ")}</div>
                                   {p.fechaNecesaria && (
@@ -5249,20 +5301,24 @@ export default function ConcretarApp() {
                                     )
                                   )}
                                   {p.estado === "Aprobado" && (
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                      <button onClick={() => generarOrdenCompraPDF(p)} className={btnGhost}>
-                                        <span className="flex items-center gap-1"><FileDown size={13} /> Orden de Compra (PDF)</span>
-                                      </button>
-                                      {p.obraId == null ? (
-                                        <button onClick={() => recibirPedidoGeneralAStock(p)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-                                          <Package size={13} /> Marcar recibido en depósito
+                                    canVerPreciosPedido ? (
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        <button onClick={() => generarOrdenCompraPDF(p)} className={btnGhost}>
+                                          <span className="flex items-center gap-1"><FileDown size={13} /> Orden de Compra (PDF)</span>
                                         </button>
-                                      ) : (
-                                        <button onClick={() => abrirCargaFactura(p)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-                                          <Receipt size={13} /> Cargar factura real
-                                        </button>
-                                      )}
-                                    </div>
+                                        {p.obraId == null ? (
+                                          <button onClick={() => recibirPedidoGeneralAStock(p)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                                            <Package size={13} /> Marcar recibido en depósito
+                                          </button>
+                                        ) : (
+                                          <button onClick={() => abrirCargaFactura(p)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                                            <Receipt size={13} /> Cargar factura real
+                                          </button>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="mt-2 text-xs italic text-slate-400">Aprobado — a la espera de que Logística cargue la orden de compra.</div>
+                                    )
                                   )}
                                   {p.estado === "Facturado" && (
                                     <div className="mt-2 text-xs text-slate-500">
@@ -5273,6 +5329,17 @@ export default function ConcretarApp() {
                                   {facturandoPedidoId === p.id && (
                                     <div className="mt-3 rounded-md border border-stone-200 bg-stone-50 p-3">
                                       <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Corregí los precios con la factura real</div>
+                                      <div className="mb-3 max-w-xs">
+                                        <Field label="Proveedor">
+                                          <select value={proveedorFacturaDraft} onChange={(e) => setProveedorFacturaDraft(e.target.value)} className={inputCls}>
+                                            <option value="">Sin especificar</option>
+                                            {proveedorFacturaDraft && !proveedores.some((pr) => pr.razonSocial === proveedorFacturaDraft) && (
+                                              <option value={proveedorFacturaDraft}>{proveedorFacturaDraft} (cotizado inicialmente)</option>
+                                            )}
+                                            {proveedores.filter((pr) => pr.esTaller !== "Sí").map((pr) => <option key={pr.id} value={pr.razonSocial}>{pr.razonSocial}</option>)}
+                                          </select>
+                                        </Field>
+                                      </div>
                                       <div className="space-y-1.5">
                                         {itemsFacturaDraft.map((it, idx) => {
                                           const esEquipo = ["Equipos", "Herramientas"].includes(it.categoria);
