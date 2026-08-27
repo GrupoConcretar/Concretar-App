@@ -335,6 +335,54 @@ function Panel({ title, action, children }) {
   );
 }
 
+const ALERT_TONE_CARD = {
+  rose: "border-rose-200 bg-rose-50 text-rose-900",
+  amber: "border-amber-200 bg-amber-50 text-amber-900",
+  sky: "border-sky-200 bg-sky-50 text-sky-900",
+  emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
+};
+const ALERT_TONE_ICON = {
+  rose: "bg-rose-500",
+  amber: "bg-amber-500",
+  sky: "bg-sky-500",
+  emerald: "bg-emerald-500",
+};
+
+// Tarjeta visual para el panel de Alertas: ícono en círculo + título + detalle opcional.
+// Reemplaza las franjas de texto planas por bloques que se agrupan en grilla en PC.
+function AlertCard({ tone = "amber", icon: Icon = AlertTriangle, title, children }) {
+  return (
+    <div className={`rounded-xl border p-3.5 shadow-sm ${ALERT_TONE_CARD[tone]}`}>
+      <div className="flex items-start gap-3">
+        <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ${ALERT_TONE_ICON[tone]}`}>
+          <Icon size={16} />
+        </span>
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="text-sm font-semibold leading-snug">{title}</div>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Agrupa pedidos de materiales por obra para mostrar "N pedido(s) para tal obra" en vez
+// de listar materiales sueltos. Ordena por la fecha necesaria más próxima primero.
+function agruparPedidosPorObra(pedidos, obras) {
+  const grupos = new Map();
+  for (const p of pedidos) {
+    if (!grupos.has(p.obraId)) grupos.set(p.obraId, []);
+    grupos.get(p.obraId).push(p);
+  }
+  return [...grupos.entries()]
+    .map(([obraId, lista]) => ({
+      obraId,
+      nombreObra: obras.find((o) => o.id === obraId)?.nombre || "Obra sin nombre",
+      pedidos: [...lista].sort((a, b) => fechaLocal(a.fechaNecesaria) - fechaLocal(b.fechaNecesaria)),
+    }))
+    .sort((a, b) => fechaLocal(a.pedidos[0]?.fechaNecesaria) - fechaLocal(b.pedidos[0]?.fechaNecesaria));
+}
+
 function monthsBetween(d1, d2) {
   return (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
 }
@@ -2484,138 +2532,123 @@ export default function ConcretarApp() {
               {totalAlertas === 0 ? (
                 <div className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 size={16} /> Todo en orden, sin pendientes críticos.</div>
               ) : (
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
                   {ocPendientesAprobacion.length > 0 && (
-                    <div className="flex items-center gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                      <AlertTriangle size={16} />
-                      {ocPendientesAprobacion.length} orden(es) de compra por encima de {fmtARS(UMBRAL_APROBACION_OC)} esperando aprobación.
-                    </div>
+                    <AlertCard tone="rose" icon={AlertTriangle} title={`${ocPendientesAprobacion.length} orden(es) de compra por encima de ${fmtARS(UMBRAL_APROBACION_OC)} esperando aprobación.`} />
                   )}
                   {herramientasAtencion.length > 0 && (
-                    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <AlertTriangle size={16} />
-                        {herramientasAtencion.length} herramienta(s) en mal estado o rota(s) — mandar a reparar.
-                      </div>
-                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
-                        {herramientasAtencion.slice(0, 5).map((h) => <li key={h.id}>{h.nombre} ({h.numeroSerie}) — {h.estado}</li>)}
+                    <AlertCard tone="amber" icon={AlertTriangle} title={`${herramientasAtencion.length} herramienta(s) en mal estado o rota(s) — mandar a reparar.`}>
+                      <ul className="space-y-0.5 text-xs">
+                        {herramientasAtencion.slice(0, 5).map((h) => <li key={h.id} className="truncate">{h.nombre} ({h.numeroSerie}) — {h.estado}</li>)}
                       </ul>
-                    </div>
+                    </AlertCard>
                   )}
                   {herramientasReparadasRecientes.length > 0 && (
-                    <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <CheckCircle2 size={16} />
-                        {herramientasReparadasRecientes.length} herramienta(s) reparada(s) recientemente.
-                      </div>
-                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
-                        {herramientasReparadasRecientes.slice(0, 5).map((h) => <li key={h.id}>{h.nombre} ({h.numeroSerie}) — ya disponible</li>)}
+                    <AlertCard tone="emerald" icon={CheckCircle2} title={`${herramientasReparadasRecientes.length} herramienta(s) reparada(s) recientemente.`}>
+                      <ul className="space-y-0.5 text-xs">
+                        {herramientasReparadasRecientes.slice(0, 5).map((h) => <li key={h.id} className="truncate">{h.nombre} ({h.numeroSerie}) — ya disponible</li>)}
                       </ul>
-                    </div>
+                    </AlertCard>
                   )}
                   {obrasEnVentanaCierre.map((o) => (
-                    <div key={`cierre-${o.id}`} className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <AlertTriangle size={16} />
-                        Falta menos de 1hs para el cierre de "{o.nombre}" ({o.horaCierre}) — hacé el control de herramientas.
-                      </div>
-                      <button onClick={() => abrirAuditoria(o.id, "Cierre")} className="mt-1 ml-6 text-xs font-semibold underline hover:no-underline">
+                    <AlertCard key={`cierre-${o.id}`} tone="rose" icon={AlertTriangle} title={`Falta menos de 1hs para el cierre de "${o.nombre}" (${o.horaCierre}) — hacé el control de herramientas.`}>
+                      <button onClick={() => abrirAuditoria(o.id, "Cierre")} className="text-xs font-semibold underline hover:no-underline">
                         Hacer control de cierre ahora →
                       </button>
-                    </div>
+                    </AlertCard>
                   ))}
                   {obrasSinAperturaLunes.map((o) => (
-                    <div key={`apertura-${o.id}`} className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <AlertTriangle size={16} />
-                        Falta validar el inventario inicial de "{o.nombre}" para arrancar la semana.
-                      </div>
-                      <button onClick={() => abrirAuditoria(o.id, "Apertura")} className="mt-1 ml-6 text-xs font-semibold underline hover:no-underline">
+                    <AlertCard key={`apertura-${o.id}`} tone="amber" icon={AlertTriangle} title={`Falta validar el inventario inicial de "${o.nombre}" para arrancar la semana.`}>
+                      <button onClick={() => abrirAuditoria(o.id, "Apertura")} className="text-xs font-semibold underline hover:no-underline">
                         Hacer control de apertura ahora →
                       </button>
-                    </div>
+                    </AlertCard>
                   ))}
-                  {materialesVencidos.length > 0 && (
-                    <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <Package size={16} />
-                        {materialesVencidos.length} pedido(s) con fecha necesaria vencida — sin recibir todavía.
-                      </div>
-                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
-                        {materialesVencidos.slice(0, 5).map((p) => (
-                          <li key={p.id}>
-                            <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="underline hover:no-underline">
-                              {p.items.map((it) => it.material).join(", ")} — {obras.find((o) => o.id === p.obraId)?.nombre} (necesitaba el {fmtFecha(p.fechaNecesaria)})
-                            </button>
-                          </li>
+                  {agruparPedidosPorObra(materialesVencidos, obras).map((grupo) => (
+                    <AlertCard
+                      key={`venc-${grupo.obraId}`}
+                      tone="rose"
+                      icon={Package}
+                      title={`${grupo.pedidos.length} pedido${grupo.pedidos.length > 1 ? "s" : ""} pendiente${grupo.pedidos.length > 1 ? "s" : ""} para ${grupo.nombreObra} — vencido${grupo.pedidos.length > 1 ? "s" : ""}`}
+                    >
+                      <div className="space-y-1">
+                        {grupo.pedidos.slice(0, 4).map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }}
+                            className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white"
+                          >
+                            <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
+                            <span className="flex shrink-0 items-center gap-1 font-semibold"><CalendarDays size={11} /> {fmtFecha(p.fechaNecesaria)}</span>
+                          </button>
                         ))}
-                      </ul>
-                    </div>
-                  )}
-                  {materialesProximos.length > 0 && (
-                    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <Package size={16} />
-                        {materialesProximos.length} pedido(s) necesarios en los próximos 2 días.
                       </div>
-                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
-                        {materialesProximos.slice(0, 5).map((p) => (
-                          <li key={p.id}>
-                            <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="underline hover:no-underline">
-                              {p.items.map((it) => it.material).join(", ")} — {obras.find((o) => o.id === p.obraId)?.nombre} (en {diasHasta(p.fechaNecesaria)} día{diasHasta(p.fechaNecesaria) === 1 ? "" : "s"})
-                            </button>
-                          </li>
+                    </AlertCard>
+                  ))}
+                  {agruparPedidosPorObra(materialesProximos, obras).map((grupo) => (
+                    <AlertCard
+                      key={`prox-${grupo.obraId}`}
+                      tone="amber"
+                      icon={Package}
+                      title={`${grupo.pedidos.length} pedido${grupo.pedidos.length > 1 ? "s" : ""} pendiente${grupo.pedidos.length > 1 ? "s" : ""} para ${grupo.nombreObra} — llega${grupo.pedidos.length > 1 ? "n" : ""} pronto`}
+                    >
+                      <div className="space-y-1">
+                        {grupo.pedidos.slice(0, 4).map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }}
+                            className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white"
+                          >
+                            <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
+                            <span className="flex shrink-0 items-center gap-1 font-semibold"><CalendarDays size={11} /> {fmtFecha(p.fechaNecesaria)}</span>
+                          </button>
                         ))}
-                      </ul>
-                    </div>
-                  )}
-                  {pedidosPorAprobar.length > 0 && (
-                    <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <ShoppingCart size={16} />
-                        {pedidosPorAprobar.length} pedido(s) esperando aprobación de Gerencia.
                       </div>
-                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
-                        {pedidosPorAprobar.slice(0, 5).map((p) => (
-                          <li key={p.id}>
-                            <button onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="underline hover:no-underline">
-                              {p.items.map((it) => it.material).join(", ")} — {obras.find((o) => o.id === p.obraId)?.nombre} ({fmtARS(p.total)})
-                            </button>
-                          </li>
+                    </AlertCard>
+                  ))}
+                  {agruparPedidosPorObra(pedidosPorAprobar, obras).map((grupo) => (
+                    <AlertCard
+                      key={`aprobar-${grupo.obraId}`}
+                      tone="sky"
+                      icon={ShoppingCart}
+                      title={`${grupo.pedidos.length} pedido${grupo.pedidos.length > 1 ? "s" : ""} para ${grupo.nombreObra} esperando aprobación`}
+                    >
+                      <div className="space-y-1">
+                        {grupo.pedidos.slice(0, 4).map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }}
+                            className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white"
+                          >
+                            <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
+                            <span className="flex shrink-0 items-center gap-1 font-semibold">
+                              {p.fechaNecesaria ? <><CalendarDays size={11} /> {fmtFecha(p.fechaNecesaria)}</> : fmtARS(p.total)}
+                            </span>
+                          </button>
                         ))}
-                      </ul>
-                    </div>
-                  )}
+                      </div>
+                    </AlertCard>
+                  ))}
                   {personalSinObra5Dias.length > 0 && (
-                    <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <Users size={16} />
-                        {personalSinObra5Dias.length} persona(s) sin obra asignada hace 5 días o más.
-                      </div>
-                      <ul className="ml-6 mt-1 space-y-1 text-xs">
+                    <AlertCard tone="rose" icon={Users} title={`${personalSinObra5Dias.length} persona(s) sin obra asignada hace 5 días o más.`}>
+                      <ul className="space-y-1 text-xs">
                         {personalSinObra5Dias.slice(0, 5).map((p) => (
                           <li key={p.id} className="flex items-center justify-between gap-2">
-                            <span>{nombreCompletoDe(p)} — última actividad {fmtFecha(ultimaFechaActividad(p))}</span>
-                            <button onClick={() => darDeBajaPersonal(p)} className="rounded-md border border-rose-300 px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:bg-rose-100">Dar de baja</button>
+                            <span className="truncate">{nombreCompletoDe(p)} — {fmtFecha(ultimaFechaActividad(p))}</span>
+                            <button onClick={() => darDeBajaPersonal(p)} className="shrink-0 rounded-md border border-rose-300 px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:bg-rose-100">Dar de baja</button>
                           </li>
                         ))}
                       </ul>
-                    </div>
+                    </AlertCard>
                   )}
                   {asistenciasEditadas.length > 0 && (
-                    <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <AlertTriangle size={16} />
-                        {asistenciasEditadas.length} registro(s) de asistencia modificados — revisión sugerida.
-                      </div>
-                      <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">
+                    <AlertCard tone="sky" icon={AlertTriangle} title={`${asistenciasEditadas.length} registro(s) de asistencia modificados — revisión sugerida.`}>
+                      <ul className="space-y-0.5 text-xs">
                         {asistenciasEditadas.slice(0, 5).map((a) => (
-                          <li key={a.id}>
-                            {a.nombre} ({fmtFecha(a.fecha)}) — {a.editadoPor}: "{a.motivoEdicion}"
-                          </li>
+                          <li key={a.id} className="truncate">{a.nombre} ({fmtFecha(a.fecha)}) — {a.editadoPor}: "{a.motivoEdicion}"</li>
                         ))}
                       </ul>
-                    </div>
+                    </AlertCard>
                   )}
                 </div>
               )}
@@ -2686,7 +2719,7 @@ export default function ConcretarApp() {
 
             {obras.filter((o) => o.estado === "En curso").length > 0 && (
               <Panel title="Ir a una obra">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {obras.filter((o) => o.estado === "En curso").map((o) => (
                     <button key={o.id} onClick={() => { setTab("obras"); abrirObra(o); }} className="flex items-center justify-between rounded-md border border-stone-200 bg-white px-3 py-2 text-left text-sm hover:bg-stone-50">
                       <span className="font-medium text-slate-800">{o.nombre}</span>
@@ -2923,59 +2956,68 @@ export default function ConcretarApp() {
                     {totalAlertasObra === 0 ? (
                       <div className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 size={16} /> Todo en orden en esta obra.</div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                         {hayDesvioAlerta && (
-                          <div className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${desvioPct > DESVIO_DANGER_PCT ? "border-rose-300 bg-rose-50 text-rose-700" : "border-amber-300 bg-amber-50 text-amber-700"}`}>
-                            <AlertTriangle size={16} />
-                            Está {desvioPct.toFixed(1)}% por encima de lo planificado a la fecha.
-                          </div>
+                          <AlertCard tone={desvioPct > DESVIO_DANGER_PCT ? "rose" : "amber"} icon={AlertTriangle} title={`Está ${desvioPct.toFixed(1)}% por encima de lo planificado a la fecha.`} />
                         )}
                         {ocAprobacionObra.length > 0 && (
-                          <div className="flex items-center gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                            <AlertTriangle size={16} />
-                            {ocAprobacionObra.length} orden(es) de compra esperando aprobación.
-                          </div>
+                          <AlertCard tone="rose" icon={AlertTriangle} title={`${ocAprobacionObra.length} orden(es) de compra esperando aprobación.`} />
                         )}
                         {herrAtencionObra.length > 0 && (
-                          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                            <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> {herrAtencionObra.length} herramienta(s) en mal estado o rota(s) acá.</div>
-                            <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">{herrAtencionObra.map((h) => <li key={h.id}>{h.nombre} ({h.numeroSerie}) — {h.estado}</li>)}</ul>
-                          </div>
+                          <AlertCard tone="amber" icon={AlertTriangle} title={`${herrAtencionObra.length} herramienta(s) en mal estado o rota(s) acá.`}>
+                            <ul className="space-y-0.5 text-xs">{herrAtencionObra.map((h) => <li key={h.id} className="truncate">{h.nombre} ({h.numeroSerie}) — {h.estado}</li>)}</ul>
+                          </AlertCard>
                         )}
                         {cierreObra.length > 0 && (
-                          <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-                            <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> Falta menos de 1hs para el cierre — hacé el control de herramientas.</div>
-                            <button onClick={() => abrirAuditoria(obraSel.id, "Cierre")} className="mt-1 ml-6 text-xs font-semibold underline hover:no-underline">Hacer control de cierre ahora →</button>
-                          </div>
+                          <AlertCard tone="rose" icon={AlertTriangle} title="Falta menos de 1hs para el cierre — hacé el control de herramientas.">
+                            <button onClick={() => abrirAuditoria(obraSel.id, "Cierre")} className="text-xs font-semibold underline hover:no-underline">Hacer control de cierre ahora →</button>
+                          </AlertCard>
                         )}
                         {aperturaObra.length > 0 && (
-                          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                            <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> Falta validar el inventario inicial de la semana.</div>
-                            <button onClick={() => abrirAuditoria(obraSel.id, "Apertura")} className="mt-1 ml-6 text-xs font-semibold underline hover:no-underline">Hacer control de apertura ahora →</button>
-                          </div>
+                          <AlertCard tone="amber" icon={AlertTriangle} title="Falta validar el inventario inicial de la semana.">
+                            <button onClick={() => abrirAuditoria(obraSel.id, "Apertura")} className="text-xs font-semibold underline hover:no-underline">Hacer control de apertura ahora →</button>
+                          </AlertCard>
                         )}
                         {matVencidosObra.length > 0 && (
-                          <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-                            <div className="flex items-center gap-2 font-semibold"><Package size={16} /> {matVencidosObra.length} pedido(s) con fecha vencida — sin recibir.</div>
-                            <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">{matVencidosObra.map((p) => <li key={p.id}>{p.items.map((it) => it.material).join(", ")} (necesitaba el {fmtFecha(p.fechaNecesaria)})</li>)}</ul>
-                          </div>
+                          <AlertCard tone="rose" icon={Package} title={`${matVencidosObra.length} pedido${matVencidosObra.length > 1 ? "s" : ""} pendiente${matVencidosObra.length > 1 ? "s" : ""} para esta obra — vencido${matVencidosObra.length > 1 ? "s" : ""}`}>
+                            <div className="space-y-1">
+                              {matVencidosObra.map((p) => (
+                                <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
+                                  <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
+                                  <span className="flex shrink-0 items-center gap-1 font-semibold"><CalendarDays size={11} /> {fmtFecha(p.fechaNecesaria)}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </AlertCard>
                         )}
                         {matProximosObra.length > 0 && (
-                          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                            <div className="flex items-center gap-2 font-semibold"><Package size={16} /> {matProximosObra.length} pedido(s) necesarios en los próximos 2 días.</div>
-                            <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">{matProximosObra.map((p) => <li key={p.id}>{p.items.map((it) => it.material).join(", ")} (en {diasHasta(p.fechaNecesaria)} día(s))</li>)}</ul>
-                          </div>
+                          <AlertCard tone="amber" icon={Package} title={`${matProximosObra.length} pedido${matProximosObra.length > 1 ? "s" : ""} pendiente${matProximosObra.length > 1 ? "s" : ""} para esta obra — llega${matProximosObra.length > 1 ? "n" : ""} pronto`}>
+                            <div className="space-y-1">
+                              {matProximosObra.map((p) => (
+                                <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
+                                  <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
+                                  <span className="flex shrink-0 items-center gap-1 font-semibold"><CalendarDays size={11} /> {fmtFecha(p.fechaNecesaria)}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </AlertCard>
                         )}
                         {pedidosAprobarObra.length > 0 && (
-                          <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-                            <div className="flex items-center gap-2 font-semibold"><ShoppingCart size={16} /> {pedidosAprobarObra.length} pedido(s) esperando aprobación de Gerencia.</div>
-                            <ul className="ml-6 mt-1 list-disc space-y-0.5 text-xs">{pedidosAprobarObra.map((p) => <li key={p.id}>{p.items.map((it) => it.material).join(", ")} ({fmtARS(p.total)})</li>)}</ul>
-                          </div>
+                          <AlertCard tone="sky" icon={ShoppingCart} title={`${pedidosAprobarObra.length} pedido${pedidosAprobarObra.length > 1 ? "s" : ""} para esta obra esperando aprobación`}>
+                            <div className="space-y-1">
+                              {pedidosAprobarObra.map((p) => (
+                                <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("presupuestos"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
+                                  <span className="truncate">{p.items.map((it) => it.material).slice(0, 2).join(", ")}{p.items.length > 2 ? "…" : ""}</span>
+                                  <span className="flex shrink-0 items-center gap-1 font-semibold">
+                                    {p.fechaNecesaria ? <><CalendarDays size={11} /> {fmtFecha(p.fechaNecesaria)}</> : fmtARS(p.total)}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </AlertCard>
                         )}
                         {asistEditadasObra.length > 0 && (
-                          <div className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-                            <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> {asistEditadasObra.length} registro(s) de asistencia modificados.</div>
-                          </div>
+                          <AlertCard tone="sky" icon={AlertTriangle} title={`${asistEditadasObra.length} registro(s) de asistencia modificados.`} />
                         )}
                       </div>
                     )}
