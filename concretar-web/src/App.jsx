@@ -54,6 +54,10 @@ function fechaMasDias(dias) {
   return `${y}-${m}-${day}`;
 }
 
+function nombreComercial(p) {
+  return (p?.nombreFantasia && p.nombreFantasia.trim()) || p?.razonSocial || "";
+}
+
 const ESTADOS_HERRAMIENTA = ["Disponible", "En Obra", "En Reparación", "Mal Estado", "Rota"];
 const ESTADOS_OBRA = ["En curso", "Pausada", "Finalizada"];
 const ESTADOS_ITEM_COMBO = ["Entregado", "Roto", "Perdido", "Devuelto"];
@@ -318,44 +322,88 @@ function MoneyInput({ name, value, onChange, onBlur, className, placeholder, req
     </>
   );
 }
-// Combo de proveedor: <select> con los proveedores ya cargados + "Otro (escribir
-// nombre)" para tipear uno nuevo. Reemplaza al viejo <input list=...> (datalist),
-// que en la práctica no se veía como un desplegable real.
-function ProveedorSelect({ name = "proveedor", proveedores }) {
-  const [modoManual, setModoManual] = useState(false);
-  const [valorSelect, setValorSelect] = useState("");
-  const [valorManual, setValorManual] = useState("");
+// Buscador de proveedor: tocás, aparece la lista de proveedores cargados (por nombre
+// de fantasía) y filtra a medida que escribís. Si lo que escribiste no coincide con
+// ninguno, aparece la opción de darlo de alta al toque sin salir del formulario.
+function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) {
+  const [texto, setTexto] = useState("");
+  const [seleccionado, setSeleccionado] = useState("");
+  const [abierto, setAbierto] = useState(false);
+  const [creando, setCreando] = useState(false);
+  const cajaRef = useRef(null);
+
+  useEffect(() => {
+    function alHacerClickFuera(e) {
+      if (cajaRef.current && !cajaRef.current.contains(e.target)) setAbierto(false);
+    }
+    document.addEventListener("mousedown", alHacerClickFuera);
+    return () => document.removeEventListener("mousedown", alHacerClickFuera);
+  }, []);
+
+  const busqueda = texto.trim().toLowerCase();
+  const opciones = busqueda ? proveedores.filter((p) => nombreComercial(p).toLowerCase().includes(busqueda)) : proveedores;
+  const coincideExacto = proveedores.some((p) => nombreComercial(p).toLowerCase() === busqueda);
+
+  function elegir(p) {
+    setTexto(nombreComercial(p));
+    setSeleccionado(nombreComercial(p));
+    setAbierto(false);
+  }
+
+  async function agregarNuevo() {
+    const nombreNuevo = texto.trim();
+    if (!nombreNuevo || !onCrearProveedor) return;
+    setCreando(true);
+    const creado = await onCrearProveedor(nombreNuevo);
+    setCreando(false);
+    if (creado) {
+      setTexto(nombreComercial(creado));
+      setSeleccionado(nombreComercial(creado));
+    }
+    setAbierto(false);
+  }
+
   return (
-    <>
-      {!modoManual ? (
-        <select
-          value={valorSelect}
-          onChange={(e) => {
-            if (e.target.value === "__otro__") setModoManual(true);
-            else setValorSelect(e.target.value);
-          }}
-          className={inputCls}
-        >
-          <option value="">Elegí un proveedor…</option>
-          {proveedores.map((p) => <option key={p.id} value={p.razonSocial}>{p.razonSocial}</option>)}
-          <option value="__otro__">Otro (escribir nombre)</option>
-        </select>
-      ) : (
-        <div className="flex items-center gap-2">
-          <input
-            autoFocus
-            value={valorManual}
-            onChange={(e) => setValorManual(e.target.value)}
-            placeholder="Nombre del proveedor"
-            className={inputCls}
-          />
-          <button type="button" onClick={() => { setModoManual(false); setValorManual(""); }} className="whitespace-nowrap text-xs text-slate-400 underline">
-            Elegir de la lista
-          </button>
+    <div className="relative" ref={cajaRef}>
+      <input
+        value={texto}
+        onChange={(e) => { setTexto(e.target.value); setSeleccionado(""); setAbierto(true); }}
+        onFocus={() => setAbierto(true)}
+        placeholder="Buscar proveedor…"
+        autoComplete="off"
+        className={inputCls}
+      />
+      <input type="hidden" name={name} value={seleccionado || (coincideExacto ? texto.trim() : "")} />
+      {abierto && (
+        <div className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-md border border-stone-200 bg-white py-1 shadow-lg">
+          {opciones.length === 0 && !busqueda && (
+            <div className="px-3 py-2 text-xs text-slate-400">Todavía no hay proveedores cargados.</div>
+          )}
+          {opciones.map((p) => (
+            <button
+              type="button"
+              key={p.id}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => elegir(p)}
+              className="block w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-amber-50"
+            >
+              {nombreComercial(p)}
+            </button>
+          ))}
+          {busqueda && !coincideExacto && onCrearProveedor && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={agregarNuevo}
+              disabled={creando}
+              className="block w-full border-t border-stone-100 px-3 py-1.5 text-left text-sm font-semibold text-amber-700 hover:bg-amber-50"
+            >
+              {creando ? "Agregando…" : `+ Agregar "${texto.trim()}" como proveedor nuevo`}
+            </button>
+          )}
         </div>
       )}
-      <input type="hidden" name={name} value={modoManual ? valorManual : valorSelect} />
-    </>
+    </div>
   );
 }
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
@@ -2206,7 +2254,7 @@ export default function ConcretarApp() {
   }
 
   // ---------- Proveedores (incluye talleres de reparación) ----------
-  const emptyProveedorForm = { razonSocial: "", cuit: "", domicilio: "", contacto: "", telefono: "", esTaller: "No" };
+  const emptyProveedorForm = { razonSocial: "", nombreFantasia: "", cuit: "", domicilio: "", contacto: "", telefono: "", esTaller: "No" };
   const [proveedorForm, setProveedorForm] = useState(emptyProveedorForm);
   const [showProveedorForm, setShowProveedorForm] = useState(false);
   const talleres = proveedores.filter((p) => p.esTaller === "Sí");
@@ -2217,8 +2265,13 @@ export default function ConcretarApp() {
     setProveedorForm(emptyProveedorForm);
     setShowProveedorForm(false);
   }
+  // El nombre de fantasía es el que se usa para elegir el proveedor en Compras y en
+  // Órdenes de Compra; si todavía no se cargó, se usa la razón social.
+  async function crearProveedorRapido(nombre) {
+    return await addRecord("proveedores", { ...emptyProveedorForm, razonSocial: nombre, nombreFantasia: nombre }, setProveedores);
+  }
   function balanceProveedor(prov) {
-    const facturas = comprasFacturas.filter((c) => c.proveedor === prov.razonSocial && !obraIdsPapelera.has(c.obraId));
+    const facturas = comprasFacturas.filter((c) => c.proveedor === nombreComercial(prov) && !obraIdsPapelera.has(c.obraId));
     const totalFacturado = facturas.reduce((s, c) => s + (c.monto || 0), 0);
     const totalPagado = facturas.filter((c) => c.estado === "Pagada").reduce((s, c) => s + (c.monto || 0), 0);
     return { totalFacturado, totalPagado, saldo: totalFacturado - totalPagado, facturasPendientes: facturas.filter((c) => c.estado !== "Pagada") };
@@ -6756,7 +6809,7 @@ export default function ConcretarApp() {
                     <select name="obraId" className={inputCls}>{obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
                   <Field label="Proveedor">
-                    <ProveedorSelect proveedores={proveedores} />
+                    <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} />
                   </Field>
                   <Field label="Ítems / detalle"><input name="item" className={inputCls} /></Field>
                   <Field label="Monto estimado ($)">
@@ -6904,7 +6957,7 @@ export default function ConcretarApp() {
                     <select name="obraId" className={inputCls}>{obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
                   <Field label="Proveedor">
-                    <ProveedorSelect proveedores={proveedores} />
+                    <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} />
                   </Field>
                   <Field label="Categoría">
                     <select name="categoria" className={inputCls}>{CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}</select>
@@ -7217,6 +7270,9 @@ export default function ConcretarApp() {
                       <Field label="Razón social">
                         <input value={proveedorForm.razonSocial} onChange={(e) => setProveedorForm((f) => ({ ...f, razonSocial: e.target.value }))} required className={inputCls} />
                       </Field>
+                      <Field label="Nombre de fantasía">
+                        <input value={proveedorForm.nombreFantasia} onChange={(e) => setProveedorForm((f) => ({ ...f, nombreFantasia: e.target.value }))} placeholder="Con este nombre se elige en Compras" className={inputCls} />
+                      </Field>
                       <Field label="CUIT">
                         <input value={proveedorForm.cuit} onChange={(e) => setProveedorForm((f) => ({ ...f, cuit: e.target.value }))} placeholder="30-12345678-9" className={inputCls} />
                       </Field>
@@ -7249,8 +7305,11 @@ export default function ConcretarApp() {
                         <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
-                              <span className="font-semibold text-slate-900">{p.razonSocial}</span>
+                              <span className="font-semibold text-slate-900">{nombreComercial(p)}</span>
                               {p.esTaller === "Sí" && <span className="ml-2"><Badge estado="En Reparación" /></span>}
+                              {p.nombreFantasia && p.nombreFantasia.trim() && p.nombreFantasia.trim() !== p.razonSocial && (
+                                <div className="text-xs text-slate-400">Razón social: {p.razonSocial}</div>
+                              )}
                               <div className="text-xs text-slate-500">{p.contacto}{p.contacto && p.telefono ? " · " : ""}{p.telefono}</div>
                             </div>
                             <div className="text-right">
