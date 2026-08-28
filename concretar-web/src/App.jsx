@@ -45,6 +45,14 @@ function hoyISO() {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+function fechaMasDias(dias) {
+  const d = new Date();
+  d.setDate(d.getDate() + dias);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 const ESTADOS_HERRAMIENTA = ["Disponible", "En Obra", "En Reparación", "Mal Estado", "Rota"];
 const ESTADOS_OBRA = ["En curso", "Pausada", "Finalizada"];
@@ -53,9 +61,8 @@ const TIPOS_CAJA = ["Electricista", "Civil", "Pintor", "Metalúrgico"];
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const DIAS_SEMANA_JS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
-const ESTADOS_FACTURA = ["Pendiente", "Pagada"];
 const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
-const CATEGORIAS_GASTO = ["Materiales", "Mano de obra", "Equipos", "Otros"];
+const CATEGORIAS_GASTO = ["Materiales", "Equipos y Herramientas", "Epps", "Consumibles"];
 const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Epps", "Consumibles", "Otros"];
 // La pestaña "Pedidos de Obra" arma el pedido en pasos (rubros). Cada uno filtra
 // las líneas del presupuesto importado (o el catálogo propio, en el caso de Epps
@@ -128,6 +135,8 @@ const ROLES_FINANZAS = ["Gerente", "Contador"];
 const ROLES_VEN_PRECIOS_PEDIDO = ["Gerente", "Contador", "Logística"];
 const FORMALIDADES = ["Blanco", "Negro"];
 const CUENTAS = ["Efectivo", "Banco", "Mercado Pago"];
+const FORMAS_PAGO = ["Banco", "Mercado Pago", "Efectivo", "Cuenta corriente"];
+const MEDIOS_BANCARIOS = ["Débito/Transferencia", "eCheq", "Crédito"];
 
 // ============================================================
 // CONFIGURACIÓN DE SUPABASE
@@ -1252,8 +1261,6 @@ export default function ConcretarApp() {
     { id: "general", label: "General", icon: LayoutDashboard },
     { id: "obras", label: "Obras", icon: Building2 },
     { id: "asistencia", label: "Asistencia", icon: ClipboardCheck },
-    { id: "materiales", label: "Pedidos de Obra", icon: Package },
-    { id: "ordenes", label: "Órdenes de Compra", icon: ShoppingCart },
     { id: "herramientas", label: "Herramientas", icon: Wrench },
     { id: "ingresos", label: "Ingresos", icon: TrendingUp },
     { id: "facturas", label: "Compras y Facturas", icon: Receipt },
@@ -1262,7 +1269,11 @@ export default function ConcretarApp() {
     { id: "liquidacion", label: "Salario Personal", icon: Wallet },
     { id: "proveedores", label: "Clientes/Proveedores", icon: Truck },
     { id: "calendario", label: "Calendario", icon: CalendarDays },
+    // Todavía usamos poco estas dos secciones — quedan al final del menú y resaltadas en amarillo.
+    { id: "materiales", label: "Pedidos de Obra", icon: Package },
+    { id: "ordenes", label: "Órdenes de Compra", icon: ShoppingCart },
   ];
+  const NAV_DESTACADOS = ["materiales", "ordenes"];
 
   // ---------- Dashboard calculations ----------
   const obraSel = obras.find((o) => o.id === selectedObraId) || obras[0] || null;
@@ -1478,6 +1489,8 @@ export default function ConcretarApp() {
   const [showHerrForm, setShowHerrForm] = useState(false);
   const [showOcForm, setShowOcForm] = useState(false);
   const [showFacturaForm, setShowFacturaForm] = useState(false);
+  const [facturaFormaPago, setFacturaFormaPago] = useState("Efectivo");
+  const [facturaMedioBancario, setFacturaMedioBancario] = useState("Débito/Transferencia");
   const [showIngresoForm, setShowIngresoForm] = useState(false);
   const [showPersonalForm, setShowPersonalForm] = useState(false);
   const [showAsistenciaForm, setShowAsistenciaForm] = useState(false);
@@ -2172,6 +2185,15 @@ export default function ConcretarApp() {
   function marcarFacturaPagada(factura) {
     updateRecord("compras_facturas", factura.id, { estado: "Pagada" }, setComprasFacturas);
   }
+  // Un eCheq queda "Pendiente" hasta su fecha de pago; llegado ese día se acredita solo,
+  // sin que nadie tenga que entrar a marcarlo a mano.
+  useEffect(() => {
+    if (dbLoading) return;
+    const hoy = hoyISO();
+    comprasFacturas
+      .filter((c) => c.medioBancario === "eCheq" && c.estado === "Pendiente" && c.fechaPagoEcheq && c.fechaPagoEcheq <= hoy)
+      .forEach((c) => updateRecord("compras_facturas", c.id, { estado: "Pagada" }, setComprasFacturas));
+  }, [dbLoading, comprasFacturas]);
 
   // ---------- Clientes ----------
   const emptyClienteForm = { razonSocial: "", cuit: "", domicilio: "", contacto: "", telefono: "" };
@@ -3063,7 +3085,11 @@ export default function ConcretarApp() {
               }}
               style={tab === item.id ? { backgroundColor: BRAND.navy400 } : undefined}
               className={`flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm font-medium transition ${
-                tab === item.id ? "text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"
+                tab === item.id
+                  ? "text-white"
+                  : NAV_DESTACADOS.includes(item.id)
+                  ? "text-amber-400 hover:bg-white/5 hover:text-amber-300"
+                  : "text-slate-300 hover:bg-white/5 hover:text-white"
               }`}
             >
               <span className="flex items-center gap-3"><item.icon size={17} />{item.label}</span>
@@ -6806,47 +6832,74 @@ export default function ConcretarApp() {
                   onSubmit={(e) => {
                     e.preventDefault();
                     const f = new FormData(e.target);
+                    const formaPago = f.get("formaPago");
+                    const medioBancario = formaPago === "Banco" ? f.get("medioBancario") : null;
+                    const fechaPagoEcheq = medioBancario === "eCheq" ? f.get("fechaPagoEcheq") : null;
                     addRecord("compras_facturas", {
                       fecha: f.get("fecha"),
                       obraId: Number(f.get("obraId")),
-                      ordenCompraId: f.get("ordenCompraId") ? Number(f.get("ordenCompraId")) : null,
+                      ordenCompraId: null,
                       proveedor: f.get("proveedor"),
                       categoria: f.get("categoria"),
                       monto: Number(f.get("monto")) || 0,
                       comprobante: f.get("comprobante"),
-                      estado: f.get("estado"),
                       formalidad: f.get("formalidad"),
-                      cuenta: f.get("cuenta"),
+                      formaPago,
+                      medioBancario,
+                      fechaPagoEcheq,
+                      // Efectivo, Mercado Pago, débito/transferencia y crédito se acreditan al toque.
+                      // El eCheq queda pendiente hasta su fecha de pago y la cuenta corriente hasta que la saldemos a mano.
+                      cuenta: formaPago === "Cuenta corriente" ? null : formaPago,
+                      estado: (medioBancario === "eCheq" || formaPago === "Cuenta corriente") ? "Pendiente" : "Pagada",
                     }, setComprasFacturas);
                     e.target.reset();
+                    setFacturaFormaPago("Efectivo");
+                    setFacturaMedioBancario("Débito/Transferencia");
                     setShowFacturaForm(false);
                   }}
                 >
-                  <Field label="Fecha"><input name="fecha" type="date" required className={inputCls} /></Field>
+                  <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
                   <Field label="Obra">
                     <select name="obraId" className={inputCls}>{obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
-                  <Field label="Orden de compra (opcional)">
-                    <select name="ordenCompraId" className={inputCls}>
-                      <option value="">Sin orden asociada</option>
-                      {ordenesCompra.filter((oc) => !obraIdsPapelera.has(oc.obraId)).map((oc) => <option key={oc.id} value={oc.id}>#{oc.id} · {oc.proveedor}</option>)}
-                    </select>
+                  <Field label="Proveedor">
+                    <input name="proveedor" list="proveedores-facturas-list" placeholder="Elegí de la lista o escribí uno nuevo" required className={inputCls} />
+                    <datalist id="proveedores-facturas-list">
+                      {proveedores.map((p) => <option key={p.id} value={p.razonSocial} />)}
+                    </datalist>
                   </Field>
-                  <Field label="Proveedor"><input name="proveedor" required className={inputCls} /></Field>
                   <Field label="Categoría">
                     <select name="categoria" className={inputCls}>{CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}</select>
                   </Field>
-                  <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
-                  <Field label="N° comprobante"><input name="comprobante" className={inputCls} /></Field>
-                  <Field label="Estado">
-                    <select name="estado" className={inputCls}>{ESTADOS_FACTURA.map((s) => <option key={s}>{s}</option>)}</select>
+                  <Field label="Monto ($)">
+                    <MoneyInput name="monto" className={inputCls} />
+                    <div className="mt-1 text-[11px] text-slate-400">Precio final, con IVA incluido.</div>
                   </Field>
+                  <Field label="N° comprobante"><input name="comprobante" className={inputCls} /></Field>
                   <Field label="Formalidad">
                     <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
                   </Field>
-                  <Field label="Cuenta de pago">
-                    <select name="cuenta" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
+                  <Field label="Forma de pago">
+                    <select name="formaPago" value={facturaFormaPago} onChange={(e) => setFacturaFormaPago(e.target.value)} className={inputCls}>
+                      {FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}
+                    </select>
                   </Field>
+                  {facturaFormaPago === "Banco" && (
+                    <Field label="Medio">
+                      <select name="medioBancario" value={facturaMedioBancario} onChange={(e) => setFacturaMedioBancario(e.target.value)} className={inputCls}>
+                        {MEDIOS_BANCARIOS.map((m) => <option key={m}>{m}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                  {facturaFormaPago === "Banco" && facturaMedioBancario === "eCheq" && (
+                    <Field label="Fecha de pago">
+                      <input name="fechaPagoEcheq" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
+                      <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esta fecha — ese día pasa solo a "Pagado".</div>
+                    </Field>
+                  )}
+                  {facturaFormaPago === "Cuenta corriente" && (
+                    <div className="flex items-center text-[11px] text-slate-400">Queda "Pendiente" hasta que la paguemos — ahí la marcás como "Pagada" desde la tabla.</div>
+                  )}
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
               </Panel>
@@ -6855,7 +6908,7 @@ export default function ConcretarApp() {
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Proveedor</th><th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th></tr>
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Proveedor</th><th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Forma de pago</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
                 </thead>
                 <tbody>
                   {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
@@ -6867,9 +6920,19 @@ export default function ConcretarApp() {
                         <td className="px-2 py-1 font-medium text-slate-900">{c.proveedor}</td>
                         <td className="px-2 py-1 text-slate-600">{c.categoria}</td>
                         <td className="px-2 py-1"><Badge estado={c.formalidad || "Blanco"} /></td>
-                        <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta} />{c.cuenta || "—"}</span></td>
+                        <td className="px-2 py-1 text-slate-600">
+                          <span className="flex items-center gap-1"><CuentaIcon cuenta={c.formaPago} />{c.formaPago || c.cuenta || "—"}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
+                          {c.medioBancario === "eCheq" && c.estado === "Pendiente" && (
+                            <div className="text-[10px] text-slate-400">Cobra el {fmtFecha(c.fechaPagoEcheq)}</div>
+                          )}
+                        </td>
                         <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</td>
                         <td className="px-2 py-1"><Badge estado={c.estado} /></td>
+                        <td className="px-2 py-1">
+                          {c.estado === "Pendiente" && (
+                            <button onClick={() => marcarFacturaPagada(c)} className={btnGhost}>Marcar pagada</button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
