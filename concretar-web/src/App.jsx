@@ -318,6 +318,46 @@ function MoneyInput({ name, value, onChange, onBlur, className, placeholder, req
     </>
   );
 }
+// Combo de proveedor: <select> con los proveedores ya cargados + "Otro (escribir
+// nombre)" para tipear uno nuevo. Reemplaza al viejo <input list=...> (datalist),
+// que en la práctica no se veía como un desplegable real.
+function ProveedorSelect({ name = "proveedor", proveedores }) {
+  const [modoManual, setModoManual] = useState(false);
+  const [valorSelect, setValorSelect] = useState("");
+  const [valorManual, setValorManual] = useState("");
+  return (
+    <>
+      {!modoManual ? (
+        <select
+          value={valorSelect}
+          onChange={(e) => {
+            if (e.target.value === "__otro__") setModoManual(true);
+            else setValorSelect(e.target.value);
+          }}
+          className={inputCls}
+        >
+          <option value="">Elegí un proveedor…</option>
+          {proveedores.map((p) => <option key={p.id} value={p.razonSocial}>{p.razonSocial}</option>)}
+          <option value="__otro__">Otro (escribir nombre)</option>
+        </select>
+      ) : (
+        <div className="flex items-center gap-2">
+          <input
+            autoFocus
+            value={valorManual}
+            onChange={(e) => setValorManual(e.target.value)}
+            placeholder="Nombre del proveedor"
+            className={inputCls}
+          />
+          <button type="button" onClick={() => { setModoManual(false); setValorManual(""); }} className="whitespace-nowrap text-xs text-slate-400 underline">
+            Elegir de la lista
+          </button>
+        </div>
+      )}
+      <input type="hidden" name={name} value={modoManual ? valorManual : valorSelect} />
+    </>
+  );
+}
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
 
 // Campo numérico (admite decimales) que solo guarda al perder el foco — para
@@ -1491,6 +1531,7 @@ export default function ConcretarApp() {
   const [showFacturaForm, setShowFacturaForm] = useState(false);
   const [facturaFormaPago, setFacturaFormaPago] = useState("Efectivo");
   const [facturaMedioBancario, setFacturaMedioBancario] = useState("Débito/Transferencia");
+  const [facturaPlazoEcheq, setFacturaPlazoEcheq] = useState("30");
   const [showIngresoForm, setShowIngresoForm] = useState(false);
   const [showPersonalForm, setShowPersonalForm] = useState(false);
   const [showAsistenciaForm, setShowAsistenciaForm] = useState(false);
@@ -6696,6 +6737,7 @@ export default function ConcretarApp() {
                   onSubmit={(e) => {
                     e.preventDefault();
                     const f = new FormData(e.target);
+                    if (!f.get("proveedor")) { alert("Elegí un proveedor o escribí uno nuevo."); return; }
                     const monto = Number(f.get("montoEstimado")) || 0;
                     addRecord("ordenes_compra", {
                       fecha: f.get("fecha"),
@@ -6714,10 +6756,7 @@ export default function ConcretarApp() {
                     <select name="obraId" className={inputCls}>{obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
                   <Field label="Proveedor">
-                    <input name="proveedor" list="proveedores-oc-list" placeholder="Elegí de la lista o escribí uno nuevo" required className={inputCls} />
-                    <datalist id="proveedores-oc-list">
-                      {proveedores.map((p) => <option key={p.id} value={p.razonSocial} />)}
-                    </datalist>
+                    <ProveedorSelect proveedores={proveedores} />
                   </Field>
                   <Field label="Ítems / detalle"><input name="item" className={inputCls} /></Field>
                   <Field label="Monto estimado ($)">
@@ -6832,6 +6871,7 @@ export default function ConcretarApp() {
                   onSubmit={(e) => {
                     e.preventDefault();
                     const f = new FormData(e.target);
+                    if (!f.get("proveedor")) { alert("Elegí un proveedor o escribí uno nuevo."); return; }
                     const formaPago = f.get("formaPago");
                     const medioBancario = formaPago === "Banco" ? f.get("medioBancario") : null;
                     const fechaPagoEcheq = medioBancario === "eCheq" ? f.get("fechaPagoEcheq") : null;
@@ -6855,6 +6895,7 @@ export default function ConcretarApp() {
                     e.target.reset();
                     setFacturaFormaPago("Efectivo");
                     setFacturaMedioBancario("Débito/Transferencia");
+                    setFacturaPlazoEcheq("30");
                     setShowFacturaForm(false);
                   }}
                 >
@@ -6863,10 +6904,7 @@ export default function ConcretarApp() {
                     <select name="obraId" className={inputCls}>{obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
                   <Field label="Proveedor">
-                    <input name="proveedor" list="proveedores-facturas-list" placeholder="Elegí de la lista o escribí uno nuevo" required className={inputCls} />
-                    <datalist id="proveedores-facturas-list">
-                      {proveedores.map((p) => <option key={p.id} value={p.razonSocial} />)}
-                    </datalist>
+                    <ProveedorSelect proveedores={proveedores} />
                   </Field>
                   <Field label="Categoría">
                     <select name="categoria" className={inputCls}>{CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}</select>
@@ -6892,10 +6930,27 @@ export default function ConcretarApp() {
                     </Field>
                   )}
                   {facturaFormaPago === "Banco" && facturaMedioBancario === "eCheq" && (
-                    <Field label="Fecha de pago">
-                      <input name="fechaPagoEcheq" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
-                      <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esta fecha — ese día pasa solo a "Pagado".</div>
-                    </Field>
+                    <>
+                      <Field label="Plazo">
+                        <select value={facturaPlazoEcheq} onChange={(e) => setFacturaPlazoEcheq(e.target.value)} className={inputCls}>
+                          <option value="30">30 días</option>
+                          <option value="60">60 días</option>
+                          <option value="90">90 días</option>
+                          <option value="personalizado">Otro (elegir fecha)</option>
+                        </select>
+                      </Field>
+                      <Field label="Fecha de pago">
+                        <input
+                          key={facturaPlazoEcheq}
+                          name="fechaPagoEcheq"
+                          type="date"
+                          defaultValue={fechaMasDias(facturaPlazoEcheq === "personalizado" ? 30 : Number(facturaPlazoEcheq))}
+                          required
+                          className={inputCls}
+                        />
+                        <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esta fecha — ese día pasa solo a "Pagado".</div>
+                      </Field>
+                    </>
                   )}
                   {facturaFormaPago === "Cuenta corriente" && (
                     <div className="flex items-center text-[11px] text-slate-400">Queda "Pendiente" hasta que la paguemos — ahí la marcás como "Pagada" desde la tabla.</div>
