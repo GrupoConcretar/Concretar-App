@@ -2075,7 +2075,6 @@ export default function ConcretarApp() {
     return totalIngresos - totalEgresos;
   }
 
-  const saldosCuentas = CUENTAS.flatMap((cuenta) => FORMALIDADES.map((formalidad) => ({ cuenta, formalidad, saldo: saldoCuenta(cuenta, formalidad) })));
   const totalBlanco = FORMALIDADES[0] && CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Blanco"), 0);
   const totalNegro = CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Negro"), 0);
   const [vistaCuentas, setVistaCuentas] = useState("resumen");
@@ -7168,29 +7167,30 @@ export default function ConcretarApp() {
                 <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      <tr><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5 text-right">Saldo</th></tr>
+                      <tr><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5 text-right">Blanco</th><th className="px-2 py-1.5 text-right">Negro</th></tr>
                     </thead>
                     <tbody>
-                      {saldosCuentas.map(({ cuenta, formalidad, saldo }) => (
-                        <tr key={`${cuenta}-${formalidad}`} className="border-t border-stone-100">
-                          <td className="px-2 py-1"><span className="flex items-center gap-1.5 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={13} />{cuenta}</span></td>
-                          <td className="px-2 py-1"><Badge estado={formalidad} /></td>
-                          <td className={`px-2 py-1 text-right font-mono font-semibold ${saldo < 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtARS(saldo)}</td>
-                        </tr>
-                      ))}
-                      <tr className="border-t-2 border-sky-200 bg-sky-50">
-                        <td className="px-2 py-1.5 font-bold text-sky-900" colSpan={2}>Total en blanco</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold text-sky-900">{fmtARS(totalBlanco)}</td>
-                      </tr>
-                      <tr className="bg-stone-100">
-                        <td className="px-2 py-1.5 font-bold text-slate-800" colSpan={2}>Total en negro</td>
-                        <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-800">{fmtARS(totalNegro)}</td>
+                      {CUENTAS.map((cuenta) => {
+                        const saldoBlanco = saldoCuenta(cuenta, "Blanco");
+                        const saldoNegro = saldoCuenta(cuenta, "Negro");
+                        return (
+                          <tr key={cuenta} className="border-t border-stone-100">
+                            <td className="px-2 py-1"><span className="flex items-center gap-1.5 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={13} />{cuenta}</span></td>
+                            <td className={`px-2 py-1 text-right font-mono font-semibold ${saldoBlanco < 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtARS(saldoBlanco)}</td>
+                            <td className={`px-2 py-1 text-right font-mono font-semibold ${saldoNegro < 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtARS(saldoNegro)}</td>
+                          </tr>
+                        );
+                      })}
+                      <tr className="border-t-2 border-stone-300 bg-stone-50">
+                        <td className="px-2 py-1.5 font-bold text-slate-900">Total</td>
+                        <td className={`px-2 py-1.5 text-right font-mono font-bold ${totalBlanco < 0 ? "text-rose-600" : "text-sky-900"}`}>{fmtARS(totalBlanco)}</td>
+                        <td className={`px-2 py-1.5 text-right font-mono font-bold ${totalNegro < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalNegro)}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  Saldo = Ingresos − Compras/Facturas de cada cuenta y formalidad. Un saldo negativo significa que se cargaron más gastos que ingresos en esa combinación. Tocá "Movimientos" para ver el detalle que arma cada saldo.
+                  Cada columna = Ingresos − Compras/Facturas de esa cuenta y formalidad. Un saldo negativo significa que se cargaron más gastos que ingresos en esa combinación. Tocá "Movimientos" para ver el detalle que arma cada saldo.
                 </div>
               </>
             ) : (
