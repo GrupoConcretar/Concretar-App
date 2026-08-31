@@ -875,6 +875,9 @@ export default function ConcretarApp() {
   // Ajustes manuales de cuentas — pases de una cuenta a otra u otras correcciones que
   // no son ni una compra ni un ingreso de obra, para no ensuciar esas dos pestañas.
   const [movimientosManual, setMovimientosManual] = useState([]);
+  // Plata contada a mano (caja física / resumen bancario) para comparar contra lo
+  // que el sistema calcula y detectar errores de carga.
+  const [dineroReal, setDineroReal] = useState([]);
   const [tanteros, setTanteros] = useState(isSupabaseConfigured ? [] : DEMO_TANTEROS);
   const [avancesTanteros, setAvancesTanteros] = useState(isSupabaseConfigured ? [] : DEMO_AVANCES_TANTEROS);
 
@@ -891,7 +894,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -900,7 +903,7 @@ export default function ConcretarApp() {
           sbSelect("subcategorias_material"), sbSelect("tipos_material"), sbSelect("catalogo_materiales"), sbSelect("presupuesto_materiales"),
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
-          sbSelect("movimientos_cuenta"),
+          sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -933,6 +936,7 @@ export default function ConcretarApp() {
         setPresupuestoGeneral(pg);
         setStockMateriales(stk);
         setMovimientosManual(mm);
+        setDineroReal(dr);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -2209,6 +2213,48 @@ export default function ConcretarApp() {
   }
   function marcarIngresoCobrado(ingreso) {
     updateRecord("ingresos", ingreso.id, { estado: "Cobrado" }, setIngresos);
+  }
+
+  // ---------- Dinero real (arqueo de caja) ----------
+  // La plata física no distingue blanco de negro, por eso "Dinero real" se compara
+  // contra el Total (Blanco + Negro) de cada cuenta, no contra cada columna por separado.
+  function dineroRealDe(cuenta) {
+    return dineroReal.find((d) => d.cuenta === cuenta)?.monto ?? null;
+  }
+  function actualizarDineroReal(cuenta, monto) {
+    const existente = dineroReal.find((d) => d.cuenta === cuenta);
+    if (existente) {
+      updateRecord("dinero_real_cuentas", existente.id, { monto, actualizado: hoyISO() }, setDineroReal);
+    } else {
+      addRecord("dinero_real_cuentas", { cuenta, monto, actualizado: hoyISO() }, setDineroReal);
+    }
+  }
+  // Un "Error de cálculo" nunca es transferencia real entre nuestras cuentas: usamos
+  // "Ajuste" como cuenta puente (no forma parte de CUENTAS, así que no aparece en el
+  // resumen) solo para poder reutilizar el mecanismo de movimientos y que la cuenta
+  // real quede en el número contado a mano. Banco y Mercado Pago son siempre blancos
+  // (no hay plata en negro ahí); en Efectivo, que mezcla las dos, el error se carga
+  // como negro.
+  async function arreglarCaja() {
+    let corregidas = 0;
+    for (const cuenta of CUENTAS) {
+      const real = dineroRealDe(cuenta);
+      if (real === null) continue;
+      const calculado = saldoCuenta(cuenta, "Blanco") + saldoCuenta(cuenta, "Negro");
+      const diferencia = real - calculado;
+      if (Math.abs(diferencia) < 1) continue;
+      const formalidadAjuste = cuenta === "Banco" || cuenta === "Mercado Pago" ? "Blanco" : "Negro";
+      await addRecord("movimientos_cuenta", {
+        fecha: hoyISO(),
+        detalle: "Error de cálculo",
+        formalidad: formalidadAjuste,
+        cuentaOrigen: diferencia > 0 ? "Ajuste" : cuenta,
+        cuentaDestino: diferencia > 0 ? cuenta : "Ajuste",
+        monto: Math.abs(diferencia),
+      }, setMovimientosManual);
+      corregidas++;
+    }
+    alert(corregidas === 0 ? "No hay diferencias entre lo calculado y el dinero real cargado." : `Se corrigieron ${corregidas} cuenta(s) con un movimiento "Error de cálculo".`);
   }
 
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
@@ -7297,6 +7343,12 @@ export default function ConcretarApp() {
                   <CalendarClock size={16} /> Próximos pagos/ingresos
                 </button>
                 <button
+                  onClick={arreglarCaja}
+                  className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
+                >
+                  <Wrench size={16} /> Arreglo de caja
+                </button>
+                <button
                   onClick={() => setShowMovimientoForm((v) => !v)}
                   className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
                 >
@@ -7433,19 +7485,30 @@ export default function ConcretarApp() {
             <div className="inline-block overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="text-left text-sm">
                 <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-4 py-2">Cuenta</th><th className="px-4 py-2 text-right">Blanco</th><th className="px-4 py-2 text-right">Negro</th><th className="px-4 py-2 text-right">Total</th></tr>
+                  <tr>
+                    <th className="px-4 py-2">Cuenta</th><th className="px-4 py-2 text-right">Blanco</th><th className="px-4 py-2 text-right">Negro</th>
+                    <th className="px-4 py-2 text-right">Total</th><th className="px-4 py-2 text-right">Dinero real</th><th className="px-4 py-2 text-right">Diferencia</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {CUENTAS.map((cuenta) => {
                     const saldoBlanco = saldoCuenta(cuenta, "Blanco");
                     const saldoNegro = saldoCuenta(cuenta, "Negro");
                     const total = saldoBlanco + saldoNegro;
+                    const real = dineroRealDe(cuenta);
+                    const diferencia = real === null ? null : real - total;
                     return (
                       <tr key={cuenta} className="border-t border-stone-100">
                         <td className="px-4 py-2"><span className="flex items-center gap-2 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={16} />{cuenta}</span></td>
                         <td className={`px-4 py-2 text-right font-mono ${saldoBlanco < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoBlanco)}</td>
                         <td className={`px-4 py-2 text-right font-mono ${saldoNegro < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoNegro)}</td>
                         <td className={`px-4 py-2 text-right font-mono font-semibold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</td>
+                        <td className="px-4 py-2 text-right">
+                          <MoneyInput value={real ?? 0} onBlur={(v) => actualizarDineroReal(cuenta, v)} className="w-32 rounded-md border border-stone-300 px-2 py-1 text-right text-sm" />
+                        </td>
+                        <td className={`px-4 py-2 text-right font-mono font-semibold ${diferencia === null || Math.abs(diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                          {diferencia === null ? "—" : fmtARS(diferencia)}
+                        </td>
                       </tr>
                     );
                   })}
@@ -7454,12 +7517,14 @@ export default function ConcretarApp() {
                     <td className={`px-4 py-2.5 text-right font-mono font-bold ${totalBlanco < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalBlanco)}</td>
                     <td className={`px-4 py-2.5 text-right font-mono font-bold ${totalNegro < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalNegro)}</td>
                     <td className={`px-4 py-2.5 text-right font-mono font-bold ${(totalBlanco + totalNegro) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalBlanco + totalNegro)}</td>
+                    <td className="px-4 py-2.5"></td>
+                    <td className="px-4 py-2.5"></td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <div className="text-[11px] text-slate-400">
-              Cada columna = Ingresos − Compras/Facturas de esa cuenta y formalidad. Total = Blanco + Negro (una puede compensar momentáneamente a la otra si alguna está en negativo).
+              Cada columna = Ingresos − Compras/Facturas de esa cuenta y formalidad. Total = Blanco + Negro (una puede compensar momentáneamente a la otra si alguna está en negativo). "Dinero real" es lo que contás a mano (caja física o resumen bancario) — si no coincide con el Total, "Arreglo de caja" carga la diferencia como "Error de cálculo".
             </div>
 
             <div>
