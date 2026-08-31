@@ -294,8 +294,10 @@ function Field({ label, children }) {
 const inputCls = "rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30";
 const btnGhost = "rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-stone-100";
 
-// Campo de plata: mientras escribís va agregando puntos de miles y ",00" de decimales
-// en vivo (1 -> 1,00 -> 10 -> 10,00 -> 1000 -> 1.000,00), como en una caja registradora.
+// Campo de plata: mientras escribís va agregando puntos de miles en vivo
+// (1 -> 10 -> 100 -> 1.000), como en una caja registradora — y Borrar saca un
+// dígito genuino cada vez (antes quedaba "pegado" en el ",00" fijo del final,
+// así que Borrar no achicaba el número).
 // Funciona tanto con formularios controlados (value+onChange) como con FormData (name).
 function MoneyInput({ name, value, onChange, onBlur, className, placeholder, required, disabled }) {
   const [raw, setRaw] = useState(value !== undefined && value !== null && value !== "" ? String(Math.round(Number(value))) : "");
@@ -305,7 +307,7 @@ function MoneyInput({ name, value, onChange, onBlur, className, placeholder, req
     if (onChange) onChange(digitos === "" ? 0 : parseInt(digitos, 10));
   }
   const num = raw === "" ? 0 : parseInt(raw, 10);
-  const display = raw === "" ? "" : new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+  const display = raw === "" ? "" : new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(num);
   return (
     <>
       <input
@@ -314,7 +316,7 @@ function MoneyInput({ name, value, onChange, onBlur, className, placeholder, req
         value={display}
         onChange={handleChange}
         onBlur={() => onBlur && onBlur(num)}
-        placeholder={placeholder || "0,00"}
+        placeholder={placeholder || "0"}
         disabled={disabled}
         className={`${className || inputCls} ${disabled ? "cursor-not-allowed bg-stone-100 text-slate-400" : ""}`}
       />
