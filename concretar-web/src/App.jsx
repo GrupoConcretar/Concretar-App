@@ -408,6 +408,47 @@ function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) 
     </div>
   );
 }
+// Tabla de movimientos de Cuentas (ingresos, egresos y pases entre cuentas),
+// reutilizada tanto para el mes actual como para cada mes anterior colapsado.
+function TablaMovimientos({ items, obras }) {
+  if (items.length === 0) {
+    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay movimientos.</div>;
+  }
+  return (
+    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Tipo</th><th className="px-2 py-1.5">Obra</th>
+            <th className="px-2 py-1.5">Detalle</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th>
+            <th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((m) => {
+            const obra = obras.find((o) => o.id === m.obraId);
+            return (
+              <tr key={m.id} className="border-t border-stone-100">
+                <td className="px-2 py-1 text-slate-600">{fmtFecha(m.fecha)}</td>
+                <td className="px-2 py-1">
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
+                    {m.tipo}
+                  </span>
+                </td>
+                <td className="px-2 py-1 text-slate-600">{obra?.nombre || "—"}</td>
+                <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
+                <td className="px-2 py-1"><Badge estado={m.formalidad || "Blanco"} /></td>
+                <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
+                <td className="px-2 py-1">{m.estado && <Badge estado={m.estado} />}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
 
 // Campo numérico (admite decimales) que solo guarda al perder el foco — para
@@ -2089,7 +2130,6 @@ export default function ConcretarApp() {
 
   const totalBlanco = FORMALIDADES[0] && CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Blanco"), 0);
   const totalNegro = CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Negro"), 0);
-  const [vistaCuentas, setVistaCuentas] = useState("resumen");
   const [showMovimientoForm, setShowMovimientoForm] = useState(false);
   // Un movimiento por cada ingreso (+), compra/factura (-) y cada lado de una
   // transferencia manual (- en origen, + en destino); sumados por cuenta y
@@ -2106,6 +2146,25 @@ export default function ConcretarApp() {
       { id: `man-${m.id}-recibe`, fecha: m.fecha, tipo: "Ingreso", obraId: null, detalle: m.detalle || `Pase desde ${m.cuentaOrigen}`, formalidad: m.formalidad, cuenta: m.cuentaDestino, monto: m.monto || 0, estado: null },
     ]),
   ].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+
+  // Agrupados por mes — el mes actual siempre a la vista, los anteriores quedan
+  // colapsados en pestañas desplegables para no alargar la pantalla.
+  const claveMesCuentas = (fechaStr) => fechaStr ? fechaStr.slice(0, 7) : "";
+  const nombreMesCuentas = (clave) => {
+    const [y, m] = clave.split("-").map(Number);
+    const nombre = new Date(y, m - 1, 1).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+    return nombre.charAt(0).toUpperCase() + nombre.slice(1);
+  };
+  const mesActualClave = claveMesCuentas(hoyISO());
+  const gruposMovimientos = [];
+  for (const m of movimientosCuentas) {
+    const clave = claveMesCuentas(m.fecha);
+    let grupo = gruposMovimientos.find((g) => g.clave === clave);
+    if (!grupo) { grupo = { clave, items: [] }; gruposMovimientos.push(grupo); }
+    grupo.items.push(m);
+  }
+  const movimientosMesActual = gruposMovimientos.find((g) => g.clave === mesActualClave)?.items || [];
+  const gruposMovimientosAnteriores = gruposMovimientos.filter((g) => g.clave !== mesActualClave);
 
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
 
@@ -7172,20 +7231,12 @@ export default function ConcretarApp() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowMovimientoForm((v) => !v)}
-                  className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
-                >
-                  <Plus size={16} /> Agregar movimiento
-                </button>
-                <button
-                  onClick={() => setVistaCuentas((v) => (v === "resumen" ? "movimientos" : "resumen"))}
-                  className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
-                >
-                  <Receipt size={16} /> {vistaCuentas === "resumen" ? "Movimientos" : "Ver resumen"}
-                </button>
-              </div>
+              <button
+                onClick={() => setShowMovimientoForm((v) => !v)}
+                className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+              >
+                <Plus size={16} /> Agregar movimiento
+              </button>
             </div>
 
             {showMovimientoForm && (
@@ -7228,78 +7279,53 @@ export default function ConcretarApp() {
               </Panel>
             )}
 
-            {vistaCuentas === "resumen" ? (
-              <>
-                <div className="inline-block overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                  <table className="text-left text-xs">
-                    <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      <tr><th className="px-3 py-1.5">Cuenta</th><th className="px-3 py-1.5 text-right">Blanco</th><th className="px-3 py-1.5 text-right">Negro</th><th className="px-3 py-1.5 text-right">Total</th></tr>
-                    </thead>
-                    <tbody>
-                      {CUENTAS.map((cuenta) => {
-                        const saldoBlanco = saldoCuenta(cuenta, "Blanco");
-                        const saldoNegro = saldoCuenta(cuenta, "Negro");
-                        const total = saldoBlanco + saldoNegro;
-                        return (
-                          <tr key={cuenta} className="border-t border-stone-100">
-                            <td className="px-3 py-1"><span className="flex items-center gap-1.5 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={13} />{cuenta}</span></td>
-                            <td className={`px-3 py-1 text-right font-mono ${saldoBlanco < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoBlanco)}</td>
-                            <td className={`px-3 py-1 text-right font-mono ${saldoNegro < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoNegro)}</td>
-                            <td className={`px-3 py-1 text-right font-mono font-semibold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</td>
-                          </tr>
-                        );
-                      })}
-                      <tr className="border-t-2 border-stone-300 bg-stone-50">
-                        <td className="px-3 py-1.5 font-bold text-slate-900">Total</td>
-                        <td className={`px-3 py-1.5 text-right font-mono font-bold ${totalBlanco < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalBlanco)}</td>
-                        <td className={`px-3 py-1.5 text-right font-mono font-bold ${totalNegro < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalNegro)}</td>
-                        <td className={`px-3 py-1.5 text-right font-mono font-bold ${(totalBlanco + totalNegro) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalBlanco + totalNegro)}</td>
+            <div className="inline-block overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+              <table className="text-left text-xs">
+                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <tr><th className="px-3 py-1.5">Cuenta</th><th className="px-3 py-1.5 text-right">Blanco</th><th className="px-3 py-1.5 text-right">Negro</th><th className="px-3 py-1.5 text-right">Total</th></tr>
+                </thead>
+                <tbody>
+                  {CUENTAS.map((cuenta) => {
+                    const saldoBlanco = saldoCuenta(cuenta, "Blanco");
+                    const saldoNegro = saldoCuenta(cuenta, "Negro");
+                    const total = saldoBlanco + saldoNegro;
+                    return (
+                      <tr key={cuenta} className="border-t border-stone-100">
+                        <td className="px-3 py-1"><span className="flex items-center gap-1.5 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={13} />{cuenta}</span></td>
+                        <td className={`px-3 py-1 text-right font-mono ${saldoBlanco < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoBlanco)}</td>
+                        <td className={`px-3 py-1 text-right font-mono ${saldoNegro < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoNegro)}</td>
+                        <td className={`px-3 py-1 text-right font-mono font-semibold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</td>
                       </tr>
-                    </tbody>
-                  </table>
+                    );
+                  })}
+                  <tr className="border-t-2 border-stone-300 bg-stone-50">
+                    <td className="px-3 py-1.5 font-bold text-slate-900">Total</td>
+                    <td className={`px-3 py-1.5 text-right font-mono font-bold ${totalBlanco < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalBlanco)}</td>
+                    <td className={`px-3 py-1.5 text-right font-mono font-bold ${totalNegro < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalNegro)}</td>
+                    <td className={`px-3 py-1.5 text-right font-mono font-bold ${(totalBlanco + totalNegro) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalBlanco + totalNegro)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Cada columna = Ingresos − Compras/Facturas de esa cuenta y formalidad. Total = Blanco + Negro (una puede compensar momentáneamente a la otra si alguna está en negativo).
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Movimientos — {nombreMesCuentas(mesActualClave)}</h3>
+              <TablaMovimientos items={movimientosMesActual} obras={obras} />
+            </div>
+
+            {gruposMovimientosAnteriores.map((g) => (
+              <details key={g.clave} className="rounded-lg border border-stone-200 bg-white">
+                <summary className="cursor-pointer select-none rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
+                  {nombreMesCuentas(g.clave)} <span className="font-normal text-slate-400">({g.items.length})</span>
+                </summary>
+                <div className="border-t border-stone-100 p-3">
+                  <TablaMovimientos items={g.items} obras={obras} />
                 </div>
-                <div className="text-[11px] text-slate-400">
-                  Cada columna = Ingresos − Compras/Facturas de esa cuenta y formalidad. Total = Blanco + Negro (una puede compensar momentáneamente a la otra si alguna está en negativo). Tocá "Movimientos" para ver el detalle que arma cada saldo.
-                </div>
-              </>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Tipo</th><th className="px-2 py-1.5">Obra</th>
-                      <th className="px-2 py-1.5">Detalle</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th>
-                      <th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {movimientosCuentas.length === 0 ? (
-                      <tr><td colSpan={8} className="px-2 py-4 text-center text-slate-400">Todavía no hay movimientos cargados.</td></tr>
-                    ) : (
-                      movimientosCuentas.map((m) => {
-                        const obra = obras.find((o) => o.id === m.obraId);
-                        return (
-                          <tr key={m.id} className="border-t border-stone-100">
-                            <td className="px-2 py-1 text-slate-600">{fmtFecha(m.fecha)}</td>
-                            <td className="px-2 py-1">
-                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
-                                {m.tipo}
-                              </span>
-                            </td>
-                            <td className="px-2 py-1 text-slate-600">{obra?.nombre || "—"}</td>
-                            <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
-                            <td className="px-2 py-1"><Badge estado={m.formalidad || "Blanco"} /></td>
-                            <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
-                            <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
-                            <td className="px-2 py-1">{m.estado && <Badge estado={m.estado} />}</td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
+              </details>
+            ))}
           </div>
         )}
 
