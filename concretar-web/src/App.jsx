@@ -7297,7 +7297,7 @@ export default function ConcretarApp() {
                     setShowIngresoForm(false);
                   }}
                 >
-                  <Field label="Fecha"><input name="fecha" type="date" required className={inputCls} /></Field>
+                  <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
                   <Field label="Obra">
                     <select name="obraId" className={inputCls}>{obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
