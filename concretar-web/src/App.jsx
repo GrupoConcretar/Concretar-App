@@ -2077,9 +2077,11 @@ export default function ConcretarApp() {
     const totalEgresos = comprasFacturas
       .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad && !obraIdsPapelera.has(c.obraId))
       .reduce((s, c) => s + (c.monto || 0), 0);
+    // Cada transferencia manual resta en la cuenta de origen y suma en la de destino,
+    // siempre dentro de la misma formalidad (blanco y negro nunca se mezclan).
     const totalManual = movimientosManual
-      .filter((m) => m.cuenta === cuenta && m.formalidad === formalidad && !obraIdsPapelera.has(m.obraId))
-      .reduce((s, m) => s + (m.tipo === "Ingreso" ? (m.monto || 0) : -(m.monto || 0)), 0);
+      .filter((m) => m.formalidad === formalidad)
+      .reduce((s, m) => s + (m.cuentaOrigen === cuenta ? -(m.monto || 0) : 0) + (m.cuentaDestino === cuenta ? (m.monto || 0) : 0), 0);
     return totalIngresos - totalEgresos + totalManual;
   }
 
@@ -2087,8 +2089,9 @@ export default function ConcretarApp() {
   const totalNegro = CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Negro"), 0);
   const [vistaCuentas, setVistaCuentas] = useState("resumen");
   const [showMovimientoForm, setShowMovimientoForm] = useState(false);
-  // Un movimiento por cada ingreso (+), compra/factura (-) y ajuste manual (+/-);
-  // sumados por cuenta y formalidad dan exactamente los saldos de arriba.
+  // Un movimiento por cada ingreso (+), compra/factura (-) y cada lado de una
+  // transferencia manual (- en origen, + en destino); sumados por cuenta y
+  // formalidad dan exactamente los saldos de arriba.
   const movimientosCuentas = [
     ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
       id: `ing-${i.id}`, fecha: i.fecha, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: null,
@@ -2096,9 +2099,10 @@ export default function ConcretarApp() {
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
       id: `egr-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
     })),
-    ...movimientosManual.filter((m) => !obraIdsPapelera.has(m.obraId)).map((m) => ({
-      id: `man-${m.id}`, fecha: m.fecha, tipo: m.tipo, obraId: m.obraId, detalle: m.detalle || "Movimiento manual", formalidad: m.formalidad, cuenta: m.cuenta, monto: m.tipo === "Ingreso" ? (m.monto || 0) : -(m.monto || 0), estado: null,
-    })),
+    ...movimientosManual.flatMap((m) => [
+      { id: `man-${m.id}-sale`, fecha: m.fecha, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, formalidad: m.formalidad, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null },
+      { id: `man-${m.id}-recibe`, fecha: m.fecha, tipo: "Ingreso", obraId: null, detalle: m.detalle || `Pase desde ${m.cuentaOrigen}`, formalidad: m.formalidad, cuenta: m.cuentaDestino, monto: m.monto || 0, estado: null },
+    ]),
   ].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
 
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
@@ -7184,46 +7188,39 @@ export default function ConcretarApp() {
 
             {showMovimientoForm && (
               <Panel title="Agregar movimiento" action={<button onClick={() => setShowMovimientoForm(false)}><X size={16} /></button>}>
-                <div className="mb-3 text-xs text-slate-500">Para pases entre cuentas (ej: sacar efectivo y depositarlo en el banco) o cualquier otro ajuste que no sea ni una compra ni un ingreso de obra. Un pase se carga como dos movimientos: un Egreso en la cuenta de origen y un Ingreso en la de destino.</div>
+                <div className="mb-3 text-xs text-slate-500">Pase de dinero entre cuentas (ej: sacar efectivo y depositarlo en el banco). Siempre dentro de la misma formalidad — blanco y negro nunca se mezclan.</div>
                 <form
                   className="grid grid-cols-1 gap-4 md:grid-cols-3"
                   onSubmit={(e) => {
                     e.preventDefault();
                     const f = new FormData(e.target);
+                    const cuentaOrigen = f.get("cuentaOrigen");
+                    const cuentaDestino = f.get("cuentaDestino");
+                    if (cuentaOrigen === cuentaDestino) { alert("La cuenta de origen y la de destino no pueden ser la misma."); return; }
                     addRecord("movimientos_cuenta", {
                       fecha: f.get("fecha"),
-                      tipo: f.get("tipo"),
                       detalle: f.get("detalle"),
                       formalidad: f.get("formalidad"),
-                      cuenta: f.get("cuenta"),
+                      cuentaOrigen,
+                      cuentaDestino,
                       monto: Number(f.get("monto")) || 0,
-                      obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
                     }, setMovimientosManual);
                     e.target.reset();
                     setShowMovimientoForm(false);
                   }}
                 >
                   <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
-                  <Field label="Tipo">
-                    <select name="tipo" className={inputCls}>
-                      <option value="Egreso">Egreso (sale de la cuenta)</option>
-                      <option value="Ingreso">Ingreso (entra a la cuenta)</option>
-                    </select>
-                  </Field>
-                  <Field label="Cuenta">
-                    <select name="cuenta" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
-                  </Field>
                   <Field label="Detalle"><input name="detalle" required placeholder="Ej: Pase de efectivo a banco" className={inputCls} /></Field>
                   <Field label="Formalidad">
                     <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
                   </Field>
-                  <Field label="Monto ($)"><MoneyInput name="monto" className={inputCls} /></Field>
-                  <Field label="Obra (opcional)">
-                    <select name="obraId" className={inputCls}>
-                      <option value="">Sin obra</option>
-                      {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                    </select>
+                  <Field label="Cuenta donde sale">
+                    <select name="cuentaOrigen" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
                   </Field>
+                  <Field label="Cuenta que recibe">
+                    <select name="cuentaDestino" defaultValue={CUENTAS[1]} className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
+                  </Field>
+                  <Field label="Monto ($)"><MoneyInput name="monto" className={inputCls} /></Field>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
               </Panel>
