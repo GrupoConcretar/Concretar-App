@@ -416,38 +416,66 @@ function TablaMovimientos({ items, obras }) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay movimientos.</div>;
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-      <table className="w-full text-left text-xs">
-        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Tipo</th><th className="px-2 py-1.5">Obra</th>
-            <th className="px-2 py-1.5">Detalle</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th>
-            <th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5">Estado</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((m) => {
-            const obra = obras.find((o) => o.id === m.obraId);
-            return (
-              <tr key={m.id} className="border-t border-stone-100">
-                <td className="px-2 py-1 text-slate-600">{fmtFecha(m.fecha)}</td>
-                <td className="px-2 py-1">
-                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
-                    {m.tipo}
-                  </span>
-                </td>
-                <td className="px-2 py-1 text-slate-600">{obra?.nombre || "—"}</td>
-                <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
-                <td className="px-2 py-1"><Badge estado={m.formalidad || "Blanco"} /></td>
-                <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
-                <td className="px-2 py-1">{m.estado && <Badge estado={m.estado} />}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {/* Celular: tarjetas apiladas, sin scroll horizontal. */}
+      <div className="space-y-1.5 sm:hidden">
+        {items.map((m) => {
+          const obra = obras.find((o) => o.id === m.obraId);
+          return (
+            <div key={m.id} className="rounded-lg border border-stone-200 bg-white p-2.5 text-xs shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-medium text-slate-900">{m.detalle}</span>
+                <span className={`whitespace-nowrap font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-500">
+                <span>{fmtFecha(m.fecha)}</span>
+                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
+                  {m.tipo}
+                </span>
+                <Badge estado={m.formalidad || "Blanco"} />
+                <span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span>
+                {obra?.nombre && <span>{obra.nombre}</span>}
+                {m.estado && <Badge estado={m.estado} />}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tablet/PC: tabla completa. */}
+      <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:block">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Tipo</th><th className="px-2 py-1.5">Obra</th>
+              <th className="px-2 py-1.5">Detalle</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th>
+              <th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((m) => {
+              const obra = obras.find((o) => o.id === m.obraId);
+              return (
+                <tr key={m.id} className="border-t border-stone-100">
+                  <td className="px-2 py-1 text-slate-600">{fmtFecha(m.fecha)}</td>
+                  <td className="px-2 py-1">
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
+                      {m.tipo}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1 text-slate-600">{obra?.nombre || "—"}</td>
+                  <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
+                  <td className="px-2 py-1"><Badge estado={m.formalidad || "Blanco"} /></td>
+                  <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
+                  <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
+                  <td className="px-2 py-1">{m.estado && <Badge estado={m.estado} />}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
@@ -7482,7 +7510,50 @@ export default function ConcretarApp() {
               </Panel>
             )}
 
-            <div className="inline-block overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+            {/* Celular: tarjetas apiladas, sin scroll horizontal. */}
+            <div className="space-y-2 sm:hidden">
+              {CUENTAS.map((cuenta) => {
+                const saldoBlanco = saldoCuenta(cuenta, "Blanco");
+                const saldoNegro = saldoCuenta(cuenta, "Negro");
+                const total = saldoBlanco + saldoNegro;
+                const real = dineroRealDe(cuenta);
+                const diferencia = real === null ? null : real - total;
+                return (
+                  <div key={cuenta} className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 font-semibold text-slate-800"><CuentaIcon cuenta={cuenta} size={15} />{cuenta}</span>
+                      <span className={`font-mono text-base font-bold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
+                      <span>Blanco: <span className="font-mono text-slate-700">{fmtARS(saldoBlanco)}</span></span>
+                      <span>Negro: <span className="font-mono text-slate-700">{fmtARS(saldoNegro)}</span></span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2 border-t border-stone-100 pt-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-slate-500">Real:</span>
+                        <MoneyInput value={real ?? 0} onBlur={(v) => actualizarDineroReal(cuenta, v)} className="w-24 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+                      </div>
+                      <span className={`text-xs font-semibold ${diferencia === null || Math.abs(diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                        {diferencia === null ? "Sin dato" : `Dif: ${fmtARS(diferencia)}`}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="rounded-lg border-2 border-stone-300 bg-stone-50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900">Total</span>
+                  <span className={`font-mono text-base font-bold ${(totalBlanco + totalNegro) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalBlanco + totalNegro)}</span>
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
+                  <span>Blanco: <span className="font-mono text-slate-700">{fmtARS(totalBlanco)}</span></span>
+                  <span>Negro: <span className="font-mono text-slate-700">{fmtARS(totalNegro)}</span></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Tablet/PC: tabla completa. */}
+            <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:inline-block">
               <table className="text-left text-sm">
                 <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
