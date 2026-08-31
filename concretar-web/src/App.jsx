@@ -8,7 +8,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, Package, Upload, FileSpreadsheet, Trash2
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -227,6 +227,7 @@ const BADGE_STYLES = {
   Recibida: "border-emerald-600 text-emerald-700",
   Pagada: "border-emerald-600 text-emerald-700",
   Pagado: "border-emerald-600 text-emerald-700",
+  Cobrado: "border-emerald-600 text-emerald-700",
   Blanco: "border-sky-600 text-sky-700",
   Negro: "border-slate-600 text-slate-700",
   "En curso": "border-amber-600 text-amber-700",
@@ -740,7 +741,7 @@ export default function ConcretarApp() {
     { id: 8, nombre: "Serrucho" },
   ];
   const DEMO_PROVEEDORES = [
-    { id: 1, razonSocial: "Corralón San Martín", cuit: "30-12345678-9", domicilio: "Ruta 40 km 12, San Juan", contacto: "Marcos Díaz", telefono: "264-4000001", esTaller: "No" },
+    { id: 1, razonSocial: "Corralón San Martín", cuit: "30-12345678-9", domicilio: "Ruta 40 km 12, San Juan", contacto: "Marcos Díaz", telefono: "264-4000001", esTaller: "No", fechaVencimientoCC: "2026-09-25" },
     { id: 2, razonSocial: "Electromecánica Ríos", cuit: "30-98765432-1", domicilio: "Av. Libertador 850, San Juan", contacto: "Ríos Hnos.", telefono: "264-4000002", esTaller: "Sí" },
   ];
   const DEMO_CLIENTES = [
@@ -820,14 +821,18 @@ export default function ConcretarApp() {
     { id: 7, fecha: "2026-05-10", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 3800000, comprobante: "A-0001-00012470", estado: "Pagada", formalidad: "Blanco", cuenta: "Mercado Pago" },
     { id: 8, fecha: "2026-06-14", obraId: 2, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 2600000, comprobante: "A-0001-00012600", estado: "Pagada", formalidad: "Negro", cuenta: "Efectivo" },
     { id: 9, fecha: "2026-07-15", obraId: 2, ordenCompraId: 3, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 1500000, comprobante: "A-0004-00001180", estado: "Pendiente", formalidad: "Blanco", cuenta: "Banco" },
+    { id: 10, fecha: "2026-08-20", obraId: 1, ordenCompraId: null, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 2000000, estado: "Pendiente", formalidad: "Blanco", formaPago: "eCheq", fechaPagoEcheq: "2026-10-15", cuenta: "Banco" },
+    { id: 11, fecha: "2026-08-10", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 900000, estado: "Pendiente", formalidad: "Blanco", formaPago: "Cuenta corriente", cuenta: null },
+    { id: 12, fecha: "2026-08-22", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 350000, estado: "Pendiente", formalidad: "Blanco", formaPago: "Cuenta corriente", cuenta: null },
   ];
 
   const DEMO_INGRESOS = [
-    { id: 1, fecha: "2026-02-05", obraId: 1, concepto: "Anticipo certificado 1", monto: 20000000, formalidad: "Blanco", cuenta: "Banco" },
-    { id: 2, fecha: "2026-04-10", obraId: 1, concepto: "Certificado de avance 2", monto: 18000000, formalidad: "Blanco", cuenta: "Banco" },
-    { id: 3, fecha: "2026-05-15", obraId: 1, concepto: "Adicional acordado con el cliente", monto: 6000000, formalidad: "Negro", cuenta: "Efectivo" },
-    { id: 4, fecha: "2026-05-01", obraId: 2, concepto: "Anticipo Fam. Ledesma", monto: 12000000, formalidad: "Blanco", cuenta: "Mercado Pago" },
-    { id: 5, fecha: "2026-06-20", obraId: 2, concepto: "Pago en mano acordado", monto: 4000000, formalidad: "Negro", cuenta: "Efectivo" },
+    { id: 1, fecha: "2026-02-05", obraId: 1, concepto: "Anticipo certificado 1", monto: 20000000, formalidad: "Blanco", cuenta: "Banco", estado: "Cobrado" },
+    { id: 2, fecha: "2026-04-10", obraId: 1, concepto: "Certificado de avance 2", monto: 18000000, formalidad: "Blanco", cuenta: "Banco", estado: "Cobrado" },
+    { id: 3, fecha: "2026-05-15", obraId: 1, concepto: "Adicional acordado con el cliente", monto: 6000000, formalidad: "Negro", cuenta: "Efectivo", estado: "Cobrado" },
+    { id: 4, fecha: "2026-05-01", obraId: 2, concepto: "Anticipo Fam. Ledesma", monto: 12000000, formalidad: "Blanco", cuenta: "Mercado Pago", estado: "Cobrado" },
+    { id: 5, fecha: "2026-06-20", obraId: 2, concepto: "Pago en mano acordado", monto: 4000000, formalidad: "Negro", cuenta: "Efectivo", estado: "Cobrado" },
+    { id: 6, fecha: "2026-09-20", obraId: 1, concepto: "Certificado de avance 3", monto: 15000000, formalidad: "Blanco", cuenta: "Banco", estado: "Pendiente" },
   ];
 
   const DEMO_TANTEROS = [
@@ -2114,8 +2119,9 @@ export default function ConcretarApp() {
   const canVerPreciosPedido = ROLES_VEN_PRECIOS_PEDIDO.includes(currentRole);
 
   function saldoCuenta(cuenta, formalidad) {
+    // Un ingreso "Pendiente" (todavía no cobrado) no suma al saldo hasta que se cobra.
     const totalIngresos = ingresos
-      .filter((i) => i.cuenta === cuenta && i.formalidad === formalidad && !obraIdsPapelera.has(i.obraId))
+      .filter((i) => i.cuenta === cuenta && i.formalidad === formalidad && i.estado !== "Pendiente" && !obraIdsPapelera.has(i.obraId))
       .reduce((s, i) => s + (i.monto || 0), 0);
     const totalEgresos = comprasFacturas
       .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad && !obraIdsPapelera.has(c.obraId))
@@ -2136,7 +2142,7 @@ export default function ConcretarApp() {
   // formalidad dan exactamente los saldos de arriba.
   const movimientosCuentas = [
     ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
-      id: `ing-${i.id}`, fecha: i.fecha, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: null,
+      id: `ing-${i.id}`, fecha: i.fecha, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
       id: `egr-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
@@ -2165,6 +2171,45 @@ export default function ConcretarApp() {
   }
   const movimientosMesActual = gruposMovimientos.find((g) => g.clave === mesActualClave)?.items || [];
   const gruposMovimientosAnteriores = gruposMovimientos.filter((g) => g.clave !== mesActualClave);
+
+  // ---------- Próximos pagos/ingresos ----------
+  const [showProximos, setShowProximos] = useState(false);
+  const echeqsPendientes = comprasFacturas
+    .filter((c) => c.formaPago === "eCheq" && c.estado === "Pendiente" && !obraIdsPapelera.has(c.obraId))
+    .sort((a, b) => fechaLocal(a.fechaPagoEcheq) - fechaLocal(b.fechaPagoEcheq));
+  // Las cuentas corrientes se pagan de una sola vez por proveedor, no factura por
+  // factura — se agrupan y suman, y la fecha de vencimiento es del proveedor (cada
+  // uno tiene la suya), no de cada compra.
+  const cuentasCorrientesPorProveedor = (() => {
+    const grupos = {};
+    comprasFacturas
+      .filter((c) => c.formaPago === "Cuenta corriente" && c.estado === "Pendiente" && !obraIdsPapelera.has(c.obraId))
+      .forEach((c) => {
+        if (!grupos[c.proveedor]) grupos[c.proveedor] = { proveedor: c.proveedor, monto: 0, cantidad: 0 };
+        grupos[c.proveedor].monto += c.monto || 0;
+        grupos[c.proveedor].cantidad += 1;
+      });
+    return Object.values(grupos)
+      .map((g) => {
+        const prov = proveedores.find((p) => nombreComercial(p) === g.proveedor);
+        return { ...g, proveedorId: prov?.id ?? null, fechaVencimiento: prov?.fechaVencimientoCC || null };
+      })
+      .sort((a, b) => {
+        if (!a.fechaVencimiento && !b.fechaVencimiento) return 0;
+        if (!a.fechaVencimiento) return 1;
+        if (!b.fechaVencimiento) return -1;
+        return fechaLocal(a.fechaVencimiento) - fechaLocal(b.fechaVencimiento);
+      });
+  })();
+  const ingresosPendientes = ingresos
+    .filter((i) => i.estado === "Pendiente" && !obraIdsPapelera.has(i.obraId))
+    .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+  function actualizarFechaVencimientoCC(proveedorId, fecha) {
+    updateRecord("proveedores", proveedorId, { fechaVencimientoCC: fecha || null }, setProveedores);
+  }
+  function marcarIngresoCobrado(ingreso) {
+    updateRecord("ingresos", ingreso.id, { estado: "Cobrado" }, setIngresos);
+  }
 
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
 
@@ -7172,6 +7217,7 @@ export default function ConcretarApp() {
                       monto: Number(f.get("monto")) || 0,
                       formalidad: f.get("formalidad"),
                       cuenta: f.get("cuenta"),
+                      estado: f.get("estado"),
                     }, setIngresos);
                     e.target.reset();
                     setShowIngresoForm(false);
@@ -7189,6 +7235,12 @@ export default function ConcretarApp() {
                   <Field label="Cuenta">
                     <select name="cuenta" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
                   </Field>
+                  <Field label="Estado">
+                    <select name="estado" defaultValue="Cobrado" className={inputCls}>
+                      <option value="Cobrado">Cobrado</option>
+                      <option value="Pendiente">Pendiente (todavía no lo cobramos)</option>
+                    </select>
+                  </Field>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
               </Panel>
@@ -7197,7 +7249,7 @@ export default function ConcretarApp() {
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Concepto</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Monto</th></tr>
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Concepto</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
                 </thead>
                 <tbody>
                   {ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((i) => {
@@ -7210,6 +7262,12 @@ export default function ConcretarApp() {
                         <td className="px-2 py-1"><Badge estado={i.formalidad || "Blanco"} /></td>
                         <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}</span></td>
                         <td className="px-2 py-1 text-right font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</td>
+                        <td className="px-2 py-1"><Badge estado={i.estado === "Pendiente" ? "Pendiente" : "Cobrado"} /></td>
+                        <td className="px-2 py-1">
+                          {i.estado === "Pendiente" && (
+                            <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -7231,13 +7289,106 @@ export default function ConcretarApp() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
-              <button
-                onClick={() => setShowMovimientoForm((v) => !v)}
-                className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
-              >
-                <Plus size={16} /> Agregar movimiento
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowProximos((v) => !v)}
+                  className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
+                >
+                  <CalendarClock size={16} /> Próximos pagos/ingresos
+                </button>
+                <button
+                  onClick={() => setShowMovimientoForm((v) => !v)}
+                  className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                >
+                  <Plus size={16} /> Agregar movimiento
+                </button>
+              </div>
             </div>
+
+            {showProximos && (
+              <Panel title="Próximos pagos/ingresos" action={<button onClick={() => setShowProximos(false)}><X size={16} /></button>}>
+                <div className="space-y-5">
+                  <div>
+                    <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">eCheqs pendientes</div>
+                    {echeqsPendientes.length === 0 ? (
+                      <div className="text-xs text-slate-400">No hay eCheqs pendientes de cobrarse.</div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {echeqsPendientes.map((c) => {
+                          const dias = diasHasta(c.fechaPagoEcheq);
+                          return (
+                            <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm">
+                              <span className="font-medium text-slate-800">{c.proveedor}</span>
+                              <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                {fmtFecha(c.fechaPagoEcheq)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
+                              </span>
+                              <span className="font-mono font-semibold text-rose-600">{fmtARS(c.monto)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Cuentas corrientes por proveedor</div>
+                    {cuentasCorrientesPorProveedor.length === 0 ? (
+                      <div className="text-xs text-slate-400">No hay saldo pendiente en cuenta corriente con proveedores.</div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {cuentasCorrientesPorProveedor.map((g) => {
+                          const dias = g.fechaVencimiento ? diasHasta(g.fechaVencimiento) : null;
+                          return (
+                            <div key={g.proveedor} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm">
+                              <span className="font-medium text-slate-800">{g.proveedor} <span className="font-normal text-slate-400">({g.cantidad} compra{g.cantidad > 1 ? "s" : ""})</span></span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500">Vence:</span>
+                                <input
+                                  type="date"
+                                  value={g.fechaVencimiento || ""}
+                                  onChange={(e) => actualizarFechaVencimientoCC(g.proveedorId, e.target.value)}
+                                  disabled={!g.proveedorId}
+                                  className="rounded-md border border-stone-300 px-2 py-1 text-xs"
+                                />
+                                {dias !== null && (
+                                  <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                    {dias < 0 ? `vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? "hoy" : `en ${dias} día(s)`}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="font-mono font-semibold text-rose-600">{fmtARS(g.monto)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Ingresos pendientes de cobro</div>
+                    {ingresosPendientes.length === 0 ? (
+                      <div className="text-xs text-slate-400">No hay ingresos pendientes de cobro.</div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {ingresosPendientes.map((i) => {
+                          const dias = diasHasta(i.fecha);
+                          return (
+                            <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm">
+                              <span className="font-medium text-slate-800">{i.concepto}</span>
+                              <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                {fmtFecha(i.fecha)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
+                              </span>
+                              <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
+                              <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Panel>
+            )}
 
             {showMovimientoForm && (
               <Panel title="Agregar movimiento" action={<button onClick={() => setShowMovimientoForm(false)}><X size={16} /></button>}>
@@ -7280,9 +7431,9 @@ export default function ConcretarApp() {
             )}
 
             <div className="inline-block overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="text-left text-xs">
-                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-3 py-1.5">Cuenta</th><th className="px-3 py-1.5 text-right">Blanco</th><th className="px-3 py-1.5 text-right">Negro</th><th className="px-3 py-1.5 text-right">Total</th></tr>
+              <table className="text-left text-sm">
+                <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr><th className="px-4 py-2">Cuenta</th><th className="px-4 py-2 text-right">Blanco</th><th className="px-4 py-2 text-right">Negro</th><th className="px-4 py-2 text-right">Total</th></tr>
                 </thead>
                 <tbody>
                   {CUENTAS.map((cuenta) => {
@@ -7291,18 +7442,18 @@ export default function ConcretarApp() {
                     const total = saldoBlanco + saldoNegro;
                     return (
                       <tr key={cuenta} className="border-t border-stone-100">
-                        <td className="px-3 py-1"><span className="flex items-center gap-1.5 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={13} />{cuenta}</span></td>
-                        <td className={`px-3 py-1 text-right font-mono ${saldoBlanco < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoBlanco)}</td>
-                        <td className={`px-3 py-1 text-right font-mono ${saldoNegro < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoNegro)}</td>
-                        <td className={`px-3 py-1 text-right font-mono font-semibold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</td>
+                        <td className="px-4 py-2"><span className="flex items-center gap-2 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={16} />{cuenta}</span></td>
+                        <td className={`px-4 py-2 text-right font-mono ${saldoBlanco < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoBlanco)}</td>
+                        <td className={`px-4 py-2 text-right font-mono ${saldoNegro < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoNegro)}</td>
+                        <td className={`px-4 py-2 text-right font-mono font-semibold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</td>
                       </tr>
                     );
                   })}
                   <tr className="border-t-2 border-stone-300 bg-stone-50">
-                    <td className="px-3 py-1.5 font-bold text-slate-900">Total</td>
-                    <td className={`px-3 py-1.5 text-right font-mono font-bold ${totalBlanco < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalBlanco)}</td>
-                    <td className={`px-3 py-1.5 text-right font-mono font-bold ${totalNegro < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalNegro)}</td>
-                    <td className={`px-3 py-1.5 text-right font-mono font-bold ${(totalBlanco + totalNegro) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalBlanco + totalNegro)}</td>
+                    <td className="px-4 py-2.5 font-bold text-slate-900">Total</td>
+                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${totalBlanco < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalBlanco)}</td>
+                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${totalNegro < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalNegro)}</td>
+                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${(totalBlanco + totalNegro) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalBlanco + totalNegro)}</td>
                   </tr>
                 </tbody>
               </table>
