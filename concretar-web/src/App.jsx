@@ -824,6 +824,9 @@ export default function ConcretarApp() {
   const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
   const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
   const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
+  // Ajustes manuales de cuentas — pases de una cuenta a otra u otras correcciones que
+  // no son ni una compra ni un ingreso de obra, para no ensuciar esas dos pestañas.
+  const [movimientosManual, setMovimientosManual] = useState([]);
   const [tanteros, setTanteros] = useState(isSupabaseConfigured ? [] : DEMO_TANTEROS);
   const [avancesTanteros, setAvancesTanteros] = useState(isSupabaseConfigured ? [] : DEMO_AVANCES_TANTEROS);
 
@@ -840,7 +843,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -849,6 +852,7 @@ export default function ConcretarApp() {
           sbSelect("subcategorias_material"), sbSelect("tipos_material"), sbSelect("catalogo_materiales"), sbSelect("presupuesto_materiales"),
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
+          sbSelect("movimientos_cuenta"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -880,6 +884,7 @@ export default function ConcretarApp() {
         setPedidosMateriales(ped);
         setPresupuestoGeneral(pg);
         setStockMateriales(stk);
+        setMovimientosManual(mm);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -2072,20 +2077,27 @@ export default function ConcretarApp() {
     const totalEgresos = comprasFacturas
       .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad && !obraIdsPapelera.has(c.obraId))
       .reduce((s, c) => s + (c.monto || 0), 0);
-    return totalIngresos - totalEgresos;
+    const totalManual = movimientosManual
+      .filter((m) => m.cuenta === cuenta && m.formalidad === formalidad && !obraIdsPapelera.has(m.obraId))
+      .reduce((s, m) => s + (m.tipo === "Ingreso" ? (m.monto || 0) : -(m.monto || 0)), 0);
+    return totalIngresos - totalEgresos + totalManual;
   }
 
   const totalBlanco = FORMALIDADES[0] && CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Blanco"), 0);
   const totalNegro = CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Negro"), 0);
   const [vistaCuentas, setVistaCuentas] = useState("resumen");
-  // Un movimiento por cada ingreso (+) y cada compra/factura (-); sumados por cuenta y
-  // formalidad dan exactamente los saldos de arriba — es el detalle de esa cuenta.
+  const [showMovimientoForm, setShowMovimientoForm] = useState(false);
+  // Un movimiento por cada ingreso (+), compra/factura (-) y ajuste manual (+/-);
+  // sumados por cuenta y formalidad dan exactamente los saldos de arriba.
   const movimientosCuentas = [
     ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
       id: `ing-${i.id}`, fecha: i.fecha, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: null,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
       id: `egr-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
+    })),
+    ...movimientosManual.filter((m) => !obraIdsPapelera.has(m.obraId)).map((m) => ({
+      id: `man-${m.id}`, fecha: m.fecha, tipo: m.tipo, obraId: m.obraId, detalle: m.detalle || "Movimiento manual", formalidad: m.formalidad, cuenta: m.cuenta, monto: m.tipo === "Ingreso" ? (m.monto || 0) : -(m.monto || 0), estado: null,
     })),
   ].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
 
@@ -7154,43 +7166,101 @@ export default function ConcretarApp() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
-              <button
-                onClick={() => setVistaCuentas((v) => (v === "resumen" ? "movimientos" : "resumen"))}
-                className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
-              >
-                <Receipt size={16} /> {vistaCuentas === "resumen" ? "Movimientos" : "Ver resumen"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowMovimientoForm((v) => !v)}
+                  className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
+                >
+                  <Plus size={16} /> Agregar movimiento
+                </button>
+                <button
+                  onClick={() => setVistaCuentas((v) => (v === "resumen" ? "movimientos" : "resumen"))}
+                  className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                >
+                  <Receipt size={16} /> {vistaCuentas === "resumen" ? "Movimientos" : "Ver resumen"}
+                </button>
+              </div>
             </div>
+
+            {showMovimientoForm && (
+              <Panel title="Agregar movimiento" action={<button onClick={() => setShowMovimientoForm(false)}><X size={16} /></button>}>
+                <div className="mb-3 text-xs text-slate-500">Para pases entre cuentas (ej: sacar efectivo y depositarlo en el banco) o cualquier otro ajuste que no sea ni una compra ni un ingreso de obra. Un pase se carga como dos movimientos: un Egreso en la cuenta de origen y un Ingreso en la de destino.</div>
+                <form
+                  className="grid grid-cols-1 gap-4 md:grid-cols-3"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const f = new FormData(e.target);
+                    addRecord("movimientos_cuenta", {
+                      fecha: f.get("fecha"),
+                      tipo: f.get("tipo"),
+                      detalle: f.get("detalle"),
+                      formalidad: f.get("formalidad"),
+                      cuenta: f.get("cuenta"),
+                      monto: Number(f.get("monto")) || 0,
+                      obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
+                    }, setMovimientosManual);
+                    e.target.reset();
+                    setShowMovimientoForm(false);
+                  }}
+                >
+                  <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
+                  <Field label="Tipo">
+                    <select name="tipo" className={inputCls}>
+                      <option value="Egreso">Egreso (sale de la cuenta)</option>
+                      <option value="Ingreso">Ingreso (entra a la cuenta)</option>
+                    </select>
+                  </Field>
+                  <Field label="Cuenta">
+                    <select name="cuenta" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
+                  </Field>
+                  <Field label="Detalle"><input name="detalle" required placeholder="Ej: Pase de efectivo a banco" className={inputCls} /></Field>
+                  <Field label="Formalidad">
+                    <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
+                  </Field>
+                  <Field label="Monto ($)"><MoneyInput name="monto" className={inputCls} /></Field>
+                  <Field label="Obra (opcional)">
+                    <select name="obraId" className={inputCls}>
+                      <option value="">Sin obra</option>
+                      {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                    </select>
+                  </Field>
+                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                </form>
+              </Panel>
+            )}
 
             {vistaCuentas === "resumen" ? (
               <>
-                <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-                  <table className="w-full text-left text-xs">
+                <div className="inline-block overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                  <table className="text-left text-xs">
                     <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      <tr><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5 text-right">Blanco</th><th className="px-2 py-1.5 text-right">Negro</th></tr>
+                      <tr><th className="px-3 py-1.5">Cuenta</th><th className="px-3 py-1.5 text-right">Blanco</th><th className="px-3 py-1.5 text-right">Negro</th><th className="px-3 py-1.5 text-right">Total</th></tr>
                     </thead>
                     <tbody>
                       {CUENTAS.map((cuenta) => {
                         const saldoBlanco = saldoCuenta(cuenta, "Blanco");
                         const saldoNegro = saldoCuenta(cuenta, "Negro");
+                        const total = saldoBlanco + saldoNegro;
                         return (
                           <tr key={cuenta} className="border-t border-stone-100">
-                            <td className="px-2 py-1"><span className="flex items-center gap-1.5 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={13} />{cuenta}</span></td>
-                            <td className={`px-2 py-1 text-right font-mono font-semibold ${saldoBlanco < 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtARS(saldoBlanco)}</td>
-                            <td className={`px-2 py-1 text-right font-mono font-semibold ${saldoNegro < 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtARS(saldoNegro)}</td>
+                            <td className="px-3 py-1"><span className="flex items-center gap-1.5 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={13} />{cuenta}</span></td>
+                            <td className={`px-3 py-1 text-right font-mono ${saldoBlanco < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoBlanco)}</td>
+                            <td className={`px-3 py-1 text-right font-mono ${saldoNegro < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoNegro)}</td>
+                            <td className={`px-3 py-1 text-right font-mono font-semibold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</td>
                           </tr>
                         );
                       })}
                       <tr className="border-t-2 border-stone-300 bg-stone-50">
-                        <td className="px-2 py-1.5 font-bold text-slate-900">Total</td>
-                        <td className={`px-2 py-1.5 text-right font-mono font-bold ${totalBlanco < 0 ? "text-rose-600" : "text-sky-900"}`}>{fmtARS(totalBlanco)}</td>
-                        <td className={`px-2 py-1.5 text-right font-mono font-bold ${totalNegro < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalNegro)}</td>
+                        <td className="px-3 py-1.5 font-bold text-slate-900">Total</td>
+                        <td className={`px-3 py-1.5 text-right font-mono font-bold ${totalBlanco < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalBlanco)}</td>
+                        <td className={`px-3 py-1.5 text-right font-mono font-bold ${totalNegro < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalNegro)}</td>
+                        <td className={`px-3 py-1.5 text-right font-mono font-bold ${(totalBlanco + totalNegro) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalBlanco + totalNegro)}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  Cada columna = Ingresos − Compras/Facturas de esa cuenta y formalidad. Un saldo negativo significa que se cargaron más gastos que ingresos en esa combinación. Tocá "Movimientos" para ver el detalle que arma cada saldo.
+                  Cada columna = Ingresos − Compras/Facturas de esa cuenta y formalidad. Total = Blanco + Negro (una puede compensar momentáneamente a la otra si alguna está en negativo). Tocá "Movimientos" para ver el detalle que arma cada saldo.
                 </div>
               </>
             ) : (
