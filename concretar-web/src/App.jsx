@@ -2078,6 +2078,17 @@ export default function ConcretarApp() {
   const saldosCuentas = CUENTAS.flatMap((cuenta) => FORMALIDADES.map((formalidad) => ({ cuenta, formalidad, saldo: saldoCuenta(cuenta, formalidad) })));
   const totalBlanco = FORMALIDADES[0] && CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Blanco"), 0);
   const totalNegro = CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Negro"), 0);
+  const [vistaCuentas, setVistaCuentas] = useState("resumen");
+  // Un movimiento por cada ingreso (+) y cada compra/factura (-); sumados por cuenta y
+  // formalidad dan exactamente los saldos de arriba — es el detalle de esa cuenta.
+  const movimientosCuentas = [
+    ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
+      id: `ing-${i.id}`, fecha: i.fecha, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: null,
+    })),
+    ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
+      id: `egr-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
+    })),
+  ].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
 
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
 
@@ -7141,35 +7152,85 @@ export default function ConcretarApp() {
         )}
 
         {tab === "cuentas" && canVerFinanzas && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Total en blanco</div>
-                <div className="mt-1 font-mono text-2xl font-bold text-sky-900">{fmtARS(totalBlanco)}</div>
-              </div>
-              <div className="rounded-lg border border-slate-300 bg-slate-50 p-4">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Total en negro</div>
-                <div className="mt-1 font-mono text-2xl font-bold text-slate-800">{fmtARS(totalNegro)}</div>
-              </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
+              <button
+                onClick={() => setVistaCuentas((v) => (v === "resumen" ? "movimientos" : "resumen"))}
+                className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+              >
+                <Receipt size={16} /> {vistaCuentas === "resumen" ? "Movimientos" : "Ver resumen"}
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {saldosCuentas.map(({ cuenta, formalidad, saldo }) => (
-                <div key={`${cuenta}-${formalidad}`} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700"><CuentaIcon cuenta={cuenta} size={15} />{cuenta}</span>
-                    <Badge estado={formalidad} />
-                  </div>
-                  <div className={`mt-2 font-mono text-lg font-bold ${saldo < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(saldo)}</div>
+            {vistaCuentas === "resumen" ? (
+              <>
+                <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      <tr><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5 text-right">Saldo</th></tr>
+                    </thead>
+                    <tbody>
+                      {saldosCuentas.map(({ cuenta, formalidad, saldo }) => (
+                        <tr key={`${cuenta}-${formalidad}`} className="border-t border-stone-100">
+                          <td className="px-2 py-1"><span className="flex items-center gap-1.5 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={13} />{cuenta}</span></td>
+                          <td className="px-2 py-1"><Badge estado={formalidad} /></td>
+                          <td className={`px-2 py-1 text-right font-mono font-semibold ${saldo < 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtARS(saldo)}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-sky-200 bg-sky-50">
+                        <td className="px-2 py-1.5 font-bold text-sky-900" colSpan={2}>Total en blanco</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-sky-900">{fmtARS(totalBlanco)}</td>
+                      </tr>
+                      <tr className="bg-stone-100">
+                        <td className="px-2 py-1.5 font-bold text-slate-800" colSpan={2}>Total en negro</td>
+                        <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-800">{fmtARS(totalNegro)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-              ))}
-            </div>
-
-            <div className="text-[11px] text-slate-400">
-              Saldo = Ingresos − Compras/Facturas de cada cuenta y formalidad. Un saldo negativo significa que se cargaron más gastos que ingresos en esa combinación.
-            </div>
+                <div className="text-[11px] text-slate-400">
+                  Saldo = Ingresos − Compras/Facturas de cada cuenta y formalidad. Un saldo negativo significa que se cargaron más gastos que ingresos en esa combinación. Tocá "Movimientos" para ver el detalle que arma cada saldo.
+                </div>
+              </>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Tipo</th><th className="px-2 py-1.5">Obra</th>
+                      <th className="px-2 py-1.5">Detalle</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th>
+                      <th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movimientosCuentas.length === 0 ? (
+                      <tr><td colSpan={8} className="px-2 py-4 text-center text-slate-400">Todavía no hay movimientos cargados.</td></tr>
+                    ) : (
+                      movimientosCuentas.map((m) => {
+                        const obra = obras.find((o) => o.id === m.obraId);
+                        return (
+                          <tr key={m.id} className="border-t border-stone-100">
+                            <td className="px-2 py-1 text-slate-600">{fmtFecha(m.fecha)}</td>
+                            <td className="px-2 py-1">
+                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
+                                {m.tipo}
+                              </span>
+                            </td>
+                            <td className="px-2 py-1 text-slate-600">{obra?.nombre || "—"}</td>
+                            <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
+                            <td className="px-2 py-1"><Badge estado={m.formalidad || "Blanco"} /></td>
+                            <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
+                            <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
+                            <td className="px-2 py-1">{m.estado && <Badge estado={m.estado} />}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
