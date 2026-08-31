@@ -860,7 +860,7 @@ export default function ConcretarApp() {
     { id: 3, fecha: "2026-05-15", obraId: 1, concepto: "Adicional acordado con el cliente", monto: 6000000, formalidad: "Negro", cuenta: "Efectivo", estado: "Cobrado" },
     { id: 4, fecha: "2026-05-01", obraId: 2, concepto: "Anticipo Fam. Ledesma", monto: 12000000, formalidad: "Blanco", cuenta: "Mercado Pago", estado: "Cobrado" },
     { id: 5, fecha: "2026-06-20", obraId: 2, concepto: "Pago en mano acordado", monto: 4000000, formalidad: "Negro", cuenta: "Efectivo", estado: "Cobrado" },
-    { id: 6, fecha: "2026-09-20", obraId: 1, concepto: "Certificado de avance 3", monto: 15000000, formalidad: "Blanco", cuenta: "Banco", estado: "Pendiente" },
+    { id: 6, fecha: "2026-09-20", obraId: 1, concepto: "Certificado de avance 3", monto: 15000000, formalidad: "Blanco", cuenta: "Banco", medioBancario: "eCheq", estado: "Pendiente", fechaCobroEstimada: "2026-10-05" },
   ];
 
   const DEMO_TANTEROS = [
@@ -1666,6 +1666,9 @@ export default function ConcretarApp() {
   const [facturaMedioBancario, setFacturaMedioBancario] = useState("Débito/Transferencia");
   const [facturaPlazoEcheq, setFacturaPlazoEcheq] = useState("30");
   const [showIngresoForm, setShowIngresoForm] = useState(false);
+  const [ingresoCuenta, setIngresoCuenta] = useState(CUENTAS[0]);
+  const [ingresoMedioBancario, setIngresoMedioBancario] = useState("Transferencia");
+  const [ingresoEstado, setIngresoEstado] = useState("Cobrado");
   const [showPersonalForm, setShowPersonalForm] = useState(false);
   const [showAsistenciaForm, setShowAsistenciaForm] = useState(false);
   const emptyAsistenciaForm = { fecha: hoyISO(), nombre: "", obraId: obras[0]?.id ?? "", horas: 8, estado: "Presente" };
@@ -2235,7 +2238,7 @@ export default function ConcretarApp() {
   })();
   const ingresosPendientes = ingresos
     .filter((i) => i.estado === "Pendiente" && !obraIdsPapelera.has(i.obraId))
-    .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+    .sort((a, b) => fechaLocal(a.fechaCobroEstimada || a.fecha) - fechaLocal(b.fechaCobroEstimada || b.fecha));
   function actualizarFechaVencimientoCC(proveedorId, fecha) {
     updateRecord("proveedores", proveedorId, { fechaVencimientoCC: fecha || null }, setProveedores);
   }
@@ -7291,9 +7294,14 @@ export default function ConcretarApp() {
                       monto: Number(f.get("monto")) || 0,
                       formalidad: f.get("formalidad"),
                       cuenta: f.get("cuenta"),
+                      medioBancario: f.get("cuenta") === "Banco" ? f.get("medioBancario") : null,
                       estado: f.get("estado"),
+                      fechaCobroEstimada: f.get("estado") === "Pendiente" ? f.get("fechaCobroEstimada") : null,
                     }, setIngresos);
                     e.target.reset();
+                    setIngresoCuenta(CUENTAS[0]);
+                    setIngresoMedioBancario("Transferencia");
+                    setIngresoEstado("Cobrado");
                     setShowIngresoForm(false);
                   }}
                 >
@@ -7307,14 +7315,27 @@ export default function ConcretarApp() {
                     <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
                   </Field>
                   <Field label="Cuenta">
-                    <select name="cuenta" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
+                    <select name="cuenta" value={ingresoCuenta} onChange={(e) => setIngresoCuenta(e.target.value)} className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
                   </Field>
+                  {ingresoCuenta === "Banco" && (
+                    <Field label="Medio">
+                      <select name="medioBancario" value={ingresoMedioBancario} onChange={(e) => setIngresoMedioBancario(e.target.value)} className={inputCls}>
+                        <option value="Transferencia">Transferencia</option>
+                        <option value="eCheq">eCheq</option>
+                      </select>
+                    </Field>
+                  )}
                   <Field label="Estado">
-                    <select name="estado" defaultValue="Cobrado" className={inputCls}>
+                    <select name="estado" value={ingresoEstado} onChange={(e) => setIngresoEstado(e.target.value)} className={inputCls}>
                       <option value="Cobrado">Cobrado</option>
                       <option value="Pendiente">Pendiente (todavía no lo cobramos)</option>
                     </select>
                   </Field>
+                  {ingresoEstado === "Pendiente" && (
+                    <Field label="Fecha estimada de cobro">
+                      <input name="fechaCobroEstimada" type="date" defaultValue={hoyISO()} required className={inputCls} />
+                    </Field>
+                  )}
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
               </Panel>
@@ -7334,9 +7355,16 @@ export default function ConcretarApp() {
                         <td className="px-2 py-1 text-slate-600">{obra?.nombre}</td>
                         <td className="px-2 py-1 font-medium text-slate-900">{i.concepto}</td>
                         <td className="px-2 py-1"><Badge estado={i.formalidad || "Blanco"} /></td>
-                        <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}</span></td>
+                        <td className="px-2 py-1 text-slate-600">
+                          <span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}{i.medioBancario ? ` · ${i.medioBancario}` : ""}</span>
+                        </td>
                         <td className="px-2 py-1 text-right font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</td>
-                        <td className="px-2 py-1"><Badge estado={i.estado === "Pendiente" ? "Pendiente" : "Cobrado"} /></td>
+                        <td className="px-2 py-1">
+                          <Badge estado={i.estado === "Pendiente" ? "Pendiente" : "Cobrado"} />
+                          {i.estado === "Pendiente" && i.fechaCobroEstimada && (
+                            <div className="mt-0.5 text-[10px] text-slate-400">Cobra el {fmtFecha(i.fechaCobroEstimada)}</div>
+                          )}
+                        </td>
                         <td className="px-2 py-1">
                           {i.estado === "Pendiente" && (
                             <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
@@ -7451,12 +7479,13 @@ export default function ConcretarApp() {
                     ) : (
                       <div className="space-y-1.5">
                         {ingresosPendientes.map((i) => {
-                          const dias = diasHasta(i.fecha);
+                          const fechaEstimada = i.fechaCobroEstimada || i.fecha;
+                          const dias = diasHasta(fechaEstimada);
                           return (
                             <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm">
                               <span className="font-medium text-slate-800">{i.concepto}</span>
                               <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
-                                {fmtFecha(i.fecha)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
+                                {fmtFecha(fechaEstimada)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
                               </span>
                               <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
                               <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
