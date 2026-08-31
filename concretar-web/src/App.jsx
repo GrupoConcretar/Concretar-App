@@ -139,8 +139,8 @@ const ROLES_FINANZAS = ["Gerente", "Contador"];
 const ROLES_VEN_PRECIOS_PEDIDO = ["Gerente", "Contador", "Logística"];
 const FORMALIDADES = ["Blanco", "Negro"];
 const CUENTAS = ["Efectivo", "Banco", "Mercado Pago"];
-const FORMAS_PAGO = ["Banco", "Mercado Pago", "Efectivo", "Cuenta corriente"];
-const MEDIOS_BANCARIOS = ["Débito/Transferencia", "eCheq", "Crédito"];
+const FORMAS_PAGO = ["Banco", "Mercado Pago", "Efectivo", "Cuenta corriente", "eCheq"];
+const MEDIOS_BANCARIOS = ["Débito/Transferencia", "Crédito"];
 
 // ============================================================
 // CONFIGURACIÓN DE SUPABASE
@@ -2285,7 +2285,7 @@ export default function ConcretarApp() {
     if (dbLoading) return;
     const hoy = hoyISO();
     comprasFacturas
-      .filter((c) => c.medioBancario === "eCheq" && c.estado === "Pendiente" && c.fechaPagoEcheq && c.fechaPagoEcheq <= hoy)
+      .filter((c) => (c.formaPago === "eCheq" || c.medioBancario === "eCheq") && c.estado === "Pendiente" && c.fechaPagoEcheq && c.fechaPagoEcheq <= hoy)
       .forEach((c) => updateRecord("compras_facturas", c.id, { estado: "Pagada" }, setComprasFacturas));
   }, [dbLoading, comprasFacturas]);
 
@@ -6927,7 +6927,7 @@ export default function ConcretarApp() {
                     if (!f.get("proveedor")) { alert("Elegí un proveedor o escribí uno nuevo."); return; }
                     const formaPago = f.get("formaPago");
                     const medioBancario = formaPago === "Banco" ? f.get("medioBancario") : null;
-                    const fechaPagoEcheq = medioBancario === "eCheq" ? f.get("fechaPagoEcheq") : null;
+                    const fechaPagoEcheq = formaPago === "eCheq" ? f.get("fechaPagoEcheq") : null;
                     addRecord("compras_facturas", {
                       fecha: f.get("fecha"),
                       obraId: Number(f.get("obraId")),
@@ -6935,15 +6935,16 @@ export default function ConcretarApp() {
                       proveedor: f.get("proveedor"),
                       categoria: f.get("categoria"),
                       monto: Number(f.get("monto")) || 0,
-                      comprobante: f.get("comprobante"),
+                      comprobante: "",
                       formalidad: f.get("formalidad"),
                       formaPago,
                       medioBancario,
                       fechaPagoEcheq,
                       // Efectivo, Mercado Pago, débito/transferencia y crédito se acreditan al toque.
                       // El eCheq queda pendiente hasta su fecha de pago y la cuenta corriente hasta que la saldemos a mano.
-                      cuenta: formaPago === "Cuenta corriente" ? null : formaPago,
-                      estado: (medioBancario === "eCheq" || formaPago === "Cuenta corriente") ? "Pendiente" : "Pagada",
+                      // El eCheq se cobra a través del banco, por eso cuenta a la balanza de Banco.
+                      cuenta: formaPago === "Cuenta corriente" ? null : formaPago === "eCheq" ? "Banco" : formaPago,
+                      estado: (formaPago === "eCheq" || formaPago === "Cuenta corriente") ? "Pendiente" : "Pagada",
                     }, setComprasFacturas);
                     e.target.reset();
                     setFacturaFormaPago("Efectivo");
@@ -6956,17 +6957,16 @@ export default function ConcretarApp() {
                   <Field label="Obra">
                     <select name="obraId" className={inputCls}>{obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
-                  <Field label="Proveedor">
+                  <Field label="Proveedor - Nombre de fantasía">
                     <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} />
                   </Field>
                   <Field label="Categoría">
                     <select name="categoria" className={inputCls}>{CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}</select>
                   </Field>
-                  <Field label="Monto ($)">
+                  <Field label="Precio final ($)">
                     <MoneyInput name="monto" className={inputCls} />
-                    <div className="mt-1 text-[11px] text-slate-400">Precio final, con IVA incluido.</div>
+                    <div className="mt-1 text-[11px] text-slate-400">Con IVA incluido.</div>
                   </Field>
-                  <Field label="N° comprobante"><input name="comprobante" className={inputCls} /></Field>
                   <Field label="Formalidad">
                     <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
                   </Field>
@@ -6982,7 +6982,7 @@ export default function ConcretarApp() {
                       </select>
                     </Field>
                   )}
-                  {facturaFormaPago === "Banco" && facturaMedioBancario === "eCheq" && (
+                  {facturaFormaPago === "eCheq" && (
                     <>
                       <Field label="Plazo">
                         <select value={facturaPlazoEcheq} onChange={(e) => setFacturaPlazoEcheq(e.target.value)} className={inputCls}>
@@ -7029,8 +7029,8 @@ export default function ConcretarApp() {
                         <td className="px-2 py-1 text-slate-600">{c.categoria}</td>
                         <td className="px-2 py-1"><Badge estado={c.formalidad || "Blanco"} /></td>
                         <td className="px-2 py-1 text-slate-600">
-                          <span className="flex items-center gap-1"><CuentaIcon cuenta={c.formaPago} />{c.formaPago || c.cuenta || "—"}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
-                          {c.medioBancario === "eCheq" && c.estado === "Pendiente" && (
+                          <span className="flex items-center gap-1"><CuentaIcon cuenta={c.formaPago === "eCheq" ? "Banco" : c.formaPago} />{c.formaPago || c.cuenta || "—"}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
+                          {(c.formaPago === "eCheq" || c.medioBancario === "eCheq") && c.estado === "Pendiente" && (
                             <div className="text-[10px] text-slate-400">Cobra el {fmtFecha(c.fechaPagoEcheq)}</div>
                           )}
                         </td>
