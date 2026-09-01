@@ -8,7 +8,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -730,8 +730,24 @@ function PhotoInput({ label, value, onChange }) {
 
 // Sube un PDF o una foto (recibo, comprobante) y lo guarda como data URL —
 // mismo mecanismo que PhotoInput, pero sin forzar una vista previa de imagen.
+// Tiene un botón de "Tomar foto" aparte (con capture="environment") además del
+// de "Subir archivo", así en el celular abre directo la cámara en vez de tener
+// que ir a buscar la foto a la galería.
 function ArchivoInput({ label, value, nombreArchivo, onChange }) {
   const esImagen = value && !nombreArchivo?.toLowerCase().endsWith(".pdf");
+  const inputFotoRef = useRef(null);
+  const inputArchivoRef = useRef(null);
+  async function manejarArchivo(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await readFileAsDataURL(file);
+      onChange(dataUrl, file.name, file.type);
+    } catch {
+      alert("No se pudo leer el archivo.");
+    }
+    e.target.value = "";
+  }
   return (
     <div className="flex flex-col gap-1 text-sm">
       <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
@@ -748,23 +764,18 @@ function ArchivoInput({ label, value, nombreArchivo, onChange }) {
         ) : (
           <div className="flex h-14 w-14 items-center justify-center rounded-md border border-dashed border-stone-300 text-center text-[9px] text-slate-400">Sin archivo</div>
         )}
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           {nombreArchivo && <span className="max-w-[180px] truncate text-xs text-slate-500">{nombreArchivo}</span>}
-          <input
-            type="file"
-            accept="application/pdf,image/*"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              try {
-                const dataUrl = await readFileAsDataURL(file);
-                onChange(dataUrl, file.name, file.type);
-              } catch {
-                alert("No se pudo leer el archivo.");
-              }
-            }}
-            className="w-44 text-xs text-slate-600"
-          />
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => inputFotoRef.current?.click()} className={btnGhost}>
+              <span className="flex items-center gap-1"><Camera size={13} /> Tomar foto</span>
+            </button>
+            <button type="button" onClick={() => inputArchivoRef.current?.click()} className={btnGhost}>
+              <span className="flex items-center gap-1"><Upload size={13} /> Subir archivo</span>
+            </button>
+          </div>
+          <input ref={inputFotoRef} type="file" accept="image/*" capture="environment" onChange={manejarArchivo} className="hidden" />
+          <input ref={inputArchivoRef} type="file" accept="application/pdf,image/*" onChange={manejarArchivo} className="hidden" />
           {value && (
             <button type="button" onClick={() => onChange(null, null, null)} className="text-left text-xs text-rose-600 hover:underline">
               Quitar
@@ -1958,6 +1969,9 @@ export default function ConcretarApp() {
   const [ingresoCuenta, setIngresoCuenta] = useState(CUENTAS[0]);
   const [ingresoMedioBancario, setIngresoMedioBancario] = useState("Transferencia");
   const [ingresoEstado, setIngresoEstado] = useState("Cobrado");
+  const [ingresoArchivo, setIngresoArchivo] = useState(null);
+  const [ingresoNombreArchivo, setIngresoNombreArchivo] = useState(null);
+  const [ingresoTipoArchivo, setIngresoTipoArchivo] = useState(null);
   const [showPersonalForm, setShowPersonalForm] = useState(false);
   const [showAsistenciaForm, setShowAsistenciaForm] = useState(false);
   const emptyAsistenciaForm = { fecha: hoyISO(), nombre: "", obraId: obras[0]?.id ?? "", horas: 8, estado: "Presente" };
@@ -7800,11 +7814,17 @@ export default function ConcretarApp() {
                       medioBancario: f.get("cuenta") === "Banco" ? f.get("medioBancario") : null,
                       estado: f.get("estado"),
                       fechaCobroEstimada: f.get("estado") === "Pendiente" ? f.get("fechaCobroEstimada") : null,
+                      archivo: ingresoArchivo,
+                      nombreArchivo: ingresoNombreArchivo,
+                      tipoArchivo: ingresoTipoArchivo,
                     }, setIngresos);
                     e.target.reset();
                     setIngresoCuenta(CUENTAS[0]);
                     setIngresoMedioBancario("Transferencia");
                     setIngresoEstado("Cobrado");
+                    setIngresoArchivo(null);
+                    setIngresoNombreArchivo(null);
+                    setIngresoTipoArchivo(null);
                     setShowIngresoForm(false);
                   }}
                 >
@@ -7842,6 +7862,14 @@ export default function ConcretarApp() {
                       <input name="fechaCobroEstimada" type="date" defaultValue={hoyISO()} required className={inputCls} />
                     </Field>
                   )}
+                  <div className="md:col-span-2">
+                    <ArchivoInput
+                      label="Factura / comprobante (opcional)"
+                      value={ingresoArchivo}
+                      nombreArchivo={ingresoNombreArchivo}
+                      onChange={(archivo, nombreArchivo, tipoArchivo) => { setIngresoArchivo(archivo); setIngresoNombreArchivo(nombreArchivo); setIngresoTipoArchivo(tipoArchivo); }}
+                    />
+                  </div>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
               </Panel>
@@ -7859,7 +7887,16 @@ export default function ConcretarApp() {
                       <tr key={i.id} className="border-t border-stone-100">
                         <td className="px-2 py-1 text-slate-600">{fmtFecha(i.fecha)}</td>
                         <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
-                        <td className="px-2 py-1 font-medium text-slate-900">{i.concepto}</td>
+                        <td className="px-2 py-1 font-medium text-slate-900">
+                          <span className="flex items-center gap-1.5">
+                            {i.concepto}
+                            {i.archivo && (
+                              <a href={i.archivo} target="_blank" rel="noreferrer" title={i.nombreArchivo || "Ver comprobante"} className="text-slate-400 hover:text-slate-700">
+                                <FileDown size={13} />
+                              </a>
+                            )}
+                          </span>
+                        </td>
                         <td className="px-2 py-1"><Badge estado={i.formalidad || "Blanco"} /></td>
                         <td className="px-2 py-1 text-slate-600">
                           <span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}{i.medioBancario ? ` · ${i.medioBancario}` : ""}</span>
