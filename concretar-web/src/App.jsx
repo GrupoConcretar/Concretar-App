@@ -769,7 +769,7 @@ export default function ConcretarApp() {
     { id: 8, nombre: "Serrucho" },
   ];
   const DEMO_PROVEEDORES = [
-    { id: 1, razonSocial: "Corralón San Martín", cuit: "30-12345678-9", domicilio: "Ruta 40 km 12, San Juan", contacto: "Marcos Díaz", telefono: "264-4000001", esTaller: "No", fechaVencimientoCC: "2026-09-25" },
+    { id: 1, razonSocial: "Corralón San Martín", cuit: "30-12345678-9", domicilio: "Ruta 40 km 12, San Juan", contacto: "Marcos Díaz", telefono: "264-4000001", esTaller: "No", diaPago: 10 },
     { id: 2, razonSocial: "Electromecánica Ríos", cuit: "30-98765432-1", domicilio: "Av. Libertador 850, San Juan", contacto: "Ríos Hnos.", telefono: "264-4000002", esTaller: "Sí" },
   ];
   const DEMO_CLIENTES = [
@@ -2215,6 +2215,21 @@ export default function ConcretarApp() {
   // Las cuentas corrientes se pagan de una sola vez por proveedor, no factura por
   // factura — se agrupan y suman, y la fecha de vencimiento es del proveedor (cada
   // uno tiene la suya), no de cada compra.
+  // El día de pago es mensual y recurrente (ej: "el 10 de cada mes"), así que la fecha
+  // de vencimiento se recalcula sola todos los meses en vez de tener que cargarla a mano.
+  function proximaFechaPago(diaPago) {
+    if (!diaPago) return null;
+    const hoy = new Date();
+    let anio = hoy.getFullYear();
+    let mes = hoy.getMonth();
+    if (diaPago < hoy.getDate()) mes += 1;
+    const ultimoDiaDelMes = new Date(anio, mes + 1, 0).getDate();
+    const dia = Math.min(diaPago, ultimoDiaDelMes);
+    const fecha = new Date(anio, mes, dia);
+    const mm = String(fecha.getMonth() + 1).padStart(2, "0");
+    const dd = String(fecha.getDate()).padStart(2, "0");
+    return `${fecha.getFullYear()}-${mm}-${dd}`;
+  }
   const cuentasCorrientesPorProveedor = (() => {
     const grupos = {};
     comprasFacturas
@@ -2227,7 +2242,12 @@ export default function ConcretarApp() {
     return Object.values(grupos)
       .map((g) => {
         const prov = proveedores.find((p) => nombreComercial(p) === g.proveedor);
-        return { ...g, proveedorId: prov?.id ?? null, fechaVencimiento: prov?.fechaVencimientoCC || null };
+        return {
+          ...g,
+          proveedorId: prov?.id ?? null,
+          diaPago: prov?.diaPago || null,
+          fechaVencimiento: prov?.diaPago ? proximaFechaPago(prov.diaPago) : (prov?.fechaVencimientoCC || null),
+        };
       })
       .sort((a, b) => {
         if (!a.fechaVencimiento && !b.fechaVencimiento) return 0;
@@ -2239,8 +2259,8 @@ export default function ConcretarApp() {
   const ingresosPendientes = ingresos
     .filter((i) => i.estado === "Pendiente" && !obraIdsPapelera.has(i.obraId))
     .sort((a, b) => fechaLocal(a.fechaCobroEstimada || a.fecha) - fechaLocal(b.fechaCobroEstimada || b.fecha));
-  function actualizarFechaVencimientoCC(proveedorId, fecha) {
-    updateRecord("proveedores", proveedorId, { fechaVencimientoCC: fecha || null }, setProveedores);
+  function actualizarDiaPago(proveedorId, dia) {
+    updateRecord("proveedores", proveedorId, { diaPago: dia ? Number(dia) : null }, setProveedores);
   }
   function marcarIngresoCobrado(ingreso) {
     updateRecord("ingresos", ingreso.id, { estado: "Cobrado" }, setIngresos);
@@ -2463,7 +2483,7 @@ export default function ConcretarApp() {
   }
 
   // ---------- Proveedores (incluye talleres de reparación) ----------
-  const emptyProveedorForm = { razonSocial: "", nombreFantasia: "", cuit: "", domicilio: "", contacto: "", telefono: "", esTaller: "No" };
+  const emptyProveedorForm = { razonSocial: "", nombreFantasia: "", cuit: "", domicilio: "", contacto: "", telefono: "", esTaller: "No", diaPago: "" };
   const [proveedorForm, setProveedorForm] = useState(emptyProveedorForm);
   const [showProveedorForm, setShowProveedorForm] = useState(false);
   const [editandoProveedorId, setEditandoProveedorId] = useState(null);
@@ -2471,10 +2491,11 @@ export default function ConcretarApp() {
 
   function submitProveedorForm(e) {
     e.preventDefault();
+    const datos = { ...proveedorForm, diaPago: proveedorForm.diaPago ? Number(proveedorForm.diaPago) : null };
     if (editandoProveedorId) {
-      updateRecord("proveedores", editandoProveedorId, { ...proveedorForm }, setProveedores);
+      updateRecord("proveedores", editandoProveedorId, datos, setProveedores);
     } else {
-      addRecord("proveedores", { ...proveedorForm }, setProveedores);
+      addRecord("proveedores", datos, setProveedores);
     }
     setProveedorForm(emptyProveedorForm);
     setEditandoProveedorId(null);
@@ -2485,6 +2506,7 @@ export default function ConcretarApp() {
       razonSocial: p.razonSocial || "",
       nombreFantasia: p.nombreFantasia || "",
       cuit: p.cuit || "",
+      diaPago: p.diaPago || "",
       domicilio: p.domicilio || "",
       contacto: p.contacto || "",
       telefono: p.telefono || "",
@@ -2496,7 +2518,7 @@ export default function ConcretarApp() {
   // El nombre de fantasía es el que se usa para elegir el proveedor en Compras y en
   // Órdenes de Compra; si todavía no se cargó, se usa la razón social.
   async function crearProveedorRapido(nombre) {
-    return await addRecord("proveedores", { ...emptyProveedorForm, razonSocial: nombre, nombreFantasia: nombre }, setProveedores);
+    return await addRecord("proveedores", { ...emptyProveedorForm, razonSocial: nombre, nombreFantasia: nombre, diaPago: null }, setProveedores);
   }
   function balanceProveedor(prov) {
     const facturas = comprasFacturas.filter((c) => c.proveedor === nombreComercial(prov) && !obraIdsPapelera.has(c.obraId));
@@ -7492,14 +7514,19 @@ export default function ConcretarApp() {
                             <div key={g.proveedor} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm">
                               <span className="font-medium text-slate-800">{g.proveedor} <span className="font-normal text-slate-400">({g.cantidad} compra{g.cantidad > 1 ? "s" : ""})</span></span>
                               <div className="flex items-center gap-2">
-                                <span className="text-xs text-slate-500">Vence:</span>
+                                <span className="text-xs text-slate-500">Día de pago (de cada mes):</span>
                                 <input
-                                  type="date"
-                                  value={g.fechaVencimiento || ""}
-                                  onChange={(e) => actualizarFechaVencimientoCC(g.proveedorId, e.target.value)}
+                                  type="number"
+                                  min="1"
+                                  max="31"
+                                  value={g.diaPago || ""}
+                                  onChange={(e) => actualizarDiaPago(g.proveedorId, e.target.value)}
                                   disabled={!g.proveedorId}
-                                  className="rounded-md border border-stone-300 px-2 py-1 text-xs"
+                                  className="w-16 rounded-md border border-stone-300 px-2 py-1 text-xs"
                                 />
+                                {g.fechaVencimiento && (
+                                  <span className="text-xs text-slate-500">({fmtFecha(g.fechaVencimiento)})</span>
+                                )}
                                 {dias !== null && (
                                   <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
                                     {dias < 0 ? `vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? "hoy" : `en ${dias} día(s)`}
@@ -7820,6 +7847,17 @@ export default function ConcretarApp() {
                       <Field label="Teléfono">
                         <input value={proveedorForm.telefono} onChange={(e) => setProveedorForm((f) => ({ ...f, telefono: e.target.value }))} className={inputCls} />
                       </Field>
+                      <Field label="Día de pago (de cada mes)">
+                        <input
+                          type="number"
+                          min="1"
+                          max="31"
+                          placeholder="Ej: 10"
+                          value={proveedorForm.diaPago}
+                          onChange={(e) => setProveedorForm((f) => ({ ...f, diaPago: e.target.value }))}
+                          className={inputCls}
+                        />
+                      </Field>
                       <Field label="¿Es taller de reparación?">
                         <select value={proveedorForm.esTaller} onChange={(e) => setProveedorForm((f) => ({ ...f, esTaller: e.target.value }))} className={inputCls}>
                           {SI_NO.map((s) => <option key={s}>{s}</option>)}
@@ -7860,6 +7898,7 @@ export default function ConcretarApp() {
                           <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
                             <span>Facturado: <span className="font-mono text-slate-700">{fmtARS(totalFacturado)}</span></span>
                             <span>Pagado: <span className="font-mono text-slate-700">{fmtARS(totalPagado)}</span></span>
+                            <span>Día de pago: <span className="font-mono text-slate-700">{p.diaPago ? `${p.diaPago} de cada mes` : "sin definir"}</span></span>
                           </div>
                           {facturasPendientes.length > 0 && (
                             <div className="mt-3 space-y-1 border-t border-stone-100 pt-2">
