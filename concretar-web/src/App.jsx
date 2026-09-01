@@ -1059,6 +1059,11 @@ export default function ConcretarApp() {
     { id: 2, fecha: "2026-01-15", acreedor: "Banco San Juan", capital: 2000000, tasaAnualPct: 40, cuenta: "Banco", formalidad: "Blanco", fechaEstimadaDevolucion: "2026-04-15", estado: "Pagado", fechaPago: "2026-04-10", montoPagado: 2186301.37 },
   ];
 
+  const DEMO_COBROS_SOCIOS = [
+    { id: 1, fecha: "2026-07-15", socio: "Ricardo", monto: 1500000, cuenta: "Banco", medioBancario: "Transferencia", formalidad: "Blanco", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" },
+    { id: 2, fecha: "2026-08-01", socio: "Pablo", monto: 1200000, cuenta: "Efectivo", medioBancario: null, formalidad: "Negro", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" },
+  ];
+
   const DEMO_TANTEROS = [
     { id: 1, nombreGrupo: "Mario Electricista", obraId: 1, integrantes: [7, 8], precioTotal: 12000000 },
   ];
@@ -1106,6 +1111,9 @@ export default function ConcretarApp() {
   // pero es una deuda, no un ingreso — el interés se calcula solo, día a día, hasta
   // que se marca como devuelto. Siempre "General" (sin obra), como pidió el usuario.
   const [prestamos, setPrestamos] = useState(isSupabaseConfigured ? [] : DEMO_PRESTAMOS);
+  // Retiros de los socios (Ricardo y Pablo) — plata real que sale de la caja de la
+  // empresa, separada de Gastos/Facturas para poder ver el historial de cada uno.
+  const [cobrosSocios, setCobrosSocios] = useState(isSupabaseConfigured ? [] : DEMO_COBROS_SOCIOS);
   const [tanteros, setTanteros] = useState(isSupabaseConfigured ? [] : DEMO_TANTEROS);
   const [avancesTanteros, setAvancesTanteros] = useState(isSupabaseConfigured ? [] : DEMO_AVANCES_TANTEROS);
 
@@ -1122,7 +1130,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -1131,7 +1139,7 @@ export default function ConcretarApp() {
           sbSelect("subcategorias_material"), sbSelect("tipos_material"), sbSelect("catalogo_materiales"), sbSelect("presupuesto_materiales"),
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
-          sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"),
+          sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"), sbSelect("cobros_socios"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -1166,6 +1174,7 @@ export default function ConcretarApp() {
         setMovimientosManual(mm);
         setDineroReal(dr);
         setPrestamos(pr);
+        setCobrosSocios(cs);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -1640,6 +1649,7 @@ export default function ConcretarApp() {
     { id: "facturas", label: "Gastos y Facturas", icon: Receipt },
     { id: "personal", label: "Personal/Cuadrillas", icon: Users },
     { id: "cuentas", label: "Cuentas", icon: Landmark },
+    { id: "cobros_socios", label: "Cobros Ricardo y Pablo", icon: Banknote },
     { id: "liquidacion", label: "Salario Personal", icon: Wallet },
     { id: "proveedores", label: "Clientes/Proveedores", icon: Truck },
     { id: "calendario", label: "Calendario", icon: CalendarDays },
@@ -2372,7 +2382,11 @@ export default function ConcretarApp() {
     const totalPrestamos = prestamos
       .filter((p) => p.cuenta === cuenta && p.formalidad === formalidad)
       .reduce((s, p) => s + (p.capital || 0) - (p.estado === "Pagado" ? (p.montoPagado || 0) : 0), 0);
-    return totalIngresos - totalEgresos + totalManual + totalPrestamos;
+    // Un cobro de Ricardo o Pablo es plata real que sale de la caja de la empresa.
+    const totalCobrosSocios = cobrosSocios
+      .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad)
+      .reduce((s, c) => s + (c.monto || 0), 0);
+    return totalIngresos - totalEgresos + totalManual + totalPrestamos - totalCobrosSocios;
   }
 
   const totalBlanco = FORMALIDADES[0] && CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Blanco"), 0);
@@ -2401,6 +2415,29 @@ export default function ConcretarApp() {
     updateRecord("prestamos", p.id, { estado: "Pagado", fechaPago: hoyISO(), montoPagado: total }, setPrestamos);
   }
 
+  // ---------- Cobros Ricardo y Pablo (retiros de los socios) ----------
+  const SOCIOS = ["Ricardo", "Pablo"];
+  const emptyCobroSocioForm = { fecha: hoyISO(), socio: SOCIOS[0], monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", formalidad: FORMALIDADES[0], archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" };
+  const [cobroSocioForm, setCobroSocioForm] = useState(emptyCobroSocioForm);
+  const [showCobroSocioForm, setShowCobroSocioForm] = useState(false);
+  const [filtroSocio, setFiltroSocio] = useState("Todos");
+  function submitCobroSocioForm(e) {
+    e.preventDefault();
+    addRecord("cobros_socios", {
+      ...cobroSocioForm,
+      monto: Number(cobroSocioForm.monto) || 0,
+      medioBancario: cobroSocioForm.cuenta === "Banco" ? cobroSocioForm.medioBancario : null,
+    }, setCobrosSocios);
+    setCobroSocioForm(emptyCobroSocioForm);
+    setShowCobroSocioForm(false);
+  }
+  function totalCobradoPorSocio(socio) {
+    return cobrosSocios.filter((c) => c.socio === socio).reduce((s, c) => s + (c.monto || 0), 0);
+  }
+  const cobrosSociosFiltrados = cobrosSocios
+    .filter((c) => filtroSocio === "Todos" || c.socio === filtroSocio)
+    .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+
   const [showMovimientoForm, setShowMovimientoForm] = useState(false);
   // Un movimiento por cada ingreso (+), compra/factura (-) y cada lado de una
   // transferencia manual (- en origen, + en destino); sumados por cuenta y
@@ -2421,6 +2458,9 @@ export default function ConcretarApp() {
     })),
     ...prestamos.filter((p) => p.estado === "Pagado").map((p) => ({
       id: `prestamo-pago-${p.id}`, fecha: p.fechaPago, tipo: "Egreso", obraId: null, detalle: `Devolución préstamo — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: -(p.montoPagado || totalADevolverPrestamo(p)), estado: "Pagada",
+    })),
+    ...cobrosSocios.map((c) => ({
+      id: `cobro-socio-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: null, detalle: `Cobro — ${c.socio}`, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: "Pagada",
     })),
   ].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
 
@@ -8059,6 +8099,117 @@ export default function ConcretarApp() {
                 El capital ya está sumado al saldo de la cuenta donde entró. El interés se calcula día a día a la tasa anual cargada y no afecta el saldo hasta que marcás el préstamo como devuelto — ahí se registra la salida de capital + interés acumulado.
               </div>
             </div>
+          </div>
+        )}
+
+        {tab === "cobros_socios" && canVerFinanzas && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cobros Ricardo y Pablo</h2>
+              <button
+                onClick={() => setShowCobroSocioForm((v) => !v)}
+                className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+              >
+                <Plus size={16} /> Registrar cobro
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {SOCIOS.map((s) => (
+                <div key={s} className="rounded-lg border border-stone-200 bg-white p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total cobrado — {s}</div>
+                  <div className="font-mono text-lg font-bold text-slate-900">{fmtARS(totalCobradoPorSocio(s))}</div>
+                </div>
+              ))}
+            </div>
+
+            {showCobroSocioForm && (
+              <Panel title="Registrar cobro" action={<button onClick={() => setShowCobroSocioForm(false)}><X size={16} /></button>}>
+                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitCobroSocioForm}>
+                  <Field label="Socio">
+                    <select value={cobroSocioForm.socio} onChange={(e) => setCobroSocioForm((f) => ({ ...f, socio: e.target.value }))} className={inputCls}>
+                      {SOCIOS.map((s) => <option key={s}>{s}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Fecha">
+                    <input type="date" value={cobroSocioForm.fecha} onChange={(e) => setCobroSocioForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+                  </Field>
+                  <Field label="Monto ($)">
+                    <MoneyInput value={cobroSocioForm.monto} onChange={(v) => setCobroSocioForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+                  </Field>
+                  <Field label="Cuenta de la que sale">
+                    <select value={cobroSocioForm.cuenta} onChange={(e) => setCobroSocioForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+                      {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                    </select>
+                  </Field>
+                  {cobroSocioForm.cuenta === "Banco" && (
+                    <Field label="Medio">
+                      <select value={cobroSocioForm.medioBancario} onChange={(e) => setCobroSocioForm((f) => ({ ...f, medioBancario: e.target.value }))} className={inputCls}>
+                        <option value="Transferencia">Transferencia</option>
+                        <option value="eCheq">eCheq</option>
+                      </select>
+                    </Field>
+                  )}
+                  <Field label="Formalidad">
+                    <select value={cobroSocioForm.formalidad} onChange={(e) => setCobroSocioForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+                      {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Observaciones">
+                    <input value={cobroSocioForm.observaciones} onChange={(e) => setCobroSocioForm((f) => ({ ...f, observaciones: e.target.value }))} placeholder="Opcional" className={inputCls} />
+                  </Field>
+                  <div className="md:col-span-2">
+                    <ArchivoInput
+                      label="Factura / comprobante (PDF o foto)"
+                      value={cobroSocioForm.archivo}
+                      nombreArchivo={cobroSocioForm.nombreArchivo}
+                      onChange={(archivo, nombreArchivo, tipoArchivo) => setCobroSocioForm((f) => ({ ...f, archivo, nombreArchivo, tipoArchivo }))}
+                    />
+                  </div>
+                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                </form>
+              </Panel>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              {["Todos", ...SOCIOS].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setFiltroSocio(s)}
+                  className={`rounded-md px-3 py-2 text-sm font-semibold ${filtroSocio === s ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+
+            {cobrosSociosFiltrados.length === 0 ? (
+              <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay cobros cargados.</div>
+            ) : (
+              <div className="space-y-2">
+                {cobrosSociosFiltrados.map((c) => (
+                  <div key={c.id} className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-900">{c.socio}</span>
+                        <span className="text-xs text-slate-500">{fmtFecha(c.fecha)}</span>
+                        <Badge estado={c.formalidad || "Blanco"} />
+                      </div>
+                      <span className="font-mono text-base font-bold text-rose-600">{fmtARS(c.monto)}</span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                      <span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta} />{c.cuenta}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
+                      {c.observaciones && <span>{c.observaciones}</span>}
+                      {c.archivo && (
+                        <a href={c.archivo} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-slate-600 hover:underline">
+                          <FileDown size={13} /> {c.nombreArchivo || "Ver comprobante"}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
