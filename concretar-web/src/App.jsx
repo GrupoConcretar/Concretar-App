@@ -869,7 +869,7 @@ export default function ConcretarApp() {
     { id: 2, razonSocial: "Electromecánica Ríos", cuit: "30-98765432-1", domicilio: "Av. Libertador 850, San Juan", contacto: "Ríos Hnos.", telefono: "264-4000002", esTaller: "Sí" },
   ];
   const DEMO_CLIENTES = [
-    { id: 1, razonSocial: "Consorcio Belgrano SA", cuit: "30-55566677-8", domicilio: "Belgrano 450, San Juan", contacto: "Adm. Belgrano", telefono: "264-4100001" },
+    { id: 1, razonSocial: "Consorcio Belgrano SA", nombreFantasia: "Edificio Belgrano", cuit: "30-55566677-8", domicilio: "Belgrano 450, San Juan", contacto: "Adm. Belgrano", telefono: "264-4100001" },
     { id: 2, razonSocial: "Fam. Ledesma", cuit: "", domicilio: "Yerba Buena, San Juan", contacto: "Roberto Ledesma", telefono: "264-4100002" },
   ];
   const DEMO_REMITOS = [
@@ -1684,7 +1684,7 @@ export default function ConcretarApp() {
     const nuevaObra = await addRecord("obras", {
       nombre: f.get("nombre"),
       clienteId: f.get("clienteId") ? Number(f.get("clienteId")) : null,
-      cliente: clientes.find((c) => c.id === Number(f.get("clienteId")))?.razonSocial || "",
+      cliente: nombreComercial(clientes.find((c) => c.id === Number(f.get("clienteId")))) || "",
       presupuesto: Number(f.get("presupuesto")) || resumenObraImportado?.precioTotalConIva || 0,
       meses: Number(f.get("meses")) || 1,
       inicio: f.get("inicio"),
@@ -1747,7 +1747,7 @@ export default function ConcretarApp() {
     await updateRecord("obras", obra.id, {
       nombre: f.get("nombre"),
       clienteId: nuevoClienteId,
-      cliente: clientes.find((c) => c.id === nuevoClienteId)?.razonSocial || obra.cliente,
+      cliente: nombreComercial(clientes.find((c) => c.id === nuevoClienteId)) || obra.cliente,
       presupuesto: Number(f.get("presupuesto")) || obra.presupuesto,
       encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
     }, setObras);
@@ -3879,7 +3879,7 @@ export default function ConcretarApp() {
                     ) : (
                       <select name="clienteId" required className={inputCls}>
                         <option value="">-- Elegir --</option>
-                        {clientes.map((c) => <option key={c.id} value={c.id}>{c.razonSocial}</option>)}
+                        {clientes.map((c) => <option key={c.id} value={c.id}>{nombreComercial(c)}{c.nombreFantasia && c.nombreFantasia.trim() && c.nombreFantasia.trim() !== c.razonSocial ? ` (${c.razonSocial})` : ""}</option>)}
                       </select>
                     )}
                   </Field>
@@ -3992,7 +3992,7 @@ export default function ConcretarApp() {
                         <Field label="Cliente">
                           <select name="clienteId" defaultValue={o.clienteId || ""} className={inputCls}>
                             <option value="">Sin conectar (texto: {o.cliente || "—"})</option>
-                            {clientes.map((c) => <option key={c.id} value={c.id}>{c.razonSocial}</option>)}
+                            {clientes.map((c) => <option key={c.id} value={c.id}>{nombreComercial(c)}{c.nombreFantasia && c.nombreFantasia.trim() && c.nombreFantasia.trim() !== c.razonSocial ? ` (${c.razonSocial})` : ""}</option>)}
                           </select>
                         </Field>
                         <Field label="Presupuesto (ARS)"><MoneyInput name="presupuesto" value={o.presupuesto} className={inputCls} /></Field>
