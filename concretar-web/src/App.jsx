@@ -2483,7 +2483,7 @@ export default function ConcretarApp() {
   }
 
   // ---------- Proveedores (incluye talleres de reparación) ----------
-  const emptyProveedorForm = { razonSocial: "", nombreFantasia: "", cuit: "", domicilio: "", contacto: "", telefono: "", esTaller: "No", diaPago: "" };
+  const emptyProveedorForm = { razonSocial: "", nombreFantasia: "", cuit: "", domicilio: "", contacto: "", telefono: "", email: "", cbu: "", numeroCuenta: "", esTaller: "No", diaPago: "" };
   const [proveedorForm, setProveedorForm] = useState(emptyProveedorForm);
   const [showProveedorForm, setShowProveedorForm] = useState(false);
   const [editandoProveedorId, setEditandoProveedorId] = useState(null);
@@ -2510,6 +2510,9 @@ export default function ConcretarApp() {
       domicilio: p.domicilio || "",
       contacto: p.contacto || "",
       telefono: p.telefono || "",
+      email: p.email || "",
+      cbu: p.cbu || "",
+      numeroCuenta: p.numeroCuenta || "",
       esTaller: p.esTaller || "No",
     });
     setEditandoProveedorId(p.id);
@@ -2540,7 +2543,7 @@ export default function ConcretarApp() {
   }, [dbLoading, comprasFacturas]);
 
   // ---------- Clientes ----------
-  const emptyClienteForm = { razonSocial: "", cuit: "", domicilio: "", contacto: "", telefono: "" };
+  const emptyClienteForm = { razonSocial: "", nombreFantasia: "", cuit: "", domicilio: "", contacto: "", telefono: "", email: "", cbu: "", numeroCuenta: "" };
   const [clienteForm, setClienteForm] = useState(emptyClienteForm);
   const [showClienteForm, setShowClienteForm] = useState(false);
   const [editandoClienteId, setEditandoClienteId] = useState(null);
@@ -2560,10 +2563,14 @@ export default function ConcretarApp() {
   function editarCliente(cli) {
     setClienteForm({
       razonSocial: cli.razonSocial || "",
+      nombreFantasia: cli.nombreFantasia || "",
       cuit: cli.cuit || "",
       domicilio: cli.domicilio || "",
       contacto: cli.contacto || "",
       telefono: cli.telefono || "",
+      email: cli.email || "",
+      cbu: cli.cbu || "",
+      numeroCuenta: cli.numeroCuenta || "",
     });
     setEditandoClienteId(cli.id);
     setShowClienteForm(true);
@@ -7756,6 +7763,9 @@ export default function ConcretarApp() {
                       <Field label="Razón social / Nombre">
                         <input value={clienteForm.razonSocial} onChange={(e) => setClienteForm((f) => ({ ...f, razonSocial: e.target.value }))} required className={inputCls} />
                       </Field>
+                      <Field label="Nombre de fantasía">
+                        <input value={clienteForm.nombreFantasia} onChange={(e) => setClienteForm((f) => ({ ...f, nombreFantasia: e.target.value }))} className={inputCls} />
+                      </Field>
                       <Field label="CUIT / DNI">
                         <input value={clienteForm.cuit} onChange={(e) => setClienteForm((f) => ({ ...f, cuit: e.target.value }))} className={inputCls} />
                       </Field>
@@ -7767,6 +7777,15 @@ export default function ConcretarApp() {
                       </Field>
                       <Field label="Teléfono">
                         <input value={clienteForm.telefono} onChange={(e) => setClienteForm((f) => ({ ...f, telefono: e.target.value }))} className={inputCls} />
+                      </Field>
+                      <Field label="Email">
+                        <input type="email" value={clienteForm.email} onChange={(e) => setClienteForm((f) => ({ ...f, email: e.target.value }))} className={inputCls} />
+                      </Field>
+                      <Field label="CBU">
+                        <input value={clienteForm.cbu} onChange={(e) => setClienteForm((f) => ({ ...f, cbu: e.target.value }))} placeholder="22 dígitos" className={inputCls} />
+                      </Field>
+                      <Field label="Número de cuenta">
+                        <input value={clienteForm.numeroCuenta} onChange={(e) => setClienteForm((f) => ({ ...f, numeroCuenta: e.target.value }))} className={inputCls} />
                       </Field>
                       <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                     </form>
@@ -7784,7 +7803,11 @@ export default function ConcretarApp() {
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
                               <div className="font-semibold text-slate-900">{cli.razonSocial}</div>
+                              {cli.nombreFantasia && cli.nombreFantasia.trim() && cli.nombreFantasia.trim() !== cli.razonSocial && (
+                                <div className="text-xs text-slate-400">{cli.nombreFantasia}</div>
+                              )}
                               <div className="text-xs text-slate-500">{cli.contacto}{cli.contacto && cli.telefono ? " · " : ""}{cli.telefono}</div>
+                              {cli.email && <div className="text-xs text-slate-500">{cli.email}</div>}
                             </div>
                             <div className="flex items-center gap-3">
                               <div className="text-right">
@@ -7800,6 +7823,8 @@ export default function ConcretarApp() {
                             <span>Acordado: <span className="font-mono text-slate-700">{fmtARS(totalAcordado)}</span></span>
                             <span>Cobrado: <span className="font-mono text-slate-700">{fmtARS(totalCobrado)}</span></span>
                             <span>Obras: {obrasCliente.map((o) => o.nombre).join(", ") || "—"}</span>
+                            {cli.cbu && <span>CBU: <span className="font-mono text-slate-700">{cli.cbu}</span></span>}
+                            {cli.numeroCuenta && <span>Cuenta: <span className="font-mono text-slate-700">{cli.numeroCuenta}</span></span>}
                           </div>
                         </div>
                       );
@@ -7847,6 +7872,15 @@ export default function ConcretarApp() {
                       <Field label="Teléfono">
                         <input value={proveedorForm.telefono} onChange={(e) => setProveedorForm((f) => ({ ...f, telefono: e.target.value }))} className={inputCls} />
                       </Field>
+                      <Field label="Email">
+                        <input type="email" value={proveedorForm.email} onChange={(e) => setProveedorForm((f) => ({ ...f, email: e.target.value }))} className={inputCls} />
+                      </Field>
+                      <Field label="CBU">
+                        <input value={proveedorForm.cbu} onChange={(e) => setProveedorForm((f) => ({ ...f, cbu: e.target.value }))} placeholder="22 dígitos" className={inputCls} />
+                      </Field>
+                      <Field label="Número de cuenta">
+                        <input value={proveedorForm.numeroCuenta} onChange={(e) => setProveedorForm((f) => ({ ...f, numeroCuenta: e.target.value }))} className={inputCls} />
+                      </Field>
                       <Field label="Día de pago (de cada mes)">
                         <input
                           type="number"
@@ -7884,6 +7918,7 @@ export default function ConcretarApp() {
                                 <div className="text-xs text-slate-400">Razón social: {p.razonSocial}</div>
                               )}
                               <div className="text-xs text-slate-500">{p.contacto}{p.contacto && p.telefono ? " · " : ""}{p.telefono}</div>
+                              {p.email && <div className="text-xs text-slate-500">{p.email}</div>}
                             </div>
                             <div className="flex items-center gap-3">
                               <div className="text-right">
@@ -7899,6 +7934,8 @@ export default function ConcretarApp() {
                             <span>Facturado: <span className="font-mono text-slate-700">{fmtARS(totalFacturado)}</span></span>
                             <span>Pagado: <span className="font-mono text-slate-700">{fmtARS(totalPagado)}</span></span>
                             <span>Día de pago: <span className="font-mono text-slate-700">{p.diaPago ? `${p.diaPago} de cada mes` : "sin definir"}</span></span>
+                            {p.cbu && <span>CBU: <span className="font-mono text-slate-700">{p.cbu}</span></span>}
+                            {p.numeroCuenta && <span>Cuenta: <span className="font-mono text-slate-700">{p.numeroCuenta}</span></span>}
                           </div>
                           {facturasPendientes.length > 0 && (
                             <div className="mt-3 space-y-1 border-t border-stone-100 pt-2">
