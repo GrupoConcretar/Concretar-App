@@ -2516,6 +2516,33 @@ export default function ConcretarApp() {
     .filter((c) => filtroSocio === "Todos" || c.socio === filtroSocio)
     .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
 
+  // "Registrar juntos": carga un solo total y lo parte a la mitad para cada socio,
+  // pero queda guardado como dos cobros separados (uno por socio) en el historial.
+  const emptyCobroJuntosForm = { fecha: hoyISO(), monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", formalidad: FORMALIDADES[0], archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" };
+  const [cobroJuntosForm, setCobroJuntosForm] = useState(emptyCobroJuntosForm);
+  const [showCobroJuntosForm, setShowCobroJuntosForm] = useState(false);
+  async function submitCobroJuntosForm(e) {
+    e.preventDefault();
+    const total = Number(cobroJuntosForm.monto) || 0;
+    const mitad = total / 2;
+    const base = {
+      fecha: cobroJuntosForm.fecha,
+      monto: mitad,
+      cuenta: cobroJuntosForm.cuenta,
+      medioBancario: cobroJuntosForm.cuenta === "Banco" ? cobroJuntosForm.medioBancario : null,
+      formalidad: cobroJuntosForm.formalidad,
+      archivo: cobroJuntosForm.archivo,
+      nombreArchivo: cobroJuntosForm.nombreArchivo,
+      tipoArchivo: cobroJuntosForm.tipoArchivo,
+      observaciones: cobroJuntosForm.observaciones,
+    };
+    for (const socio of SOCIOS) {
+      await addRecord("cobros_socios", { ...base, socio }, setCobrosSocios);
+    }
+    setCobroJuntosForm(emptyCobroJuntosForm);
+    setShowCobroJuntosForm(false);
+  }
+
   const [showMovimientoForm, setShowMovimientoForm] = useState(false);
   // Un movimiento por cada ingreso (+), compra/factura (-) y cada lado de una
   // transferencia manual (- en origen, + en destino); sumados por cuenta y
@@ -8195,12 +8222,20 @@ export default function ConcretarApp() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cobros Ricardo y Pablo</h2>
-              <button
-                onClick={() => setShowCobroSocioForm((v) => !v)}
-                className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
-              >
-                <Plus size={16} /> Registrar cobro
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowCobroJuntosForm((v) => !v)}
+                  className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
+                >
+                  <Users size={16} /> Registrar juntos
+                </button>
+                <button
+                  onClick={() => setShowCobroSocioForm((v) => !v)}
+                  className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                >
+                  <Plus size={16} /> Registrar cobro
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -8211,6 +8246,53 @@ export default function ConcretarApp() {
                 </div>
               ))}
             </div>
+
+            {showCobroJuntosForm && (
+              <Panel title="Registrar cobro conjunto (mitad y mitad)" action={<button onClick={() => setShowCobroJuntosForm(false)}><X size={16} /></button>}>
+                <div className="mb-3 text-xs text-slate-500">Cargás el total y se guarda como dos cobros separados en el historial, uno para Ricardo y otro para Pablo, cada uno por la mitad.</div>
+                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitCobroJuntosForm}>
+                  <Field label="Fecha">
+                    <input type="date" value={cobroJuntosForm.fecha} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+                  </Field>
+                  <Field label="Monto total ($)">
+                    <MoneyInput value={cobroJuntosForm.monto} onChange={(v) => setCobroJuntosForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+                  </Field>
+                  <Field label="Mitad para cada uno">
+                    <input value={fmtARS((Number(cobroJuntosForm.monto) || 0) / 2)} disabled className={`${inputCls} cursor-not-allowed bg-stone-100 text-slate-500`} />
+                  </Field>
+                  <Field label="Cuenta de la que sale">
+                    <select value={cobroJuntosForm.cuenta} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+                      {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                    </select>
+                  </Field>
+                  {cobroJuntosForm.cuenta === "Banco" && (
+                    <Field label="Medio">
+                      <select value={cobroJuntosForm.medioBancario} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, medioBancario: e.target.value }))} className={inputCls}>
+                        <option value="Transferencia">Transferencia</option>
+                        <option value="eCheq">eCheq</option>
+                      </select>
+                    </Field>
+                  )}
+                  <Field label="Formalidad">
+                    <select value={cobroJuntosForm.formalidad} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+                      {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Observaciones">
+                    <input value={cobroJuntosForm.observaciones} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, observaciones: e.target.value }))} placeholder="Opcional" className={inputCls} />
+                  </Field>
+                  <div className="md:col-span-2">
+                    <ArchivoInput
+                      label="Factura / comprobante (PDF o foto)"
+                      value={cobroJuntosForm.archivo}
+                      nombreArchivo={cobroJuntosForm.nombreArchivo}
+                      onChange={(archivo, nombreArchivo, tipoArchivo) => setCobroJuntosForm((f) => ({ ...f, archivo, nombreArchivo, tipoArchivo }))}
+                    />
+                  </div>
+                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                </form>
+              </Panel>
+            )}
 
             {showCobroSocioForm && (
               <Panel title="Registrar cobro" action={<button onClick={() => setShowCobroSocioForm(false)}><X size={16} /></button>}>
