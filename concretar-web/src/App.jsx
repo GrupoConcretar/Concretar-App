@@ -1532,7 +1532,7 @@ export default function ConcretarApp() {
     { id: "asistencia", label: "Asistencia", icon: ClipboardCheck },
     { id: "herramientas", label: "Herramientas", icon: Wrench },
     { id: "ingresos", label: "Ingresos", icon: TrendingUp },
-    { id: "facturas", label: "Compras y Facturas", icon: Receipt },
+    { id: "facturas", label: "Gastos y Facturas", icon: Receipt },
     { id: "personal", label: "Personal/Cuadrillas", icon: Users },
     { id: "cuentas", label: "Cuentas", icon: Landmark },
     { id: "liquidacion", label: "Salario Personal", icon: Wallet },
@@ -2306,9 +2306,9 @@ export default function ConcretarApp() {
   // ---------- Resumen por obra (balance de cada obra en curso) ----------
   // Sale de lo que ya tenemos cargado: precio acordado (obra.presupuesto), lo
   // presupuestado por rubro si se importó un Excel de presupuesto (presupuestoGeneral),
-  // y lo efectivamente cobrado/gastado según Ingresos y Compras/Facturas de esa obra.
+  // y lo efectivamente cobrado/gastado según Ingresos y Gastos/Facturas de esa obra.
   // La mano de obra pagada informalmente (asistencia/liquidaciones) no está incluida en
-  // "Gastado" — sólo lo que pasó por Compras y Facturas.
+  // "Gastado" — sólo lo que pasó por Gastos y Facturas.
   function fechaFinEstimada(obra) {
     if (!obra.inicio || !obra.meses) return null;
     const [y, m, d] = obra.inicio.split("-").map(Number);
@@ -7324,14 +7324,14 @@ export default function ConcretarApp() {
         {tab === "facturas" && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Compras y Facturas</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Gastos y Facturas</h2>
               <button onClick={() => setShowFacturaForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
-                <Plus size={16} /> Cargar compra
+                <Plus size={16} /> Cargar gasto
               </button>
             </div>
 
             {showFacturaForm && (
-              <Panel title="Cargar compra / factura" action={<button onClick={() => setShowFacturaForm(false)}><X size={16} /></button>}>
+              <Panel title="Cargar gasto / factura" action={<button onClick={() => setShowFacturaForm(false)}><X size={16} /></button>}>
                 <form
                   className="grid grid-cols-1 gap-4 md:grid-cols-3"
                   onSubmit={(e) => {
@@ -7484,7 +7484,7 @@ export default function ConcretarApp() {
             </div>
 
             <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-              Lo que cobrás de cada obra — con esto más los gastos de "Compras y Facturas" se arma el resumen de "Cuentas".
+              Lo que cobrás de cada obra — con esto más los gastos de "Gastos y Facturas" se arma el resumen de "Cuentas".
             </div>
 
             {showIngresoForm && (
@@ -7839,7 +7839,7 @@ export default function ConcretarApp() {
               </table>
             </div>
             <div className="text-[11px] text-slate-400">
-              Cada columna = Ingresos − Compras/Facturas de esa cuenta y formalidad. Total = Blanco + Negro (una puede compensar momentáneamente a la otra si alguna está en negativo). "Dinero real" es lo que contás a mano (caja física o resumen bancario) — si no coincide con el Total, "Arreglo de caja" carga la diferencia como "Error de cálculo".
+              Cada columna = Ingresos − Gastos/Facturas de esa cuenta y formalidad. Total = Blanco + Negro (una puede compensar momentáneamente a la otra si alguna está en negativo). "Dinero real" es lo que contás a mano (caja física o resumen bancario) — si no coincide con el Total, "Arreglo de caja" carga la diferencia como "Error de cálculo".
             </div>
 
             <div>
@@ -7862,7 +7862,7 @@ export default function ConcretarApp() {
               <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Balance por obra</h3>
               <ResumenObrasCuentas items={resumenPorObra} />
               <div className="mt-2 text-[11px] text-slate-400">
-                "Presup." sale del Excel de presupuesto importado en la obra (si no se importó ninguno, queda en "—"). "Gastado" y "Falta cobrar" son lo que ya se cargó en Compras/Facturas e Ingresos de esa obra — no incluye mano de obra pagada por Personal/Cuadrillas. "Ganancia estimada" = Precio de obra − presupuestado (M.O. + Eq. y Mat.), no lo ya cobrado.
+                "Presup." sale del Excel de presupuesto importado en la obra (si no se importó ninguno, queda en "—"). "Gastado" y "Falta cobrar" son lo que ya se cargó en Gastos/Facturas e Ingresos de esa obra — no incluye mano de obra pagada por Personal/Cuadrillas. "Ganancia estimada" = Precio de obra − presupuestado (M.O. + Eq. y Mat.), no lo ya cobrado.
               </div>
             </div>
           </div>
