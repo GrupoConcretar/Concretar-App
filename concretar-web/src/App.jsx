@@ -5253,7 +5253,7 @@ export default function ConcretarApp() {
 
         {tab === "asistencia" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Asistencia</h2>
               <button onClick={abrirCargaAsistencia} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                 <Plus size={16} /> Cargar asistencia
@@ -6065,7 +6065,7 @@ export default function ConcretarApp() {
 
             {vistaHerramientas === "altoValor" && !viewingHerramienta && (
               <>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-500">Maquinaria y herramientas de alto valor, controladas de forma individual por número de serie.</div>
                   <button onClick={startAddHerramienta} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                     <Plus size={16} /> Nueva herramienta
@@ -6317,7 +6317,7 @@ export default function ConcretarApp() {
 
             {vistaHerramientas === "combos" && (
               <>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-500">Cajas de herramientas manuales chicas, armadas por rubro. Primero se asignan a una obra y después a un operario de esa obra.</div>
                   <button onClick={() => setShowComboForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                     <Plus size={16} /> Nueva caja
@@ -6476,7 +6476,7 @@ export default function ConcretarApp() {
 
             {vistaHerramientas === "remitos" && (
               <>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-500">Traslados de herramientas de Alto Valor entre Oficina, obras y talleres — con aprobación de salida y de recepción.</div>
                   <button onClick={() => setShowRemitoForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                     <Plus size={16} /> Nuevo remito
@@ -7686,7 +7686,7 @@ export default function ConcretarApp() {
 
         {tab === "ordenes" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Órdenes de Compra</h2>
               <button onClick={() => setShowOcForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                 <Plus size={16} /> Nueva orden
@@ -8018,7 +8018,7 @@ export default function ConcretarApp() {
 
         {tab === "ingresos" && canVerFinanzas && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Ingresos</h2>
               <button onClick={() => setShowIngresoForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                 <Plus size={16} /> Cargar ingreso
@@ -8163,10 +8163,10 @@ export default function ConcretarApp() {
         )}
 
         {tab === "cuentas" && canVerFinanzas && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setShowProximos((v) => !v)}
                   className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
@@ -8364,7 +8364,7 @@ export default function ConcretarApp() {
 
             {showProximos && (
               <Panel title="Próximos pagos/ingresos" action={<button onClick={() => setShowProximos(false)}><X size={16} /></button>}>
-                <div className="space-y-5">
+                <div className="space-y-3">
                   <div>
                     <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">eCheqs pendientes</div>
                     {echeqsPendientes.length === 0 ? (
@@ -8374,7 +8374,7 @@ export default function ConcretarApp() {
                         {echeqsPendientes.map((c) => {
                           const dias = diasHasta(c.fechaPagoEcheq);
                           return (
-                            <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm">
+                            <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
                               <span className="font-medium text-slate-800">{c.proveedor}</span>
                               <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
                                 {fmtFecha(c.fechaPagoEcheq)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
@@ -8396,7 +8396,7 @@ export default function ConcretarApp() {
                         {cuentasCorrientesPorProveedor.map((g) => {
                           const dias = g.fechaVencimiento ? diasHasta(g.fechaVencimiento) : null;
                           return (
-                            <div key={g.proveedor} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm">
+                            <div key={g.proveedor} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
                               <span className="font-medium text-slate-800">{g.proveedor} <span className="font-normal text-slate-400">({g.cantidad} compra{g.cantidad > 1 ? "s" : ""})</span></span>
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-slate-500">Día de pago (de cada mes):</span>
@@ -8436,7 +8436,7 @@ export default function ConcretarApp() {
                           const fechaEstimada = i.fechaCobroEstimada || i.fecha;
                           const dias = diasHasta(fechaEstimada);
                           return (
-                            <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm">
+                            <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
                               <span className="font-medium text-slate-800">{i.concepto}</span>
                               <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
                                 {fmtFecha(fechaEstimada)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
@@ -8454,7 +8454,15 @@ export default function ConcretarApp() {
             )}
 
             <div>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Movimientos — {nombreMesCuentas(mesActualClave)}</h3>
+              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Balance por obra</h3>
+              <ResumenObrasCuentas items={resumenPorObra} />
+              <div className="mt-1.5 text-[11px] text-slate-400">
+                "Presup." sale del Excel de presupuesto importado en la obra (si no se importó ninguno, queda en "—"). "Gastado" y "Falta cobrar" son lo que ya se cargó en Gastos/Facturas e Ingresos de esa obra — no incluye mano de obra pagada por Personal/Cuadrillas. "Ganancia estimada" = Precio de obra − presupuestado (M.O. + Eq. y Mat.), no lo ya cobrado.
+              </div>
+            </div>
+
+            <div>
+              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Movimientos — {nombreMesCuentas(mesActualClave)}</h3>
               <TablaMovimientos items={movimientosMesActual} obras={obras} onEditar={(m) => setEditandoMovimiento({ origen: m.origen, origenId: m.origenId })} />
             </div>
 
@@ -8470,17 +8478,9 @@ export default function ConcretarApp() {
             ))}
 
             <div>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Balance por obra</h3>
-              <ResumenObrasCuentas items={resumenPorObra} />
-              <div className="mt-2 text-[11px] text-slate-400">
-                "Presup." sale del Excel de presupuesto importado en la obra (si no se importó ninguno, queda en "—"). "Gastado" y "Falta cobrar" son lo que ya se cargó en Gastos/Facturas e Ingresos de esa obra — no incluye mano de obra pagada por Personal/Cuadrillas. "Ganancia estimada" = Precio de obra − presupuestado (M.O. + Eq. y Mat.), no lo ya cobrado.
-              </div>
-            </div>
-
-            <div>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Préstamos</h3>
+              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Préstamos</h3>
               <TablaPrestamos items={prestamos} onMarcarDevuelto={marcarPrestamoDevuelto} />
-              <div className="mt-2 text-[11px] text-slate-400">
+              <div className="mt-1.5 text-[11px] text-slate-400">
                 El capital ya está sumado al saldo de la cuenta donde entró. El interés se calcula día a día a la tasa anual cargada y no afecta el saldo hasta que marcás el préstamo como devuelto — ahí se registra la salida de capital + interés acumulado.
               </div>
             </div>
@@ -8489,9 +8489,9 @@ export default function ConcretarApp() {
 
         {tab === "cobros_socios" && canVerFinanzas && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cobros Ricardo y Pablo</h2>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setShowCobroJuntosForm((v) => !v)}
                   className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
@@ -8703,7 +8703,7 @@ export default function ConcretarApp() {
 
             {vistaClientesProveedores === "clientes" && (
               <>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-500">El saldo es lo acordado en el presupuesto de sus obras menos lo que ya ingresó por esa obra.</div>
                   <button
                     onClick={() => {
@@ -8797,7 +8797,7 @@ export default function ConcretarApp() {
 
             {vistaClientesProveedores === "proveedores" && (
               <>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-500">Los talleres de reparación también se cargan acá — así aparecen como destino posible en los remitos de Herramientas. El saldo es lo facturado menos lo ya pagado.</div>
                   <button
                     onClick={() => {
