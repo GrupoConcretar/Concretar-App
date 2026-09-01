@@ -141,6 +141,7 @@ const FORMALIDADES = ["Blanco", "Negro"];
 const CUENTAS = ["Efectivo", "Banco", "Mercado Pago"];
 const FORMAS_PAGO = ["Banco", "Mercado Pago", "Efectivo", "Cuenta corriente", "eCheq"];
 const MEDIOS_BANCARIOS = ["Débito/Transferencia", "Crédito"];
+const TIPOS_FACTURA = ["Sin factura", "A", "B", "C"];
 
 // ============================================================
 // CONFIGURACIÓN DE SUPABASE
@@ -427,7 +428,7 @@ function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) 
 }
 // Tabla de movimientos de Cuentas (ingresos, egresos y pases entre cuentas),
 // reutilizada tanto para el mes actual como para cada mes anterior colapsado.
-function TablaMovimientos({ items, obras }) {
+function TablaMovimientos({ items, obras, onEditar }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay movimientos.</div>;
   }
@@ -452,7 +453,19 @@ function TablaMovimientos({ items, obras }) {
                 <span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span>
                 <span>{obra?.nombre || "General"}</span>
                 {m.estado && <Badge estado={m.estado} />}
+                {m.origen && (
+                  <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "border-amber-300 bg-amber-50 text-amber-700" : "border-emerald-300 bg-emerald-50 text-emerald-700"}`}>
+                    {(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "Sin factura" : `Factura ${m.tipoFactura}`}
+                  </span>
+                )}
               </div>
+              {m.origen && onEditar && (
+                <div className="mt-1.5 border-t border-stone-100 pt-1.5 text-right">
+                  <button onClick={() => onEditar(m)} className={btnGhost}>
+                    <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -465,7 +478,7 @@ function TablaMovimientos({ items, obras }) {
             <tr>
               <th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Tipo</th><th className="px-2 py-1.5">Obra</th>
               <th className="px-2 py-1.5">Detalle</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th>
-              <th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5">Estado</th>
+              <th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5"></th>
             </tr>
           </thead>
           <tbody>
@@ -485,6 +498,22 @@ function TablaMovimientos({ items, obras }) {
                   <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
                   <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
                   <td className="px-2 py-1">{m.estado && <Badge estado={m.estado} />}</td>
+                  <td className="px-2 py-1">
+                    {m.origen && (
+                      (!m.tipoFactura || m.tipoFactura === "Sin factura") ? (
+                        <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Sin factura</span>
+                      ) : (
+                        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Factura {m.tipoFactura}</span>
+                      )
+                    )}
+                  </td>
+                  <td className="px-2 py-1">
+                    {m.origen && onEditar && (
+                      <button onClick={() => onEditar(m)} className={btnGhost}>
+                        <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                      </button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -667,6 +696,151 @@ function TablaPrestamos({ items, onMarcarDevuelto }) {
         </table>
       </div>
     </>
+  );
+}
+
+// Modal para editar un gasto/factura o un cobro de socio ya cargado — accesible
+// desde su propia tabla y desde el ledger de Movimientos en Cuentas. Sirve sobre
+// todo para agregar la factura (tipo A/B/C, o el archivo) cuando al cargarlo
+// todavía no se tenía.
+function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, obras, onClose, onGuardarCompra, onGuardarCobro }) {
+  const registroInicial = editando.origen === "compras_facturas"
+    ? comprasFacturas.find((c) => c.id === editando.origenId)
+    : cobrosSocios.find((c) => c.id === editando.origenId);
+  const [form, setForm] = useState(registroInicial || {});
+  if (!registroInicial) return null;
+
+  function guardar(e) {
+    e.preventDefault();
+    if (editando.origen === "compras_facturas") {
+      onGuardarCompra(editando.origenId, {
+        obraId: form.obraId,
+        proveedor: form.proveedor,
+        categoria: form.categoria,
+        monto: Number(form.monto) || 0,
+        formalidad: form.formalidad,
+        tipoFactura: form.tipoFactura,
+        archivo: form.archivo,
+        nombreArchivo: form.nombreArchivo,
+        tipoArchivo: form.tipoArchivo,
+      });
+    } else {
+      onGuardarCobro(editando.origenId, {
+        socio: form.socio,
+        fecha: form.fecha,
+        monto: Number(form.monto) || 0,
+        cuenta: form.cuenta,
+        medioBancario: form.cuenta === "Banco" ? form.medioBancario : null,
+        formalidad: form.formalidad,
+        tipoFactura: form.tipoFactura,
+        archivo: form.archivo,
+        nombreArchivo: form.nombreArchivo,
+        tipoArchivo: form.tipoArchivo,
+        observaciones: form.observaciones,
+      });
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-900">{editando.origen === "compras_facturas" ? "Editar gasto / factura" : "Editar cobro"}</h3>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+        <form onSubmit={guardar} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {editando.origen === "compras_facturas" ? (
+            <>
+              <Field label="Obra">
+                <select value={form.obraId ?? ""} onChange={(e) => setForm((f) => ({ ...f, obraId: e.target.value ? Number(e.target.value) : null }))} className={inputCls}>
+                  <option value="">General (sin obra específica)</option>
+                  {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                </select>
+              </Field>
+              <Field label="Proveedor - Nombre de fantasía">
+                <input
+                  value={form.proveedor || ""}
+                  onChange={(e) => setForm((f) => ({ ...f, proveedor: e.target.value }))}
+                  required
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Categoría">
+                <select value={form.categoria} onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))} className={inputCls}>
+                  {CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </Field>
+              <Field label="Precio final ($)">
+                <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+              </Field>
+              <Field label="Formalidad">
+                <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+                  {FORMALIDADES.map((x) => <option key={x}>{x}</option>)}
+                </select>
+              </Field>
+              <Field label="Factura">
+                <select value={form.tipoFactura || "Sin factura"} onChange={(e) => setForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
+                  {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
+                </select>
+              </Field>
+              <div className="text-[11px] text-slate-400 md:col-span-2">La fecha, la forma de pago y la cuenta no se pueden cambiar acá porque afectan el estado de pago — para eso, cargá el gasto de nuevo.</div>
+            </>
+          ) : (
+            <>
+              <Field label="Socio">
+                <select value={form.socio} onChange={(e) => setForm((f) => ({ ...f, socio: e.target.value }))} className={inputCls}>
+                  {["Ricardo", "Pablo"].map((s) => <option key={s}>{s}</option>)}
+                </select>
+              </Field>
+              <Field label="Fecha">
+                <input type="date" value={form.fecha} onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+              </Field>
+              <Field label="Monto ($)">
+                <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+              </Field>
+              <Field label="Cuenta">
+                <select value={form.cuenta} onChange={(e) => setForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+                  {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </Field>
+              {form.cuenta === "Banco" && (
+                <Field label="Medio">
+                  <select value={form.medioBancario || "Transferencia"} onChange={(e) => setForm((f) => ({ ...f, medioBancario: e.target.value }))} className={inputCls}>
+                    <option value="Transferencia">Transferencia</option>
+                    <option value="eCheq">eCheq</option>
+                  </select>
+                </Field>
+              )}
+              <Field label="Formalidad">
+                <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+                  {FORMALIDADES.map((x) => <option key={x}>{x}</option>)}
+                </select>
+              </Field>
+              <Field label="Factura">
+                <select value={form.tipoFactura || "Sin factura"} onChange={(e) => setForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
+                  {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
+                </select>
+              </Field>
+              <Field label="Observaciones">
+                <input value={form.observaciones || ""} onChange={(e) => setForm((f) => ({ ...f, observaciones: e.target.value }))} className={inputCls} />
+              </Field>
+            </>
+          )}
+          <div className="md:col-span-2">
+            <ArchivoInput
+              label="Factura / comprobante (PDF o foto)"
+              value={form.archivo}
+              nombreArchivo={form.nombreArchivo}
+              onChange={(archivo, nombreArchivo, tipoArchivo) => setForm((f) => ({ ...f, archivo, nombreArchivo, tipoArchivo }))}
+            />
+          </div>
+          <div className="flex gap-2 md:col-span-2">
+            <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
+            <button type="button" onClick={onClose} className={btnGhost}>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
@@ -1887,6 +2061,9 @@ export default function ConcretarApp() {
   const [facturaFormaPago, setFacturaFormaPago] = useState("Efectivo");
   const [facturaMedioBancario, setFacturaMedioBancario] = useState("Débito/Transferencia");
   const [facturaPlazoEcheq, setFacturaPlazoEcheq] = useState("30");
+  const [facturaArchivo, setFacturaArchivo] = useState(null);
+  const [facturaNombreArchivo, setFacturaNombreArchivo] = useState(null);
+  const [facturaTipoArchivo, setFacturaTipoArchivo] = useState(null);
   // ---------- PDF mensual para el contador (Gastos y Facturas + Cobros de socios) ----------
   const [mesReporteContador, setMesReporteContador] = useState(hoyISO().slice(0, 7));
   function generarPdfContadores() {
@@ -2509,7 +2686,7 @@ export default function ConcretarApp() {
 
   // ---------- Cobros Ricardo y Pablo (retiros de los socios) ----------
   const SOCIOS = ["Ricardo", "Pablo"];
-  const emptyCobroSocioForm = { fecha: hoyISO(), socio: SOCIOS[0], monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", formalidad: FORMALIDADES[0], archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" };
+  const emptyCobroSocioForm = { fecha: hoyISO(), socio: SOCIOS[0], monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", formalidad: FORMALIDADES[0], tipoFactura: "Sin factura", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" };
   const [cobroSocioForm, setCobroSocioForm] = useState(emptyCobroSocioForm);
   const [showCobroSocioForm, setShowCobroSocioForm] = useState(false);
   const [filtroSocio, setFiltroSocio] = useState("Todos");
@@ -2532,7 +2709,7 @@ export default function ConcretarApp() {
 
   // "Registrar juntos": carga un solo total y lo parte a la mitad para cada socio,
   // pero queda guardado como dos cobros separados (uno por socio) en el historial.
-  const emptyCobroJuntosForm = { fecha: hoyISO(), monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", formalidad: FORMALIDADES[0], archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" };
+  const emptyCobroJuntosForm = { fecha: hoyISO(), monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", formalidad: FORMALIDADES[0], tipoFactura: "Sin factura", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" };
   const [cobroJuntosForm, setCobroJuntosForm] = useState(emptyCobroJuntosForm);
   const [showCobroJuntosForm, setShowCobroJuntosForm] = useState(false);
   async function submitCobroJuntosForm(e) {
@@ -2545,6 +2722,7 @@ export default function ConcretarApp() {
       cuenta: cobroJuntosForm.cuenta,
       medioBancario: cobroJuntosForm.cuenta === "Banco" ? cobroJuntosForm.medioBancario : null,
       formalidad: cobroJuntosForm.formalidad,
+      tipoFactura: cobroJuntosForm.tipoFactura,
       archivo: cobroJuntosForm.archivo,
       nombreArchivo: cobroJuntosForm.nombreArchivo,
       tipoArchivo: cobroJuntosForm.tipoArchivo,
@@ -2557,6 +2735,18 @@ export default function ConcretarApp() {
     setShowCobroJuntosForm(false);
   }
 
+  // Editar un gasto o un cobro de socio ya cargado (ej: para agregarle la factura
+  // cuando todavía no la tenías al momento de cargarlo) — accesible tanto desde su
+  // propia tabla como desde el ledger de Movimientos en Cuentas.
+  const [editandoMovimiento, setEditandoMovimiento] = useState(null);
+  function guardarEdicionCompra(id, patch) {
+    updateRecord("compras_facturas", id, patch, setComprasFacturas);
+    setEditandoMovimiento(null);
+  }
+  function guardarEdicionCobro(id, patch) {
+    updateRecord("cobros_socios", id, patch, setCobrosSocios);
+    setEditandoMovimiento(null);
+  }
   const [showMovimientoForm, setShowMovimientoForm] = useState(false);
   // Un movimiento por cada ingreso (+), compra/factura (-) y cada lado de una
   // transferencia manual (- en origen, + en destino); sumados por cuenta y
@@ -2567,6 +2757,7 @@ export default function ConcretarApp() {
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
       id: `egr-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
+      origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura,
     })),
     ...movimientosManual.flatMap((m) => [
       { id: `man-${m.id}-sale`, fecha: m.fecha, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, formalidad: m.formalidad, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null },
@@ -2580,6 +2771,7 @@ export default function ConcretarApp() {
     })),
     ...cobrosSocios.map((c) => ({
       id: `cobro-socio-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: null, detalle: `Cobro — ${c.socio}`, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: "Pagada",
+      origen: "cobros_socios", origenId: c.id, tipoFactura: c.tipoFactura,
     })),
   ].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
 
@@ -7659,6 +7851,7 @@ export default function ConcretarApp() {
                       categoria: f.get("categoria"),
                       monto: Number(f.get("monto")) || 0,
                       comprobante: "",
+                      tipoFactura: f.get("tipoFactura"),
                       formalidad: f.get("formalidad"),
                       formaPago,
                       medioBancario,
@@ -7668,11 +7861,17 @@ export default function ConcretarApp() {
                       // El eCheq se cobra a través del banco, por eso cuenta a la balanza de Banco.
                       cuenta: formaPago === "Cuenta corriente" ? null : formaPago === "eCheq" ? "Banco" : formaPago,
                       estado: (formaPago === "eCheq" || formaPago === "Cuenta corriente") ? "Pendiente" : "Pagada",
+                      archivo: facturaArchivo,
+                      nombreArchivo: facturaNombreArchivo,
+                      tipoArchivo: facturaTipoArchivo,
                     }, setComprasFacturas);
                     e.target.reset();
                     setFacturaFormaPago("Efectivo");
                     setFacturaMedioBancario("Débito/Transferencia");
                     setFacturaPlazoEcheq("30");
+                    setFacturaArchivo(null);
+                    setFacturaNombreArchivo(null);
+                    setFacturaTipoArchivo(null);
                     setShowFacturaForm(false);
                   }}
                 >
@@ -7695,6 +7894,9 @@ export default function ConcretarApp() {
                   </Field>
                   <Field label="Formalidad">
                     <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
+                  </Field>
+                  <Field label="Factura">
+                    <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
                   </Field>
                   <Field label="Forma de pago">
                     <select name="formaPago" value={facturaFormaPago} onChange={(e) => setFacturaFormaPago(e.target.value)} className={inputCls}>
@@ -7734,6 +7936,14 @@ export default function ConcretarApp() {
                   {facturaFormaPago === "Cuenta corriente" && (
                     <div className="flex items-center text-[11px] text-slate-400">Queda "Pendiente" hasta que la paguemos — ahí la marcás como "Pagada" desde la tabla.</div>
                   )}
+                  <div className="md:col-span-2">
+                    <ArchivoInput
+                      label="Factura / comprobante (opcional acá, se puede agregar después)"
+                      value={facturaArchivo}
+                      nombreArchivo={facturaNombreArchivo}
+                      onChange={(archivo, nombreArchivo, tipoArchivo) => { setFacturaArchivo(archivo); setFacturaNombreArchivo(nombreArchivo); setFacturaTipoArchivo(tipoArchivo); }}
+                    />
+                  </div>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
               </Panel>
@@ -7742,7 +7952,7 @@ export default function ConcretarApp() {
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Proveedor</th><th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Forma de pago</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Proveedor</th><th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Forma de pago</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
                 </thead>
                 <tbody>
                   {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
@@ -7760,12 +7970,24 @@ export default function ConcretarApp() {
                             <div className="text-[10px] text-slate-400">Cobra el {fmtFecha(c.fechaPagoEcheq)}</div>
                           )}
                         </td>
+                        <td className="px-2 py-1">
+                          {(!c.tipoFactura || c.tipoFactura === "Sin factura") ? (
+                            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Sin factura</span>
+                          ) : (
+                            <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Factura {c.tipoFactura}</span>
+                          )}
+                        </td>
                         <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</td>
                         <td className="px-2 py-1"><Badge estado={c.estado} /></td>
                         <td className="px-2 py-1">
-                          {c.estado === "Pendiente" && (
-                            <button onClick={() => marcarFacturaPagada(c)} className={btnGhost}>Marcar pagada</button>
-                          )}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {c.estado === "Pendiente" && (
+                              <button onClick={() => marcarFacturaPagada(c)} className={btnGhost}>Marcar pagada</button>
+                            )}
+                            <button onClick={() => setEditandoMovimiento({ origen: "compras_facturas", origenId: c.id })} className={btnGhost}>
+                              <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -8223,7 +8445,7 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Movimientos — {nombreMesCuentas(mesActualClave)}</h3>
-              <TablaMovimientos items={movimientosMesActual} obras={obras} />
+              <TablaMovimientos items={movimientosMesActual} obras={obras} onEditar={(m) => setEditandoMovimiento({ origen: m.origen, origenId: m.origenId })} />
             </div>
 
             {gruposMovimientosAnteriores.map((g) => (
@@ -8232,7 +8454,7 @@ export default function ConcretarApp() {
                   {nombreMesCuentas(g.clave)} <span className="font-normal text-slate-400">({g.items.length})</span>
                 </summary>
                 <div className="border-t border-stone-100 p-3">
-                  <TablaMovimientos items={g.items} obras={obras} />
+                  <TablaMovimientos items={g.items} obras={obras} onEditar={(m) => setEditandoMovimiento({ origen: m.origen, origenId: m.origenId })} />
                 </div>
               </details>
             ))}
@@ -8315,6 +8537,11 @@ export default function ConcretarApp() {
                       {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
                     </select>
                   </Field>
+                  <Field label="Factura">
+                    <select value={cobroJuntosForm.tipoFactura} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
+                      {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </Field>
                   <Field label="Observaciones">
                     <input value={cobroJuntosForm.observaciones} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, observaciones: e.target.value }))} placeholder="Opcional" className={inputCls} />
                   </Field>
@@ -8363,6 +8590,11 @@ export default function ConcretarApp() {
                       {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
                     </select>
                   </Field>
+                  <Field label="Factura">
+                    <select value={cobroSocioForm.tipoFactura} onChange={(e) => setCobroSocioForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
+                      {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                  </Field>
                   <Field label="Observaciones">
                     <input value={cobroSocioForm.observaciones} onChange={(e) => setCobroSocioForm((f) => ({ ...f, observaciones: e.target.value }))} placeholder="Opcional" className={inputCls} />
                   </Field>
@@ -8402,8 +8634,18 @@ export default function ConcretarApp() {
                         <span className="font-semibold text-slate-900">{c.socio}</span>
                         <span className="text-xs text-slate-500">{fmtFecha(c.fecha)}</span>
                         <Badge estado={c.formalidad || "Blanco"} />
+                        {(!c.tipoFactura || c.tipoFactura === "Sin factura") ? (
+                          <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Sin factura</span>
+                        ) : (
+                          <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Factura {c.tipoFactura}</span>
+                        )}
                       </div>
-                      <span className="font-mono text-base font-bold text-rose-600">{fmtARS(c.monto)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-base font-bold text-rose-600">{fmtARS(c.monto)}</span>
+                        <button onClick={() => setEditandoMovimiento({ origen: "cobros_socios", origenId: c.id })} className={btnGhost}>
+                          <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                        </button>
+                      </div>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                       <span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta} />{c.cuenta}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
@@ -8768,6 +9010,19 @@ export default function ConcretarApp() {
         )}
 
       </main>
+
+      {editandoMovimiento && (
+        <ModalEditarMovimiento
+          key={`${editandoMovimiento.origen}-${editandoMovimiento.origenId}`}
+          editando={editandoMovimiento}
+          comprasFacturas={comprasFacturas}
+          cobrosSocios={cobrosSocios}
+          obras={obras}
+          onClose={() => setEditandoMovimiento(null)}
+          onGuardarCompra={guardarEdicionCompra}
+          onGuardarCobro={guardarEdicionCobro}
+        />
+      )}
     </div>
   );
 }
