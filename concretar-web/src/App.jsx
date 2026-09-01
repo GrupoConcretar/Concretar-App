@@ -2708,28 +2708,38 @@ export default function ConcretarApp() {
     .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
 
   // "Registrar juntos": carga un solo total y lo parte a la mitad para cada socio,
-  // pero queda guardado como dos cobros separados (uno por socio) en el historial.
-  const emptyCobroJuntosForm = { fecha: hoyISO(), monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", formalidad: FORMALIDADES[0], tipoFactura: "Sin factura", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" };
+  // pero queda guardado como dos cobros separados (uno por socio) en el historial —
+  // y cada uno con SU PROPIA factura, porque aunque sea un solo retiro conjunto,
+  // cada socio le factura a Concretar por separado.
+  const emptyFacturaSocio = { tipoFactura: "Sin factura", archivo: null, nombreArchivo: null, tipoArchivo: null };
+  const emptyCobroJuntosForm = {
+    fecha: hoyISO(), monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", formalidad: FORMALIDADES[0], observaciones: "",
+    facturas: { Ricardo: { ...emptyFacturaSocio }, Pablo: { ...emptyFacturaSocio } },
+  };
   const [cobroJuntosForm, setCobroJuntosForm] = useState(emptyCobroJuntosForm);
   const [showCobroJuntosForm, setShowCobroJuntosForm] = useState(false);
+  function setFacturaSocioJuntos(socio, patch) {
+    setCobroJuntosForm((f) => ({ ...f, facturas: { ...f.facturas, [socio]: { ...f.facturas[socio], ...patch } } }));
+  }
   async function submitCobroJuntosForm(e) {
     e.preventDefault();
     const total = Number(cobroJuntosForm.monto) || 0;
     const mitad = total / 2;
-    const base = {
-      fecha: cobroJuntosForm.fecha,
-      monto: mitad,
-      cuenta: cobroJuntosForm.cuenta,
-      medioBancario: cobroJuntosForm.cuenta === "Banco" ? cobroJuntosForm.medioBancario : null,
-      formalidad: cobroJuntosForm.formalidad,
-      tipoFactura: cobroJuntosForm.tipoFactura,
-      archivo: cobroJuntosForm.archivo,
-      nombreArchivo: cobroJuntosForm.nombreArchivo,
-      tipoArchivo: cobroJuntosForm.tipoArchivo,
-      observaciones: cobroJuntosForm.observaciones,
-    };
     for (const socio of SOCIOS) {
-      await addRecord("cobros_socios", { ...base, socio }, setCobrosSocios);
+      const factura = cobroJuntosForm.facturas[socio];
+      await addRecord("cobros_socios", {
+        fecha: cobroJuntosForm.fecha,
+        monto: mitad,
+        cuenta: cobroJuntosForm.cuenta,
+        medioBancario: cobroJuntosForm.cuenta === "Banco" ? cobroJuntosForm.medioBancario : null,
+        formalidad: cobroJuntosForm.formalidad,
+        observaciones: cobroJuntosForm.observaciones,
+        socio,
+        tipoFactura: factura.tipoFactura,
+        archivo: factura.archivo,
+        nombreArchivo: factura.nombreArchivo,
+        tipoArchivo: factura.tipoArchivo,
+      }, setCobrosSocios);
     }
     setCobroJuntosForm(emptyCobroJuntosForm);
     setShowCobroJuntosForm(false);
@@ -8508,7 +8518,7 @@ export default function ConcretarApp() {
 
             {showCobroJuntosForm && (
               <Panel title="Registrar cobro conjunto (mitad y mitad)" action={<button onClick={() => setShowCobroJuntosForm(false)}><X size={16} /></button>}>
-                <div className="mb-3 text-xs text-slate-500">Cargás el total y se guarda como dos cobros separados en el historial, uno para Ricardo y otro para Pablo, cada uno por la mitad.</div>
+                <div className="mb-3 text-xs text-slate-500">Cargás el total y se guarda como dos cobros separados en el historial, uno para Ricardo y otro para Pablo, cada uno por la mitad — y cada uno con su propia factura a nombre de Concretar.</div>
                 <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitCobroJuntosForm}>
                   <Field label="Fecha">
                     <input type="date" value={cobroJuntosForm.fecha} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
@@ -8537,21 +8547,30 @@ export default function ConcretarApp() {
                       {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
                     </select>
                   </Field>
-                  <Field label="Factura">
-                    <select value={cobroJuntosForm.tipoFactura} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
-                      {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
-                    </select>
-                  </Field>
                   <Field label="Observaciones">
                     <input value={cobroJuntosForm.observaciones} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, observaciones: e.target.value }))} placeholder="Opcional" className={inputCls} />
                   </Field>
-                  <div className="md:col-span-2">
-                    <ArchivoInput
-                      label="Factura / comprobante (PDF o foto)"
-                      value={cobroJuntosForm.archivo}
-                      nombreArchivo={cobroJuntosForm.nombreArchivo}
-                      onChange={(archivo, nombreArchivo, tipoArchivo) => setCobroJuntosForm((f) => ({ ...f, archivo, nombreArchivo, tipoArchivo }))}
-                    />
+                  <div className="md:col-span-3 grid grid-cols-1 gap-4 rounded-md border border-dashed border-stone-300 p-3 sm:grid-cols-2">
+                    {SOCIOS.map((socio) => (
+                      <div key={socio} className="space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Factura de {socio}</div>
+                        <Field label="Tipo de factura">
+                          <select
+                            value={cobroJuntosForm.facturas[socio].tipoFactura}
+                            onChange={(e) => setFacturaSocioJuntos(socio, { tipoFactura: e.target.value })}
+                            className={inputCls}
+                          >
+                            {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
+                          </select>
+                        </Field>
+                        <ArchivoInput
+                          label={`Factura / comprobante de ${socio} (PDF o foto)`}
+                          value={cobroJuntosForm.facturas[socio].archivo}
+                          nombreArchivo={cobroJuntosForm.facturas[socio].nombreArchivo}
+                          onChange={(archivo, nombreArchivo, tipoArchivo) => setFacturaSocioJuntos(socio, { archivo, nombreArchivo, tipoArchivo })}
+                        />
+                      </div>
+                    ))}
                   </div>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
