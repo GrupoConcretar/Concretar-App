@@ -434,7 +434,7 @@ function TablaMovimientos({ items, obras }) {
                 </span>
                 <Badge estado={m.formalidad || "Blanco"} />
                 <span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span>
-                {obra?.nombre && <span>{obra.nombre}</span>}
+                <span>{obra?.nombre || "General"}</span>
                 {m.estado && <Badge estado={m.estado} />}
               </div>
             </div>
@@ -463,7 +463,7 @@ function TablaMovimientos({ items, obras }) {
                       {m.tipo}
                     </span>
                   </td>
-                  <td className="px-2 py-1 text-slate-600">{obra?.nombre || "—"}</td>
+                  <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
                   <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
                   <td className="px-2 py-1"><Badge estado={m.formalidad || "Blanco"} /></td>
                   <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
@@ -7139,7 +7139,7 @@ export default function ConcretarApp() {
                     const fechaPagoEcheq = formaPago === "eCheq" ? f.get("fechaPagoEcheq") : null;
                     addRecord("compras_facturas", {
                       fecha: f.get("fecha"),
-                      obraId: Number(f.get("obraId")),
+                      obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
                       ordenCompraId: null,
                       proveedor: f.get("proveedor"),
                       categoria: f.get("categoria"),
@@ -7164,7 +7164,10 @@ export default function ConcretarApp() {
                 >
                   <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
                   <Field label="Obra">
-                    <select name="obraId" className={inputCls}>{obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
+                    <select name="obraId" className={inputCls}>
+                      <option value="">General (sin obra específica)</option>
+                      {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                    </select>
                   </Field>
                   <Field label="Proveedor - Nombre de fantasía">
                     <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} />
@@ -7233,7 +7236,7 @@ export default function ConcretarApp() {
                     return (
                       <tr key={c.id} className="border-t border-stone-100">
                         <td className="px-2 py-1 text-slate-600">{fmtFecha(c.fecha)}</td>
-                        <td className="px-2 py-1 text-slate-600">{obra?.nombre}</td>
+                        <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
                         <td className="px-2 py-1 font-medium text-slate-900">{c.proveedor}</td>
                         <td className="px-2 py-1 text-slate-600">{c.categoria}</td>
                         <td className="px-2 py-1"><Badge estado={c.formalidad || "Blanco"} /></td>
@@ -7289,7 +7292,7 @@ export default function ConcretarApp() {
                     const f = new FormData(e.target);
                     addRecord("ingresos", {
                       fecha: f.get("fecha"),
-                      obraId: Number(f.get("obraId")),
+                      obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
                       concepto: f.get("concepto"),
                       monto: Number(f.get("monto")) || 0,
                       formalidad: f.get("formalidad"),
@@ -7307,7 +7310,10 @@ export default function ConcretarApp() {
                 >
                   <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
                   <Field label="Obra">
-                    <select name="obraId" className={inputCls}>{obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
+                    <select name="obraId" className={inputCls}>
+                      <option value="">General (sin obra específica)</option>
+                      {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                    </select>
                   </Field>
                   <Field label="Concepto"><input name="concepto" required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
                   <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
@@ -7352,7 +7358,7 @@ export default function ConcretarApp() {
                     return (
                       <tr key={i.id} className="border-t border-stone-100">
                         <td className="px-2 py-1 text-slate-600">{fmtFecha(i.fecha)}</td>
-                        <td className="px-2 py-1 text-slate-600">{obra?.nombre}</td>
+                        <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
                         <td className="px-2 py-1 font-medium text-slate-900">{i.concepto}</td>
                         <td className="px-2 py-1"><Badge estado={i.formalidad || "Blanco"} /></td>
                         <td className="px-2 py-1 text-slate-600">
