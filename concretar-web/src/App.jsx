@@ -1876,6 +1876,84 @@ export default function ConcretarApp() {
   const [facturaFormaPago, setFacturaFormaPago] = useState("Efectivo");
   const [facturaMedioBancario, setFacturaMedioBancario] = useState("Débito/Transferencia");
   const [facturaPlazoEcheq, setFacturaPlazoEcheq] = useState("30");
+  // ---------- PDF mensual para el contador (Gastos y Facturas + Cobros de socios) ----------
+  const [mesReporteContador, setMesReporteContador] = useState(hoyISO().slice(0, 7));
+  function generarPdfContadores() {
+    const gastosDelMes = comprasFacturas
+      .filter((c) => c.fecha?.slice(0, 7) === mesReporteContador && !obraIdsPapelera.has(c.obraId))
+      .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+    const cobrosDelMes = cobrosSocios
+      .filter((c) => c.fecha?.slice(0, 7) === mesReporteContador)
+      .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+
+    if (gastosDelMes.length === 0 && cobrosDelMes.length === 0) {
+      alert("No hay gastos ni cobros cargados en ese mes.");
+      return;
+    }
+
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    doc.setFillColor(2, 29, 52);
+    doc.rect(0, 0, 210, 28, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.text("COMPROBANTES PARA EL CONTADOR", 14, 14);
+    doc.setFontSize(10);
+    doc.text(nombreMesCuentas(mesReporteContador), 14, 21);
+    doc.setTextColor(20, 20, 20);
+
+    let y = 36;
+    const totalGastos = gastosDelMes.reduce((s, c) => s + (c.monto || 0), 0);
+    if (gastosDelMes.length > 0) {
+      doc.setFontSize(12);
+      doc.text("Gastos y Facturas", 14, y);
+      autoTable(doc, {
+        startY: y + 4,
+        head: [["Fecha", "Proveedor", "Categoría", "Obra", "Forma de pago", "Formalidad", "Monto", "Estado"]],
+        body: gastosDelMes.map((c) => {
+          const obra = obras.find((o) => o.id === c.obraId);
+          return [
+            fmtFecha(c.fecha), c.proveedor, c.categoria, obra?.nombre || "General",
+            (c.formaPago || "—") + (c.medioBancario ? ` (${c.medioBancario})` : ""),
+            c.formalidad, fmtARS(c.monto), c.estado,
+          ];
+        }),
+        foot: [["", "", "", "", "", "TOTAL", fmtARS(totalGastos), ""]],
+        headStyles: { fillColor: [2, 29, 52] },
+        footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
+        styles: { fontSize: 8 },
+      });
+      y = (doc.lastAutoTable.finalY || y) + 12;
+    }
+
+    const totalCobros = cobrosDelMes.reduce((s, c) => s + (c.monto || 0), 0);
+    if (cobrosDelMes.length > 0) {
+      doc.setFontSize(12);
+      doc.text("Cobros Ricardo y Pablo", 14, y);
+      autoTable(doc, {
+        startY: y + 4,
+        head: [["Fecha", "Socio", "Cuenta", "Formalidad", "Monto", "Comprobante", "Observaciones"]],
+        body: cobrosDelMes.map((c) => [
+          fmtFecha(c.fecha), c.socio, c.cuenta + (c.medioBancario ? ` (${c.medioBancario})` : ""),
+          c.formalidad, fmtARS(c.monto), c.archivo ? "Sí" : "No", c.observaciones || "",
+        ]),
+        foot: [["", "", "", "TOTAL", fmtARS(totalCobros), "", ""]],
+        headStyles: { fillColor: [2, 29, 52] },
+        footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
+        styles: { fontSize: 8 },
+      });
+      y = doc.lastAutoTable.finalY || y;
+    }
+
+    doc.setFontSize(10);
+    doc.setFont(undefined, "bold");
+    doc.text(`Total egresos del mes: ${fmtARS(totalGastos + totalCobros)}`, 14, y + 10);
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text("Generado desde Concretar App — Gastos y Facturas.", 14, y + 18);
+
+    doc.save(`Comprobantes_${mesReporteContador}.pdf`);
+  }
   const [showIngresoForm, setShowIngresoForm] = useState(false);
   const [ingresoCuenta, setIngresoCuenta] = useState(CUENTAS[0]);
   const [ingresoMedioBancario, setIngresoMedioBancario] = useState("Transferencia");
@@ -7503,11 +7581,22 @@ export default function ConcretarApp() {
 
         {tab === "facturas" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Gastos y Facturas</h2>
-              <button onClick={() => setShowFacturaForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
-                <Plus size={16} /> Cargar gasto
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="month"
+                  value={mesReporteContador}
+                  onChange={(e) => setMesReporteContador(e.target.value)}
+                  className="rounded-md border border-stone-300 px-2 py-2 text-sm"
+                />
+                <button onClick={generarPdfContadores} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
+                  <FileDown size={16} /> PDF para el contador
+                </button>
+                <button onClick={() => setShowFacturaForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                  <Plus size={16} /> Cargar gasto
+                </button>
+              </div>
             </div>
 
             {showFacturaForm && (
