@@ -852,14 +852,14 @@ function PctField({ label, value, onSave, suffix = "%", confirmar = false }) {
   useEffect(() => setV(value ?? 0), [value]);
   return (
     <Field label={confirmar ? `${label} (a confirmar)` : label}>
-      <div className="flex items-center gap-1">
+      <div className="flex w-full items-center gap-1">
         <input
           type="number" step="0.01" value={v}
           onChange={(e) => setV(e.target.value)}
           onBlur={() => onSave(Number(v) || 0)}
-          className={`${inputCls} text-right`}
+          className={`${inputCls} w-full min-w-0 text-right`}
         />
-        <span className="text-xs text-slate-400">{suffix}</span>
+        <span className="shrink-0 text-xs text-slate-400">{suffix}</span>
       </div>
     </Field>
   );
@@ -5885,7 +5885,7 @@ export default function ConcretarApp() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                       <PctField label="Presentismo" value={cfgLiq.presentismoPct} onSave={(v) => actualizarConfigLiquidacion("presentismoPct", v)} />
                       <PctField label="Aporte jubilación (trabajador)" value={cfgLiq.aporteJubilacionPct} onSave={(v) => actualizarConfigLiquidacion("aporteJubilacionPct", v)} />
                       <PctField label="Aporte obra social (trabajador)" value={cfgLiq.aporteObraSocialPct} onSave={(v) => actualizarConfigLiquidacion("aporteObraSocialPct", v)} />
@@ -5897,7 +5897,7 @@ export default function ConcretarApp() {
                       <PctField label="Fondo de Cese Laboral — 1er año (referencia)" value={cfgLiq.fondoCesePrimerAnioPct} onSave={(v) => actualizarConfigLiquidacion("fondoCesePrimerAnioPct", v)} />
                       <PctField label="Fondo de Cese Laboral — después (usado)" value={cfgLiq.fondoCesePosteriorPct} onSave={(v) => actualizarConfigLiquidacion("fondoCesePosteriorPct", v)} />
                       <Field label="IERIC (a confirmar)">
-                        <MoneyInput className={inputCls} value={cfgLiq.iericMontoFijo ?? 0} onBlur={(v) => actualizarConfigLiquidacion("iericMontoFijo", v)} />
+                        <MoneyInput className={`${inputCls} w-full`} value={cfgLiq.iericMontoFijo ?? 0} onBlur={(v) => actualizarConfigLiquidacion("iericMontoFijo", v)} />
                       </Field>
                     </div>
                   </Panel>
