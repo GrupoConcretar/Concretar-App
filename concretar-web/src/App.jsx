@@ -494,6 +494,86 @@ function TablaMovimientos({ items, obras }) {
     </>
   );
 }
+
+// Resumen de balance por obra en Cuentas: una fila por obra en curso, con lo
+// presupuestado (si se importó el Excel de presupuesto), lo cobrado/gastado
+// real y la ganancia estimada. Las filas salen solas de "obras" — no hay nada
+// hardcodeado, así que a medida que se cargan obras esto se va completando.
+function ResumenObrasCuentas({ items }) {
+  if (items.length === 0) {
+    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay obras cargadas.</div>;
+  }
+  const celda = (v) => (v === null || v === undefined ? "—" : fmtARS(v));
+  return (
+    <>
+      {/* Celular: una tarjeta por obra. */}
+      <div className="space-y-2 sm:hidden">
+        {items.map((r) => (
+          <div key={r.obra.id} className="rounded-lg border border-stone-200 bg-white p-3 text-xs shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-slate-900">{r.obra.nombre}</span>
+              <Badge estado={r.obra.estado} />
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Precio de obra</div><div className="font-mono font-semibold text-slate-800">{celda(r.precioObra)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Falta cobrar</div><div className="font-mono font-semibold text-slate-800">{celda(r.faltaCobrar)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Presup. M.O.</div><div className="font-mono text-slate-700">{celda(r.presupuestadoManoObra)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Presup. Eq. y Mat.</div><div className="font-mono text-slate-700">{celda(r.presupuestadoEqYMat)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Gastado</div><div className="font-mono text-slate-700">{celda(r.gastado)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Disponible Eq. y Mat.</div><div className={`font-mono font-semibold ${r.disponibleEqYMat !== null && r.disponibleEqYMat < 0 ? "text-rose-600" : "text-slate-800"}`}>{celda(r.disponibleEqYMat)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Ganancia estimada</div><div className={`font-mono font-semibold ${r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.gananciaEstimada)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">% Ganancia</div><div className="font-mono text-slate-700">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Dinero en caja</div><div className={`font-mono font-semibold ${r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.dineroEnCaja)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Inicio / Final est.</div><div className="text-slate-700">{fmtFecha(r.inicio)} — {fmtFecha(r.finEstimado)}</div></div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tablet/PC: tabla completa. */}
+      <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:block">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-2 py-1.5">Obra</th>
+              <th className="px-2 py-1.5 text-right">Precio de obra</th>
+              <th className="px-2 py-1.5 text-right">Falta cobrar</th>
+              <th className="px-2 py-1.5 text-right">Presup. M.O.</th>
+              <th className="px-2 py-1.5 text-right">Presup. Eq. y Mat.</th>
+              <th className="px-2 py-1.5 text-right">Gastado</th>
+              <th className="px-2 py-1.5 text-right">Disponible Eq. y Mat.</th>
+              <th className="px-2 py-1.5 text-right">Ganancia estimada</th>
+              <th className="px-2 py-1.5 text-right">% Ganancia</th>
+              <th className="px-2 py-1.5 text-right">Dinero en caja</th>
+              <th className="px-2 py-1.5">Inicio</th>
+              <th className="px-2 py-1.5">Final estimado</th>
+              <th className="px-2 py-1.5">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((r) => (
+              <tr key={r.obra.id} className="border-t border-stone-100">
+                <td className="px-2 py-1 font-medium text-slate-900">{r.obra.nombre}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.precioObra)}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.faltaCobrar)}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.presupuestadoManoObra)}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.presupuestadoEqYMat)}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.gastado)}</td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${r.disponibleEqYMat !== null && r.disponibleEqYMat < 0 ? "text-rose-600" : "text-slate-800"}`}>{celda(r.disponibleEqYMat)}</td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.gananciaEstimada)}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.dineroEnCaja)}</td>
+                <td className="px-2 py-1 text-slate-600">{fmtFecha(r.inicio)}</td>
+                <td className="px-2 py-1 text-slate-600">{fmtFecha(r.finEstimado)}</td>
+                <td className="px-2 py-1"><Badge estado={r.obra.estado} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
 
 // Campo numérico (admite decimales) que solo guarda al perder el foco — para
@@ -2222,6 +2302,49 @@ export default function ConcretarApp() {
   }
   const movimientosMesActual = gruposMovimientos.find((g) => g.clave === mesActualClave)?.items || [];
   const gruposMovimientosAnteriores = gruposMovimientos.filter((g) => g.clave !== mesActualClave);
+
+  // ---------- Resumen por obra (balance de cada obra en curso) ----------
+  // Sale de lo que ya tenemos cargado: precio acordado (obra.presupuesto), lo
+  // presupuestado por rubro si se importó un Excel de presupuesto (presupuestoGeneral),
+  // y lo efectivamente cobrado/gastado según Ingresos y Compras/Facturas de esa obra.
+  // La mano de obra pagada informalmente (asistencia/liquidaciones) no está incluida en
+  // "Gastado" — sólo lo que pasó por Compras y Facturas.
+  function fechaFinEstimada(obra) {
+    if (!obra.inicio || !obra.meses) return null;
+    const [y, m, d] = obra.inicio.split("-").map(Number);
+    const fecha = new Date(y, m - 1 + obra.meses, d);
+    const mm = String(fecha.getMonth() + 1).padStart(2, "0");
+    const dd = String(fecha.getDate()).padStart(2, "0");
+    return `${fecha.getFullYear()}-${mm}-${dd}`;
+  }
+  const resumenPorObra = obras
+    .filter((o) => o.estado !== "Papelera")
+    .map((o) => {
+      const pg = presupuestoGeneral.find((p) => p.obraId === o.id);
+      const presupuestadoManoObra = pg?.totalManoObra ?? null;
+      const presupuestadoEqYMat = pg ? (pg.totalEquipos || 0) + (pg.totalMateriales || 0) + (pg.totalHerramientas || 0) : null;
+      const precioObra = o.presupuesto || pg?.precioTotalConIva || 0;
+      const cobrado = ingresos.filter((i) => i.obraId === o.id && i.estado !== "Pendiente").reduce((s, i) => s + (i.monto || 0), 0);
+      const gastado = comprasFacturas.filter((c) => c.obraId === o.id).reduce((s, c) => s + (c.monto || 0), 0);
+      const disponibleEqYMat = presupuestadoEqYMat !== null ? presupuestadoEqYMat - gastado : null;
+      const costoPresupuestado = pg ? presupuestadoManoObra + presupuestadoEqYMat : null;
+      const gananciaEstimada = costoPresupuestado !== null ? precioObra - costoPresupuestado : null;
+      return {
+        obra: o,
+        precioObra,
+        cobrado,
+        faltaCobrar: precioObra - cobrado,
+        presupuestadoManoObra,
+        presupuestadoEqYMat,
+        gastado,
+        disponibleEqYMat,
+        gananciaEstimada,
+        porcentajeGanancia: gananciaEstimada !== null && precioObra ? gananciaEstimada / precioObra : null,
+        dineroEnCaja: cobrado - gastado,
+        inicio: o.inicio,
+        finEstimado: fechaFinEstimada(o),
+      };
+    });
 
   // ---------- Próximos pagos/ingresos ----------
   const [showProximos, setShowProximos] = useState(false);
@@ -7734,6 +7857,14 @@ export default function ConcretarApp() {
                 </div>
               </details>
             ))}
+
+            <div>
+              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Balance por obra</h3>
+              <ResumenObrasCuentas items={resumenPorObra} />
+              <div className="mt-2 text-[11px] text-slate-400">
+                "Presup." sale del Excel de presupuesto importado en la obra (si no se importó ninguno, queda en "—"). "Gastado" y "Falta cobrar" son lo que ya se cargó en Compras/Facturas e Ingresos de esa obra — no incluye mano de obra pagada por Personal/Cuadrillas. "Ganancia estimada" = Precio de obra − presupuestado (M.O. + Eq. y Mat.), no lo ya cobrado.
+              </div>
+            </div>
           </div>
         )}
 
