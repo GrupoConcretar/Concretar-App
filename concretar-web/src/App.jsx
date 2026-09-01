@@ -301,19 +301,35 @@ const btnGhost = "rounded-md border border-slate-300 px-2.5 py-1 text-xs font-se
 // así que Borrar no achicaba el número).
 // Funciona tanto con formularios controlados (value+onChange) como con FormData (name).
 function MoneyInput({ name, value, onChange, onBlur, className, placeholder, required, disabled }) {
-  const [raw, setRaw] = useState(value !== undefined && value !== null && value !== "" ? String(Math.round(Number(value))) : "");
+  const [raw, setRaw] = useState(() => {
+    if (value === undefined || value === null || value === "") return "";
+    const n = Number(value);
+    return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(".", ",");
+  });
+  // "raw" guarda como mucho una coma de centavos, sin separadores de miles, tal cual
+  // se va tipeando — así el Backspace siempre borra un carácter real y nunca un
+  // ",00" fijo que el usuario no escribió.
   function handleChange(e) {
-    const digitos = e.target.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
-    setRaw(digitos);
-    if (onChange) onChange(digitos === "" ? 0 : parseInt(digitos, 10));
+    // El punto se descarta junto con el resto de la puntuación: es el separador de
+    // miles que ya puso el propio formateo, no algo que haya tipeado el usuario.
+    let v = e.target.value.replace(/[^\d,]/g, "");
+    const primeraComa = v.indexOf(",");
+    if (primeraComa !== -1) v = v.slice(0, primeraComa + 1) + v.slice(primeraComa + 1).replace(/,/g, "");
+    let [entero, decimales] = v.split(",");
+    entero = (entero || "").replace(/^0+(?=\d)/, "");
+    if (decimales !== undefined) decimales = decimales.slice(0, 2);
+    const nuevoRaw = decimales !== undefined ? `${entero},${decimales}` : (v.includes(",") ? `${entero},` : entero);
+    setRaw(nuevoRaw);
+    if (onChange) onChange(parseFloat(`${entero || "0"}.${decimales || "0"}`) || 0);
   }
-  const num = raw === "" ? 0 : parseInt(raw, 10);
-  const display = raw === "" ? "" : new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(num);
+  const [enteroRaw, decimalesRaw] = raw.split(",");
+  const num = raw === "" ? 0 : parseFloat(`${enteroRaw || "0"}.${decimalesRaw || "0"}`) || 0;
+  const display = raw === "" ? "" : `${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(Number(enteroRaw || "0"))}${raw.includes(",") ? `,${decimalesRaw ?? ""}` : ""}`;
   return (
     <>
       <input
         type="text"
-        inputMode="numeric"
+        inputMode="decimal"
         value={display}
         onChange={handleChange}
         onBlur={() => onBlur && onBlur(num)}
