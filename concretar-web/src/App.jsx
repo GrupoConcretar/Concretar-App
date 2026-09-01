@@ -2466,13 +2466,32 @@ export default function ConcretarApp() {
   const emptyProveedorForm = { razonSocial: "", nombreFantasia: "", cuit: "", domicilio: "", contacto: "", telefono: "", esTaller: "No" };
   const [proveedorForm, setProveedorForm] = useState(emptyProveedorForm);
   const [showProveedorForm, setShowProveedorForm] = useState(false);
+  const [editandoProveedorId, setEditandoProveedorId] = useState(null);
   const talleres = proveedores.filter((p) => p.esTaller === "Sí");
 
   function submitProveedorForm(e) {
     e.preventDefault();
-    addRecord("proveedores", { ...proveedorForm }, setProveedores);
+    if (editandoProveedorId) {
+      updateRecord("proveedores", editandoProveedorId, { ...proveedorForm }, setProveedores);
+    } else {
+      addRecord("proveedores", { ...proveedorForm }, setProveedores);
+    }
     setProveedorForm(emptyProveedorForm);
+    setEditandoProveedorId(null);
     setShowProveedorForm(false);
+  }
+  function editarProveedor(p) {
+    setProveedorForm({
+      razonSocial: p.razonSocial || "",
+      nombreFantasia: p.nombreFantasia || "",
+      cuit: p.cuit || "",
+      domicilio: p.domicilio || "",
+      contacto: p.contacto || "",
+      telefono: p.telefono || "",
+      esTaller: p.esTaller || "No",
+    });
+    setEditandoProveedorId(p.id);
+    setShowProveedorForm(true);
   }
   // El nombre de fantasía es el que se usa para elegir el proveedor en Compras y en
   // Órdenes de Compra; si todavía no se cargó, se usa la razón social.
@@ -2502,13 +2521,30 @@ export default function ConcretarApp() {
   const emptyClienteForm = { razonSocial: "", cuit: "", domicilio: "", contacto: "", telefono: "" };
   const [clienteForm, setClienteForm] = useState(emptyClienteForm);
   const [showClienteForm, setShowClienteForm] = useState(false);
+  const [editandoClienteId, setEditandoClienteId] = useState(null);
   const [vistaClientesProveedores, setVistaClientesProveedores] = useState("clientes");
 
   function submitClienteForm(e) {
     e.preventDefault();
-    addRecord("clientes", { ...clienteForm }, setClientes);
+    if (editandoClienteId) {
+      updateRecord("clientes", editandoClienteId, { ...clienteForm }, setClientes);
+    } else {
+      addRecord("clientes", { ...clienteForm }, setClientes);
+    }
     setClienteForm(emptyClienteForm);
+    setEditandoClienteId(null);
     setShowClienteForm(false);
+  }
+  function editarCliente(cli) {
+    setClienteForm({
+      razonSocial: cli.razonSocial || "",
+      cuit: cli.cuit || "",
+      domicilio: cli.domicilio || "",
+      contacto: cli.contacto || "",
+      telefono: cli.telefono || "",
+    });
+    setEditandoClienteId(cli.id);
+    setShowClienteForm(true);
   }
   function balanceCliente(cli) {
     const obrasCliente = obras.filter((o) => o.clienteId === cli.id && o.estado !== "Papelera");
@@ -7674,13 +7710,21 @@ export default function ConcretarApp() {
               <>
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-slate-500">El saldo es lo acordado en el presupuesto de sus obras menos lo que ya ingresó por esa obra.</div>
-                  <button onClick={() => setShowClienteForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                  <button
+                    onClick={() => {
+                      if (showClienteForm) { setShowClienteForm(false); return; }
+                      setClienteForm(emptyClienteForm);
+                      setEditandoClienteId(null);
+                      setShowClienteForm(true);
+                    }}
+                    className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                  >
                     <Plus size={16} /> Nuevo cliente
                   </button>
                 </div>
 
                 {showClienteForm && (
-                  <Panel title="Añadir cliente" action={<button onClick={() => setShowClienteForm(false)}><X size={16} /></button>}>
+                  <Panel title={editandoClienteId ? "Modificar cliente" : "Añadir cliente"} action={<button onClick={() => { setShowClienteForm(false); setEditandoClienteId(null); }}><X size={16} /></button>}>
                     <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitClienteForm}>
                       <Field label="Razón social / Nombre">
                         <input value={clienteForm.razonSocial} onChange={(e) => setClienteForm((f) => ({ ...f, razonSocial: e.target.value }))} required className={inputCls} />
@@ -7715,9 +7759,14 @@ export default function ConcretarApp() {
                               <div className="font-semibold text-slate-900">{cli.razonSocial}</div>
                               <div className="text-xs text-slate-500">{cli.contacto}{cli.contacto && cli.telefono ? " · " : ""}{cli.telefono}</div>
                             </div>
-                            <div className="text-right">
-                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Saldo — te debe</div>
-                              <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
+                            <div className="flex items-center gap-3">
+                              <div className="text-right">
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Saldo — te debe</div>
+                                <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
+                              </div>
+                              <button onClick={() => editarCliente(cli)} className={btnGhost}>
+                                <span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span>
+                              </button>
                             </div>
                           </div>
                           <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
@@ -7737,13 +7786,21 @@ export default function ConcretarApp() {
               <>
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-slate-500">Los talleres de reparación también se cargan acá — así aparecen como destino posible en los remitos de Herramientas. El saldo es lo facturado menos lo ya pagado.</div>
-                  <button onClick={() => setShowProveedorForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                  <button
+                    onClick={() => {
+                      if (showProveedorForm) { setShowProveedorForm(false); return; }
+                      setProveedorForm(emptyProveedorForm);
+                      setEditandoProveedorId(null);
+                      setShowProveedorForm(true);
+                    }}
+                    className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                  >
                     <Plus size={16} /> Nuevo proveedor
                   </button>
                 </div>
 
                 {showProveedorForm && (
-                  <Panel title="Añadir proveedor" action={<button onClick={() => setShowProveedorForm(false)}><X size={16} /></button>}>
+                  <Panel title={editandoProveedorId ? "Modificar proveedor" : "Añadir proveedor"} action={<button onClick={() => { setShowProveedorForm(false); setEditandoProveedorId(null); }}><X size={16} /></button>}>
                     <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitProveedorForm}>
                       <Field label="Razón social">
                         <input value={proveedorForm.razonSocial} onChange={(e) => setProveedorForm((f) => ({ ...f, razonSocial: e.target.value }))} required className={inputCls} />
@@ -7790,9 +7847,14 @@ export default function ConcretarApp() {
                               )}
                               <div className="text-xs text-slate-500">{p.contacto}{p.contacto && p.telefono ? " · " : ""}{p.telefono}</div>
                             </div>
-                            <div className="text-right">
-                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Saldo — le debés</div>
-                              <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
+                            <div className="flex items-center gap-3">
+                              <div className="text-right">
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Saldo — le debés</div>
+                                <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
+                              </div>
+                              <button onClick={() => editarProveedor(p)} className={btnGhost}>
+                                <span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span>
+                              </button>
                             </div>
                           </div>
                           <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
