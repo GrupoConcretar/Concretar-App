@@ -4099,7 +4099,7 @@ export default function ConcretarApp() {
                 tab === item.id
                   ? "text-white"
                   : NAV_DESTACADOS.includes(item.id)
-                  ? "text-orange-400 hover:bg-white/5 hover:text-orange-300"
+                  ? "text-red-400 hover:bg-white/5 hover:text-red-300"
                   : "text-slate-300 hover:bg-white/5 hover:text-white"
               }`}
             >
