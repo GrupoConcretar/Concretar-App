@@ -574,6 +574,101 @@ function ResumenObrasCuentas({ items }) {
     </>
   );
 }
+
+// Préstamos de inversores/banco: el interés corre día a día a la tasa anual
+// pactada, desde que se recibió hasta hoy (o hasta la fecha de devolución si ya
+// se pagó) — son funciones puras así las puede usar también la tabla de abajo.
+function diasTranscurridosDesde(fechaStr, hastaStr) {
+  return Math.max(0, Math.round((fechaLocal(hastaStr) - fechaLocal(fechaStr)) / 86400000));
+}
+function interesAcumuladoPrestamo(p) {
+  const hasta = p.estado === "Pagado" ? (p.fechaPago || p.fecha) : hoyISO();
+  const dias = diasTranscurridosDesde(p.fecha, hasta);
+  return (p.capital || 0) * ((p.tasaAnualPct || 0) / 100) * (dias / 365);
+}
+function totalADevolverPrestamo(p) {
+  return (p.capital || 0) + interesAcumuladoPrestamo(p);
+}
+
+function TablaPrestamos({ items, onMarcarDevuelto }) {
+  if (items.length === 0) {
+    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay préstamos cargados.</div>;
+  }
+  return (
+    <>
+      {/* Celular: una tarjeta por préstamo. */}
+      <div className="space-y-2 sm:hidden">
+        {items.map((p) => {
+          const interes = interesAcumuladoPrestamo(p);
+          const total = totalADevolverPrestamo(p);
+          const dias = diasTranscurridosDesde(p.fecha, p.estado === "Pagado" ? (p.fechaPago || p.fecha) : hoyISO());
+          return (
+            <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-3 text-xs shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-slate-900">{p.acreedor}</span>
+                <Badge estado={p.estado} />
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Capital</div><div className="font-mono font-semibold text-slate-800">{fmtARS(p.capital)}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Tasa anual</div><div className="font-mono text-slate-700">{p.tasaAnualPct}%</div></div>
+                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Días transcurridos</div><div className="font-mono text-slate-700">{dias}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Interés acumulado</div><div className="font-mono text-amber-700">{fmtARS(interes)}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Total a devolver</div><div className="font-mono font-semibold text-rose-600">{fmtARS(total)}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Fecha estimada</div><div className="text-slate-700">{fmtFecha(p.fechaEstimadaDevolucion)}</div></div>
+              </div>
+              {p.estado !== "Pagado" && (
+                <div className="mt-2 border-t border-stone-100 pt-2 text-right">
+                  <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tablet/PC: tabla completa. */}
+      <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:block">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-2 py-1.5">Acreedor</th>
+              <th className="px-2 py-1.5 text-right">Capital</th>
+              <th className="px-2 py-1.5 text-right">Tasa anual</th>
+              <th className="px-2 py-1.5">Fecha alta</th>
+              <th className="px-2 py-1.5 text-right">Días</th>
+              <th className="px-2 py-1.5 text-right">Interés acumulado</th>
+              <th className="px-2 py-1.5 text-right">Total a devolver</th>
+              <th className="px-2 py-1.5">Fecha estimada</th>
+              <th className="px-2 py-1.5">Estado</th>
+              <th className="px-2 py-1.5"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((p) => {
+              const interes = interesAcumuladoPrestamo(p);
+              const total = totalADevolverPrestamo(p);
+              const dias = diasTranscurridosDesde(p.fecha, p.estado === "Pagado" ? (p.fechaPago || p.fecha) : hoyISO());
+              return (
+                <tr key={p.id} className="border-t border-stone-100">
+                  <td className="px-2 py-1 font-medium text-slate-900">{p.acreedor}</td>
+                  <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(p.capital)}</td>
+                  <td className="px-2 py-1 text-right font-mono text-slate-700">{p.tasaAnualPct}%</td>
+                  <td className="px-2 py-1 text-slate-600">{fmtFecha(p.fecha)}</td>
+                  <td className="px-2 py-1 text-right font-mono text-slate-700">{dias}</td>
+                  <td className="px-2 py-1 text-right font-mono text-amber-700">{fmtARS(interes)}</td>
+                  <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(total)}</td>
+                  <td className="px-2 py-1 text-slate-600">{fmtFecha(p.fechaEstimadaDevolucion)}</td>
+                  <td className="px-2 py-1"><Badge estado={p.estado} /></td>
+                  <td className="px-2 py-1">{p.estado !== "Pagado" && <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
 
 // Campo numérico (admite decimales) que solo guarda al perder el foco — para
@@ -959,6 +1054,11 @@ export default function ConcretarApp() {
     { id: 6, fecha: "2026-09-20", obraId: 1, concepto: "Certificado de avance 3", monto: 15000000, formalidad: "Blanco", cuenta: "Banco", medioBancario: "eCheq", estado: "Pendiente", fechaCobroEstimada: "2026-10-05" },
   ];
 
+  const DEMO_PRESTAMOS = [
+    { id: 1, fecha: "2026-06-01", acreedor: "Inversor Juan Pérez", capital: 5000000, tasaAnualPct: 60, cuenta: "Banco", formalidad: "Blanco", fechaEstimadaDevolucion: "2026-12-01", estado: "Vigente", fechaPago: null, montoPagado: null },
+    { id: 2, fecha: "2026-01-15", acreedor: "Banco San Juan", capital: 2000000, tasaAnualPct: 40, cuenta: "Banco", formalidad: "Blanco", fechaEstimadaDevolucion: "2026-04-15", estado: "Pagado", fechaPago: "2026-04-10", montoPagado: 2186301.37 },
+  ];
+
   const DEMO_TANTEROS = [
     { id: 1, nombreGrupo: "Mario Electricista", obraId: 1, integrantes: [7, 8], precioTotal: 12000000 },
   ];
@@ -1002,6 +1102,10 @@ export default function ConcretarApp() {
   // Plata contada a mano (caja física / resumen bancario) para comparar contra lo
   // que el sistema calcula y detectar errores de carga.
   const [dineroReal, setDineroReal] = useState([]);
+  // Préstamos de inversores o bancos: el capital entra a una cuenta como plata real,
+  // pero es una deuda, no un ingreso — el interés se calcula solo, día a día, hasta
+  // que se marca como devuelto. Siempre "General" (sin obra), como pidió el usuario.
+  const [prestamos, setPrestamos] = useState(isSupabaseConfigured ? [] : DEMO_PRESTAMOS);
   const [tanteros, setTanteros] = useState(isSupabaseConfigured ? [] : DEMO_TANTEROS);
   const [avancesTanteros, setAvancesTanteros] = useState(isSupabaseConfigured ? [] : DEMO_AVANCES_TANTEROS);
 
@@ -1018,7 +1122,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -1027,7 +1131,7 @@ export default function ConcretarApp() {
           sbSelect("subcategorias_material"), sbSelect("tipos_material"), sbSelect("catalogo_materiales"), sbSelect("presupuesto_materiales"),
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
-          sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"),
+          sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -1061,6 +1165,7 @@ export default function ConcretarApp() {
         setStockMateriales(stk);
         setMovimientosManual(mm);
         setDineroReal(dr);
+        setPrestamos(pr);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -2262,11 +2367,40 @@ export default function ConcretarApp() {
     const totalManual = movimientosManual
       .filter((m) => m.formalidad === formalidad)
       .reduce((s, m) => s + (m.cuentaOrigen === cuenta ? -(m.monto || 0) : 0) + (m.cuentaDestino === cuenta ? (m.monto || 0) : 0), 0);
-    return totalIngresos - totalEgresos + totalManual;
+    // El capital de un préstamo entra a la cuenta como plata real (no es ganancia,
+    // pero sí caja); al devolverlo, sale el capital + interés acumulado hasta esa fecha.
+    const totalPrestamos = prestamos
+      .filter((p) => p.cuenta === cuenta && p.formalidad === formalidad)
+      .reduce((s, p) => s + (p.capital || 0) - (p.estado === "Pagado" ? (p.montoPagado || 0) : 0), 0);
+    return totalIngresos - totalEgresos + totalManual + totalPrestamos;
   }
 
   const totalBlanco = FORMALIDADES[0] && CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Blanco"), 0);
   const totalNegro = CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Negro"), 0);
+
+  // ---------- Préstamos (inversores/banco) ----------
+  const emptyPrestamoForm = { fecha: hoyISO(), acreedor: "", capital: 0, tasaAnualPct: "", cuenta: CUENTAS[0], formalidad: FORMALIDADES[0], fechaEstimadaDevolucion: "" };
+  const [prestamoForm, setPrestamoForm] = useState(emptyPrestamoForm);
+  const [showPrestamoForm, setShowPrestamoForm] = useState(false);
+  function submitPrestamoForm(e) {
+    e.preventDefault();
+    addRecord("prestamos", {
+      ...prestamoForm,
+      capital: Number(prestamoForm.capital) || 0,
+      tasaAnualPct: Number(prestamoForm.tasaAnualPct) || 0,
+      estado: "Vigente",
+      fechaPago: null,
+      montoPagado: null,
+    }, setPrestamos);
+    setPrestamoForm(emptyPrestamoForm);
+    setShowPrestamoForm(false);
+  }
+  function marcarPrestamoDevuelto(p) {
+    const total = totalADevolverPrestamo(p);
+    if (!window.confirm(`¿Marcar "${p.acreedor}" como devuelto? Se registra una salida de ${fmtARS(total)} (capital + interés acumulado) de ${p.cuenta}.`)) return;
+    updateRecord("prestamos", p.id, { estado: "Pagado", fechaPago: hoyISO(), montoPagado: total }, setPrestamos);
+  }
+
   const [showMovimientoForm, setShowMovimientoForm] = useState(false);
   // Un movimiento por cada ingreso (+), compra/factura (-) y cada lado de una
   // transferencia manual (- en origen, + en destino); sumados por cuenta y
@@ -2282,6 +2416,12 @@ export default function ConcretarApp() {
       { id: `man-${m.id}-sale`, fecha: m.fecha, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, formalidad: m.formalidad, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null },
       { id: `man-${m.id}-recibe`, fecha: m.fecha, tipo: "Ingreso", obraId: null, detalle: m.detalle || `Pase desde ${m.cuentaOrigen}`, formalidad: m.formalidad, cuenta: m.cuentaDestino, monto: m.monto || 0, estado: null },
     ]),
+    ...prestamos.map((p) => ({
+      id: `prestamo-alta-${p.id}`, fecha: p.fecha, tipo: "Ingreso", obraId: null, detalle: `Préstamo recibido — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: p.capital || 0, estado: null,
+    })),
+    ...prestamos.filter((p) => p.estado === "Pagado").map((p) => ({
+      id: `prestamo-pago-${p.id}`, fecha: p.fechaPago, tipo: "Egreso", obraId: null, detalle: `Devolución préstamo — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: -(p.montoPagado || totalADevolverPrestamo(p)), estado: "Pagada",
+    })),
   ].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
 
   // Agrupados por mes — el mes actual siempre a la vista, los anteriores quedan
@@ -7615,6 +7755,12 @@ export default function ConcretarApp() {
                   <Wrench size={16} /> Arreglo de caja
                 </button>
                 <button
+                  onClick={() => setShowPrestamoForm((v) => !v)}
+                  className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
+                >
+                  <Landmark size={16} /> Agregar préstamo
+                </button>
+                <button
                   onClick={() => setShowMovimientoForm((v) => !v)}
                   className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
                 >
@@ -7622,6 +7768,46 @@ export default function ConcretarApp() {
                 </button>
               </div>
             </div>
+
+            {showPrestamoForm && (
+              <Panel title="Agregar préstamo" action={<button onClick={() => setShowPrestamoForm(false)}><X size={16} /></button>}>
+                <div className="mb-3 text-xs text-slate-500">Plata de un inversor o del banco. El capital entra a la cuenta que elijas como plata real, pero es una deuda — el interés corre solo, día a día, hasta que lo marques como devuelto. Queda siempre en "General", sin obra asociada.</div>
+                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitPrestamoForm}>
+                  <Field label="Fecha">
+                    <input type="date" value={prestamoForm.fecha} onChange={(e) => setPrestamoForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+                  </Field>
+                  <Field label="Acreedor (inversor / banco)">
+                    <input value={prestamoForm.acreedor} onChange={(e) => setPrestamoForm((f) => ({ ...f, acreedor: e.target.value }))} required placeholder="Ej: Juan Pérez, Banco San Juan" className={inputCls} />
+                  </Field>
+                  <Field label="Capital ($)">
+                    <MoneyInput value={prestamoForm.capital} onChange={(v) => setPrestamoForm((f) => ({ ...f, capital: v }))} className={inputCls} />
+                  </Field>
+                  <Field label="Tasa anual (%)">
+                    <input
+                      type="number" min="0" step="0.01" placeholder="Ej: 60"
+                      value={prestamoForm.tasaAnualPct}
+                      onChange={(e) => setPrestamoForm((f) => ({ ...f, tasaAnualPct: e.target.value }))}
+                      required
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Cuenta donde entra">
+                    <select value={prestamoForm.cuenta} onChange={(e) => setPrestamoForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+                      {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Formalidad">
+                    <select value={prestamoForm.formalidad} onChange={(e) => setPrestamoForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+                      {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Fecha estimada de devolución">
+                    <input type="date" value={prestamoForm.fechaEstimadaDevolucion} onChange={(e) => setPrestamoForm((f) => ({ ...f, fechaEstimadaDevolucion: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                </form>
+              </Panel>
+            )}
 
             {showMovimientoForm && (
               <Panel title="Agregar movimiento" action={<button onClick={() => setShowMovimientoForm(false)}><X size={16} /></button>}>
@@ -7863,6 +8049,14 @@ export default function ConcretarApp() {
               <ResumenObrasCuentas items={resumenPorObra} />
               <div className="mt-2 text-[11px] text-slate-400">
                 "Presup." sale del Excel de presupuesto importado en la obra (si no se importó ninguno, queda en "—"). "Gastado" y "Falta cobrar" son lo que ya se cargó en Gastos/Facturas e Ingresos de esa obra — no incluye mano de obra pagada por Personal/Cuadrillas. "Ganancia estimada" = Precio de obra − presupuestado (M.O. + Eq. y Mat.), no lo ya cobrado.
+              </div>
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Préstamos</h3>
+              <TablaPrestamos items={prestamos} onMarcarDevuelto={marcarPrestamoDevuelto} />
+              <div className="mt-2 text-[11px] text-slate-400">
+                El capital ya está sumado al saldo de la cuenta donde entró. El interés se calcula día a día a la tasa anual cargada y no afecta el saldo hasta que marcás el préstamo como devuelto — ahí se registra la salida de capital + interés acumulado.
               </div>
             </div>
           </div>
