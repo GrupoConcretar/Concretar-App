@@ -8,7 +8,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
@@ -44,6 +44,41 @@ function hoyISO() {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+// Selector de mes en español fijo (Enero, Febrero, ...) en vez del <input type="month">
+// nativo, cuyo idioma depende de la configuración del celular/navegador y a veces
+// termina mostrando el mes en inglés ("September" en vez de "Septiembre").
+function shiftMes(clave, delta) {
+  const [y, m] = clave.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function nombreMesClave(clave) {
+  const [y, m] = clave.split("-").map(Number);
+  const nombre = new Date(y, m - 1, 1).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+  return nombre.charAt(0).toUpperCase() + nombre.slice(1);
+}
+function MesPicker({ value, onChange, className = "" }) {
+  return (
+    <div className={`flex items-center gap-1 ${className}`}>
+      <button
+        type="button"
+        onClick={() => onChange(shiftMes(value, -1))}
+        className="rounded-md border border-stone-300 bg-white p-1.5 text-slate-600 hover:bg-stone-50"
+      >
+        <ChevronLeft size={14} />
+      </button>
+      <span className="min-w-[132px] text-center text-sm font-medium text-slate-700">{nombreMesClave(value)}</span>
+      <button
+        type="button"
+        onClick={() => onChange(shiftMes(value, 1))}
+        className="rounded-md border border-stone-300 bg-white p-1.5 text-slate-600 hover:bg-stone-50"
+      >
+        <ChevronRight size={14} />
+      </button>
+    </div>
+  );
 }
 function fechaMasDias(dias) {
   const d = new Date();
@@ -5802,9 +5837,9 @@ export default function ConcretarApp() {
                       </select>
                     </Field>
                   </div>
-                  <div className="min-w-[160px]">
+                  <div>
                     <Field label="Mes">
-                      <input type="month" value={mesFormal} onChange={(e) => setMesFormal(e.target.value)} className={inputCls} />
+                      <MesPicker value={mesFormal} onChange={setMesFormal} />
                     </Field>
                   </div>
                   <div>
@@ -7831,12 +7866,7 @@ export default function ConcretarApp() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Gastos y Facturas</h2>
               <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="month"
-                  value={mesReporteContador}
-                  onChange={(e) => setMesReporteContador(e.target.value)}
-                  className="rounded-md border border-stone-300 px-2 py-2 text-sm"
-                />
+                <MesPicker value={mesReporteContador} onChange={setMesReporteContador} />
                 <button onClick={generarPdfContadores} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
                   <FileDown size={16} /> PDF para el contador
                 </button>
