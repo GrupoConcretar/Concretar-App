@@ -667,7 +667,7 @@ function calcularEstadoPrestamo(p, pagos) {
   return { saldoCapital, interesAcumulado, totalADevolver: saldoCapital + interesAcumulado, totalPagado, pagos: pagosDelPrestamo, fechaCorte, dias: diasTranscurridosDesde(fechaCorte, hasta) };
 }
 
-function TablaPrestamos({ items, pagos, onMarcarDevuelto, onEditar, onRegistrarPago }) {
+function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay préstamos cargados.</div>;
   }
@@ -699,7 +699,7 @@ function TablaPrestamos({ items, pagos, onMarcarDevuelto, onEditar, onRegistrarP
               </div>
               {estado.pagos.length > 0 && (
                 <div className="mt-2 border-t border-stone-100 pt-2">
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Pagos parciales</div>
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Pagos registrados</div>
                   <div className="space-y-1">
                     {estado.pagos.map((pg) => (
                       <div key={pg.id} className="flex items-center justify-between text-[11px] text-slate-600">
@@ -712,10 +712,7 @@ function TablaPrestamos({ items, pagos, onMarcarDevuelto, onEditar, onRegistrarP
               )}
               <div className="mt-2 flex flex-wrap justify-end gap-1.5 border-t border-stone-100 pt-2">
                 {p.estado !== "Pagado" && (
-                  <>
-                    <button onClick={() => onRegistrarPago(p)} className={btnGhost}>Registrar pago parcial</button>
-                    <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>
-                  </>
+                  <button onClick={() => onRegistrarPago(p)} className={btnGhost}>Registrar pago</button>
                 )}
                 <button onClick={() => onEditar(p)} className={btnGhost}>
                   <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
@@ -751,7 +748,7 @@ function TablaPrestamos({ items, pagos, onMarcarDevuelto, onEditar, onRegistrarP
                 <tr key={p.id} className="border-t border-stone-100">
                   <td className="px-2 py-1 font-medium text-slate-900">
                     {p.acreedor}
-                    {estado.pagos.length > 0 && <div className="font-normal text-slate-400">{estado.pagos.length} pago{estado.pagos.length > 1 ? "s" : ""} parcial{estado.pagos.length > 1 ? "es" : ""}</div>}
+                    {estado.pagos.length > 0 && <div className="font-normal text-slate-400">{estado.pagos.length} pago{estado.pagos.length > 1 ? "s" : ""} registrado{estado.pagos.length > 1 ? "s" : ""}</div>}
                   </td>
                   <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(p.capital)}</td>
                   <td className="px-2 py-1 text-right font-mono text-emerald-700">{estado.totalPagado > 0 ? fmtARS(estado.totalPagado) : "—"}</td>
@@ -765,10 +762,7 @@ function TablaPrestamos({ items, pagos, onMarcarDevuelto, onEditar, onRegistrarP
                   <td className="px-2 py-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {p.estado !== "Pagado" && (
-                        <>
-                          <button onClick={() => onRegistrarPago(p)} className={btnGhost}>Registrar pago parcial</button>
-                          <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>
-                        </>
+                        <button onClick={() => onRegistrarPago(p)} className={btnGhost}>Registrar pago</button>
                       )}
                       <button onClick={() => onEditar(p)} className={btnGhost}>
                         <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
@@ -860,11 +854,16 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
   const [fecha, setFecha] = useState(hoyISO());
   const [monto, setMonto] = useState(0);
   const [cuenta, setCuenta] = useState(prestamo?.cuenta);
+  // MoneyInput solo lee su prop "value" al montarse (para no pelearle al usuario
+  // mientras tipea) — cambiar esta key fuerza que lo tome de nuevo cuando lo
+  // llenamos nosotros con el botón de acceso rápido, en vez de tipeándolo.
+  const [montoResetKey, setMontoResetKey] = useState(0);
   if (!prestamo) return null;
 
   const estadoActual = calcularEstadoPrestamo(prestamo, pagos);
   const dias = diasTranscurridosDesde(estadoActual.fechaCorte, fecha);
   const interesAlPagar = estadoActual.saldoCapital * ((prestamo.tasaAnualPct || 0) / 100) * (dias / 365);
+  const totalAEstaFecha = estadoActual.saldoCapital + interesAlPagar;
   const aCapital = Math.max(0, (Number(monto) || 0) - interesAlPagar);
   const saldoRestante = Math.max(0, estadoActual.saldoCapital - aCapital);
 
@@ -877,12 +876,12 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
       <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900">Registrar pago parcial — {prestamo.acreedor}</h3>
+          <h3 className="text-lg font-bold text-slate-900">Registrar pago — {prestamo.acreedor}</h3>
           <button onClick={onClose}><X size={18} /></button>
         </div>
         <div className="mb-3 text-xs text-slate-500">
           Saldo de capital actual: <span className="font-mono font-semibold text-slate-700">{fmtARS(estadoActual.saldoCapital)}</span>.
-          El pago cubre primero el interés acumulado y lo que sobra amortiza capital.
+          El pago cubre primero el interés acumulado y lo que sobra amortiza capital. Si el monto cubre el 100% del saldo, el préstamo se marca como devuelto solo.
         </div>
         <form onSubmit={guardar} className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Field label="Fecha del pago">
@@ -895,8 +894,15 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
           </Field>
           <div className="md:col-span-2">
             <Field label="Monto a devolver ($)">
-              <MoneyInput value={monto} onChange={setMonto} className={inputCls} />
+              <MoneyInput key={montoResetKey} value={monto} onChange={setMonto} className={inputCls} />
             </Field>
+            <button
+              type="button"
+              onClick={() => { setMonto(totalAEstaFecha); setMontoResetKey((k) => k + 1); }}
+              className={`${btnGhost} mt-1.5`}
+            >
+              Cargar el total a esta fecha ({fmtARS(totalAEstaFecha)})
+            </button>
           </div>
           <div className="rounded-md border border-dashed border-stone-300 bg-stone-50 p-3 text-xs text-slate-600 md:col-span-2">
             <div className="flex items-center justify-between"><span>Interés acumulado hasta esta fecha</span><span className="font-mono">{fmtARS(interesAlPagar)}</span></div>
@@ -2916,22 +2922,22 @@ export default function ConcretarApp() {
     setPrestamoForm(emptyPrestamoForm);
     setShowPrestamoForm(false);
   }
-  function marcarPrestamoDevuelto(p) {
-    const estadoActual = calcularEstadoPrestamo(p, prestamosPagos);
-    const total = estadoActual.totalADevolver;
-    if (!window.confirm(`¿Marcar "${p.acreedor}" como devuelto? Se registra una salida de ${fmtARS(total)} (saldo de capital + interés acumulado) de ${p.cuenta}.`)) return;
-    const hoy = hoyISO();
-    addRecord("prestamos_pagos", { prestamoId: p.id, fecha: hoy, monto: total, cuenta: p.cuenta }, setPrestamosPagos);
-    updateRecord("prestamos", p.id, { estado: "Pagado", fechaPago: hoy, montoPagado: total }, setPrestamos);
-  }
   const [editandoPrestamoId, setEditandoPrestamoId] = useState(null);
   function guardarEdicionPrestamo(id, patch) {
     updateRecord("prestamos", id, patch, setPrestamos);
     setEditandoPrestamoId(null);
   }
   const [pagandoPrestamoId, setPagandoPrestamoId] = useState(null);
+  // Un pago se auto-marca como devolución total (y desaparece de "Próximos
+  // pagos/ingresos") en cuanto cubre el 100% del saldo de capital + interés —
+  // no hace falta un botón aparte para "marcar devuelto".
   function guardarPagoPrestamo(prestamoId, pago) {
     addRecord("prestamos_pagos", { prestamoId, ...pago }, setPrestamosPagos);
+    const p = prestamos.find((x) => x.id === prestamoId);
+    const estadoConEsePago = calcularEstadoPrestamo(p, [...prestamosPagos, { prestamoId, ...pago }]);
+    if (estadoConEsePago.saldoCapital < 1) {
+      updateRecord("prestamos", prestamoId, { estado: "Pagado", fechaPago: pago.fecha, montoPagado: estadoConEsePago.totalPagado }, setPrestamos);
+    }
     setPagandoPrestamoId(null);
   }
 
@@ -8795,7 +8801,6 @@ export default function ConcretarApp() {
               <TablaPrestamos
                 items={prestamos}
                 pagos={prestamosPagos}
-                onMarcarDevuelto={marcarPrestamoDevuelto}
                 onEditar={(p) => setEditandoPrestamoId(p.id)}
                 onRegistrarPago={(p) => setPagandoPrestamoId(p.id)}
               />
