@@ -2112,7 +2112,7 @@ export default function ConcretarApp() {
   const [facturaNombreArchivo, setFacturaNombreArchivo] = useState(null);
   const [facturaTipoArchivo, setFacturaTipoArchivo] = useState(null);
   // ---------- PDF mensual para el contador (Gastos y Facturas + Cobros de socios) ----------
-  const [mesReporteContador, setMesReporteContador] = useState(hoyISO().slice(0, 7));
+  const mesReporteContador = hoyISO().slice(0, 7);
   function generarPdfContadores() {
     const gastosDelMes = comprasFacturas
       .filter((c) => c.fecha?.slice(0, 7) === mesReporteContador && !obraIdsPapelera.has(c.obraId))
@@ -7875,9 +7875,8 @@ export default function ConcretarApp() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Gastos y Facturas</h2>
               <div className="flex flex-wrap items-center gap-2">
-                <MesPicker value={mesReporteContador} onChange={setMesReporteContador} />
                 <button onClick={generarPdfContadores} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
-                  <FileDown size={16} /> PDF para el contador
+                  <FileDown size={16} /> PDF para el contador ({nombreMesCuentas(mesReporteContador)})
                 </button>
                 <button onClick={() => setShowFacturaForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
                   <Plus size={16} /> Cargar gasto
