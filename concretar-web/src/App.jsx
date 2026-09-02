@@ -101,7 +101,7 @@ const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sáb
 const DIAS_SEMANA_JS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
 const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
-const CATEGORIAS_GASTO = ["Materiales", "Equipos y Herramientas", "Epps", "Consumibles"];
+const CATEGORIAS_GASTO = ["Materiales", "Equipos y Herramientas", "Epps", "Consumibles", "Combustible"];
 const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Epps", "Consumibles", "Otros"];
 // La pestaña "Pedidos de Obra" arma el pedido en pasos (rubros). Cada uno filtra
 // las líneas del presupuesto importado (o el catálogo propio, en el caso de Epps
@@ -752,6 +752,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, obras,
         obraId: form.obraId,
         proveedor: form.proveedor,
         categoria: form.categoria,
+        descripcion: form.descripcion || "",
         monto: Number(form.monto) || 0,
         formalidad: form.formalidad,
         tipoFactura: form.tipoFactura,
@@ -804,6 +805,14 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, obras,
                 <select value={form.categoria} onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))} className={inputCls}>
                   {CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}
                 </select>
+              </Field>
+              <Field label="Descripción">
+                <input
+                  value={form.descripcion || ""}
+                  onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
+                  placeholder="Ej: Nafta camioneta, cemento para losa..."
+                  className={inputCls}
+                />
               </Field>
               <Field label="Precio final ($)">
                 <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} className={inputCls} />
@@ -7893,6 +7902,7 @@ export default function ConcretarApp() {
                       ordenCompraId: null,
                       proveedor: f.get("proveedor"),
                       categoria: f.get("categoria"),
+                      descripcion: f.get("descripcion") || "",
                       monto: Number(f.get("monto")) || 0,
                       comprobante: "",
                       tipoFactura: f.get("tipoFactura"),
@@ -7931,6 +7941,9 @@ export default function ConcretarApp() {
                   </Field>
                   <Field label="Categoría">
                     <select name="categoria" className={inputCls}>{CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}</select>
+                  </Field>
+                  <Field label="Descripción">
+                    <input name="descripcion" placeholder="Ej: Nafta camioneta, cemento para losa..." className={inputCls} />
                   </Field>
                   <Field label="Precio final ($)">
                     <MoneyInput name="monto" className={inputCls} />
@@ -7996,7 +8009,7 @@ export default function ConcretarApp() {
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Proveedor</th><th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Forma de pago</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Proveedor</th><th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5">Descripción</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Forma de pago</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
                 </thead>
                 <tbody>
                   {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
@@ -8007,6 +8020,7 @@ export default function ConcretarApp() {
                         <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
                         <td className="px-2 py-1 font-medium text-slate-900">{c.proveedor}</td>
                         <td className="px-2 py-1 text-slate-600">{c.categoria}</td>
+                        <td className="px-2 py-1 text-slate-500">{c.descripcion || "—"}</td>
                         <td className="px-2 py-1"><Badge estado={c.formalidad || "Blanco"} /></td>
                         <td className="px-2 py-1 text-slate-600">
                           <span className="flex items-center gap-1"><CuentaIcon cuenta={c.formaPago === "eCheq" ? "Banco" : c.formaPago} />{c.formaPago || c.cuenta || "—"}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
