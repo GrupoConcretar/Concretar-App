@@ -667,7 +667,7 @@ function calcularEstadoPrestamo(p, pagos) {
   return { saldoCapital, interesAcumulado, totalADevolver: saldoCapital + interesAcumulado, totalPagado, pagos: pagosDelPrestamo, fechaCorte, dias: diasTranscurridosDesde(fechaCorte, hasta) };
 }
 
-function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago }) {
+function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay préstamos cargados.</div>;
   }
@@ -717,6 +717,7 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago }) {
                 <button onClick={() => onEditar(p)} className={btnGhost}>
                   <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
                 </button>
+                <BotonEliminar onClick={() => onEliminar(p)} title="Eliminar préstamo" />
               </div>
             </div>
           );
@@ -767,6 +768,7 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago }) {
                       <button onClick={() => onEditar(p)} className={btnGhost}>
                         <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
                       </button>
+                      <BotonEliminar onClick={() => onEliminar(p)} title="Eliminar préstamo" />
                     </div>
                   </td>
                 </tr>
@@ -1073,6 +1075,57 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, obras,
   );
 }
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
+
+// Icono de tacho de basura para mandar un registro a la Papelera — se repite al
+// costado de cada fila/tarjeta en las secciones que soportan Papelera.
+function BotonEliminar({ onClick, title = "Eliminar" }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="rounded-md border border-transparent p-1 text-slate-400 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600"
+    >
+      <Trash2 size={14} />
+    </button>
+  );
+}
+
+// Días que le quedan a un registro de la Papelera antes de que el cron lo
+// borre solo (7 días desde que se eliminó).
+function diasParaPurgar(eliminadoEn) {
+  if (!eliminadoEn) return 7;
+  const vencimiento = new Date(eliminadoEn).getTime() + 7 * 24 * 60 * 60 * 1000;
+  return Math.max(0, Math.ceil((vencimiento - Date.now()) / 86400000));
+}
+
+// Un bloque de la Papelera por tipo de registro (herramientas, personal, gastos,
+// etc.) — mismo formato para los diez, solo cambia cómo se arma el nombre/detalle.
+function SeccionPapelera({ titulo, items, nombreDe, detalleDe, onRestaurar }) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{titulo} ({items.length})</div>
+      <div className="space-y-1.5">
+        {items.map((x) => {
+          const dias = diasParaPurgar(x.eliminadoEn);
+          return (
+            <div key={x.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+              <div>
+                <div className="font-medium text-slate-800">{nombreDe(x)}</div>
+                {detalleDe && <div className="text-xs text-slate-400">{detalleDe(x)}</div>}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">{dias === 0 ? "se borra hoy" : `se borra en ${dias} día(s)`}</span>
+                <button onClick={() => onRestaurar(x)} className={btnGhost}>Restaurar</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // Campo numérico (admite decimales) que solo guarda al perder el foco — para
 // porcentajes/factores que se editan poco (Liquidación formal UOCRA).
@@ -1494,20 +1547,20 @@ export default function ConcretarApp() {
 
   const [obras, setObras] = useState(isSupabaseConfigured ? [] : DEMO_OBRAS);
   const [selectedObraId, setSelectedObraId] = useState(1);
-  const [personal, setPersonal] = useState(isSupabaseConfigured ? [] : DEMO_PERSONAL);
+  const [personalRaw, setPersonal] = useState(isSupabaseConfigured ? [] : DEMO_PERSONAL);
   const [costosCategoria, setCostosCategoria] = useState(isSupabaseConfigured ? [] : DEMO_COSTOS);
   const [basicosConvenio, setBasicosConvenio] = useState(isSupabaseConfigured ? [] : DEMO_BASICOS_CONVENIO);
   const [configLiquidacion, setConfigLiquidacion] = useState(isSupabaseConfigured ? [] : DEMO_CONFIG_LIQUIDACION);
   const [liquidacionesFormales, setLiquidacionesFormales] = useState(isSupabaseConfigured ? [] : []);
   const [recibosLiquidacion, setRecibosLiquidacion] = useState(isSupabaseConfigured ? [] : []);
   const [asistencia, setAsistencia] = useState(isSupabaseConfigured ? [] : DEMO_ASISTENCIA);
-  const [herramientas, setHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_HERRAMIENTAS);
+  const [herramientasRaw, setHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_HERRAMIENTAS);
   const [combosHerramientas, setCombosHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_COMBOS);
   const [catalogoNombresHerr, setCatalogoNombresHerr] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_NOMBRES);
   const [catalogoMarcas, setCatalogoMarcas] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_MARCAS);
   const [catalogoChicas, setCatalogoChicas] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_CHICAS);
-  const [proveedores, setProveedores] = useState(isSupabaseConfigured ? [] : DEMO_PROVEEDORES);
-  const [clientes, setClientes] = useState(isSupabaseConfigured ? [] : DEMO_CLIENTES);
+  const [proveedoresRaw, setProveedores] = useState(isSupabaseConfigured ? [] : DEMO_PROVEEDORES);
+  const [clientesRaw, setClientes] = useState(isSupabaseConfigured ? [] : DEMO_CLIENTES);
   const [remitos, setRemitos] = useState(isSupabaseConfigured ? [] : DEMO_REMITOS);
   const [auditorias, setAuditorias] = useState(isSupabaseConfigured ? [] : DEMO_AUDITORIAS);
   const [feriados, setFeriados] = useState(isSupabaseConfigured ? [] : DEMO_FERIADOS);
@@ -1516,11 +1569,11 @@ export default function ConcretarApp() {
   const [catalogoMateriales, setCatalogoMateriales] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_MATERIALES);
   const [presupuestoGeneral, setPresupuestoGeneral] = useState(isSupabaseConfigured ? [] : DEMO_PRESUPUESTO_GENERAL);
   const [presupuestoMateriales, setPresupuestoMateriales] = useState(isSupabaseConfigured ? [] : DEMO_PRESUPUESTO_MATERIALES);
-  const [pedidosMateriales, setPedidosMateriales] = useState(isSupabaseConfigured ? [] : DEMO_PEDIDOS_MATERIALES);
+  const [pedidosMaterialesRaw, setPedidosMateriales] = useState(isSupabaseConfigured ? [] : DEMO_PEDIDOS_MATERIALES);
   const [stockMateriales, setStockMateriales] = useState(isSupabaseConfigured ? [] : DEMO_STOCK_MATERIALES);
-  const [ordenesCompra, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
-  const [comprasFacturas, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
-  const [ingresos, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
+  const [ordenesCompraRaw, setOrdenesCompra] = useState(isSupabaseConfigured ? [] : DEMO_OC);
+  const [comprasFacturasRaw, setComprasFacturas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS);
+  const [ingresosRaw, setIngresos] = useState(isSupabaseConfigured ? [] : DEMO_INGRESOS);
   // Ajustes manuales de cuentas — pases de una cuenta a otra u otras correcciones que
   // no son ni una compra ni un ingreso de obra, para no ensuciar esas dos pestañas.
   const [movimientosManual, setMovimientosManual] = useState([]);
@@ -1530,15 +1583,46 @@ export default function ConcretarApp() {
   // Préstamos de inversores o bancos: el capital entra a una cuenta como plata real,
   // pero es una deuda, no un ingreso — el interés se calcula solo, día a día, hasta
   // que se marca como devuelto. Siempre "General" (sin obra), como pidió el usuario.
-  const [prestamos, setPrestamos] = useState(isSupabaseConfigured ? [] : DEMO_PRESTAMOS);
+  const [prestamosRaw, setPrestamos] = useState(isSupabaseConfigured ? [] : DEMO_PRESTAMOS);
   // Devoluciones parciales de cada préstamo — cada una recalcula cuánto capital
   // queda pendiente y, de ahí en más, el interés corre sobre ese saldo.
   const [prestamosPagos, setPrestamosPagos] = useState(isSupabaseConfigured ? [] : DEMO_PRESTAMOS_PAGOS);
   // Retiros de los socios (Ricardo y Pablo) — plata real que sale de la caja de la
   // empresa, separada de Gastos/Facturas para poder ver el historial de cada uno.
-  const [cobrosSocios, setCobrosSocios] = useState(isSupabaseConfigured ? [] : DEMO_COBROS_SOCIOS);
+  const [cobrosSociosRaw, setCobrosSocios] = useState(isSupabaseConfigured ? [] : DEMO_COBROS_SOCIOS);
   const [tanteros, setTanteros] = useState(isSupabaseConfigured ? [] : DEMO_TANTEROS);
   const [avancesTanteros, setAvancesTanteros] = useState(isSupabaseConfigured ? [] : DEMO_AVANCES_TANTEROS);
+
+  // Papelera general: un registro "eliminado" (con fecha en eliminadoEn) deja de
+  // contar en toda la app —listados, selectores y balances— hasta que se
+  // restaura desde la pestaña Papelera o se purga solo a los 7 días. Estas son
+  // las versiones "activas" (sin los eliminados) que usa el resto de la app;
+  // los *Raw de arriba son los que trae/guarda la base, con todo incluido.
+  const personal = personalRaw.filter((p) => !p.eliminadoEn);
+  const herramientas = herramientasRaw.filter((h) => !h.eliminadoEn);
+  const proveedores = proveedoresRaw.filter((p) => !p.eliminadoEn);
+  const clientes = clientesRaw.filter((c) => !c.eliminadoEn);
+  const pedidosMateriales = pedidosMaterialesRaw.filter((p) => !p.eliminadoEn);
+  const ordenesCompra = ordenesCompraRaw.filter((o) => !o.eliminadoEn);
+  const comprasFacturas = comprasFacturasRaw.filter((c) => !c.eliminadoEn);
+  const ingresos = ingresosRaw.filter((i) => !i.eliminadoEn);
+  const prestamos = prestamosRaw.filter((p) => !p.eliminadoEn);
+  const cobrosSocios = cobrosSociosRaw.filter((c) => !c.eliminadoEn);
+
+  // Lo que está en la Papelera ahora mismo, para la pestaña "Papelera".
+  const personalPapelera = personalRaw.filter((p) => p.eliminadoEn);
+  const herramientasPapelera = herramientasRaw.filter((h) => h.eliminadoEn);
+  const proveedoresPapelera = proveedoresRaw.filter((p) => p.eliminadoEn);
+  const clientesPapelera = clientesRaw.filter((c) => c.eliminadoEn);
+  const pedidosMaterialesPapelera = pedidosMaterialesRaw.filter((p) => p.eliminadoEn);
+  const ordenesCompraPapelera = ordenesCompraRaw.filter((o) => o.eliminadoEn);
+  const comprasFacturasPapelera = comprasFacturasRaw.filter((c) => c.eliminadoEn);
+  const ingresosPapelera = ingresosRaw.filter((i) => i.eliminadoEn);
+  const prestamosPapelera = prestamosRaw.filter((p) => p.eliminadoEn);
+  const cobrosSociosPapelera = cobrosSociosRaw.filter((c) => c.eliminadoEn);
+  const totalEnPapelera = personalPapelera.length + herramientasPapelera.length + proveedoresPapelera.length
+    + clientesPapelera.length + pedidosMaterialesPapelera.length + ordenesCompraPapelera.length
+    + comprasFacturasPapelera.length + ingresosPapelera.length + prestamosPapelera.length + cobrosSociosPapelera.length;
 
   const [dbLoading, setDbLoading] = useState(isSupabaseConfigured);
   const [dbError, setDbError] = useState(null);
@@ -1654,6 +1738,20 @@ export default function ConcretarApp() {
     } else {
       setter((prev) => prev.filter((x) => x.id !== id));
     }
+  }
+
+  // Papelera general (herramientas, personal, gastos/facturas, ingresos,
+  // proveedores, clientes, préstamos, cobros de socios, órdenes de compra y
+  // pedidos de obra): en vez de borrar directo, se marca con la fecha y
+  // desaparece de toda la app (listados, selectores y balances) pero se puede
+  // restaurar durante 7 días desde la pestaña "Papelera" — pasado ese plazo se
+  // borra solo. Al estar en la papelera deja de contar en cualquier saldo.
+  function moverAPapelera(table, id, setter, nombre) {
+    if (!window.confirm(`¿Eliminar "${nombre}"? Se puede restaurar desde la Papelera durante 7 días; pasado ese plazo se borra definitivamente.`)) return;
+    updateRecord(table, id, { eliminadoEn: new Date().toISOString() }, setter);
+  }
+  function restaurarDePapelera(table, id, setter) {
+    updateRecord(table, id, { eliminadoEn: null }, setter);
   }
 
   // ---------- Rol actual (simula el login hasta que armemos uno real) ----------
@@ -2081,6 +2179,7 @@ export default function ConcretarApp() {
     // Todavía usamos poco estas dos secciones — quedan al final del menú y resaltadas en amarillo.
     { id: "materiales", label: "Pedidos de Obra", icon: Package },
     { id: "ordenes", label: "Órdenes de Compra", icon: ShoppingCart },
+    { id: "papelera", label: "Papelera", icon: Trash2 },
   ];
   const NAV_DESTACADOS = ["materiales", "ordenes"];
 
@@ -5437,7 +5536,7 @@ export default function ConcretarApp() {
                     <button onClick={() => startEditPersonal(viewingPerson)} className={btnGhost}>Editar</button>
                     <button
                       onClick={() => {
-                        deleteRecord("personal", viewingPerson.id, setPersonal);
+                        moverAPapelera("personal", viewingPerson.id, setPersonal, nombreCompletoDe(viewingPerson));
                         setViewingPersonId(null);
                       }}
                       className={btnGhostDanger}
@@ -6522,6 +6621,10 @@ export default function ConcretarApp() {
                       <button onClick={() => startEditHerramienta(viewingHerramienta)} className={btnGhost}>
                         <span className="flex items-center gap-1"><Pencil size={13} /> Editar</span>
                       </button>
+                      <BotonEliminar
+                        onClick={() => { moverAPapelera("herramientas", viewingHerramienta.id, setHerramientas, viewingHerramienta.nombre); setViewingHerramientaId(null); }}
+                        title="Eliminar herramienta"
+                      />
                       <select
                         value={viewingHerramienta.estado}
                         onChange={(e) => cambiarEstadoHerramienta(viewingHerramienta, e.target.value)}
@@ -7469,7 +7572,10 @@ export default function ConcretarApp() {
                                       {p.obraId == null && <span className="ml-2 rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Compra general</span>}
                                       {p.items.length > 0 && p.items.every((it) => !it.presupuestoId) && <span className="ml-2 rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">Fuera de presupuesto</span>}
                                     </div>
-                                    <span className="text-xs text-slate-400">{fmtFecha(p.fecha)} · {p.items.length} ítem(s){canVerPreciosPedido && <> · <span className="font-mono font-semibold text-slate-600">{fmtARS(p.total)}</span></>}</span>
+                                    <span className="flex items-center gap-2 text-xs text-slate-400">
+                                      {fmtFecha(p.fecha)} · {p.items.length} ítem(s){canVerPreciosPedido && <> · <span className="font-mono font-semibold text-slate-600">{fmtARS(p.total)}</span></>}
+                                      <BotonEliminar onClick={() => moverAPapelera("pedidos_materiales", p.id, setPedidosMateriales, `Pedido #${p.id}`)} title="Eliminar pedido" />
+                                    </span>
                                   </div>
                                   <div className="mt-2 text-xs text-slate-500">{p.items.map((it) => it.material).join(", ")}</div>
                                   {p.fechaNecesaria && (
@@ -8064,6 +8170,7 @@ export default function ConcretarApp() {
                           {oc.estado === "Aprobada" && (
                             <button onClick={() => recibirOC(oc.id)} className={btnGhost}>Marcar recibida</button>
                           )}
+                          <BotonEliminar onClick={() => moverAPapelera("ordenes_compra", oc.id, setOrdenesCompra, `${oc.proveedor} — ${oc.item}`)} title="Eliminar orden de compra" />
                         </div>
                       </div>
                     )}
@@ -8265,6 +8372,7 @@ export default function ConcretarApp() {
                             <button onClick={() => setEditandoMovimiento({ origen: "compras_facturas", origenId: c.id })} className={btnGhost}>
                               <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
                             </button>
+                            <BotonEliminar onClick={() => moverAPapelera("compras_facturas", c.id, setComprasFacturas, `${c.proveedor} — ${fmtARS(c.monto)}`)} title="Eliminar gasto" />
                           </div>
                         </td>
                       </tr>
@@ -8409,9 +8517,12 @@ export default function ConcretarApp() {
                           )}
                         </td>
                         <td className="px-2 py-1">
-                          {i.estado === "Pendiente" && (
-                            <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
-                          )}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {i.estado === "Pendiente" && (
+                              <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
+                            )}
+                            <BotonEliminar onClick={() => moverAPapelera("ingresos", i.id, setIngresos, `${i.concepto} — ${fmtARS(i.monto)}`)} title="Eliminar ingreso" />
+                          </div>
                         </td>
                       </tr>
                     );
@@ -8803,6 +8914,7 @@ export default function ConcretarApp() {
                 pagos={prestamosPagos}
                 onEditar={(p) => setEditandoPrestamoId(p.id)}
                 onRegistrarPago={(p) => setPagandoPrestamoId(p.id)}
+                onEliminar={(p) => moverAPapelera("prestamos", p.id, setPrestamos, p.acreedor)}
               />
               <div className="mt-1.5 text-[11px] text-slate-400">
                 El capital ya está sumado al saldo de la cuenta donde entró. El interés se calcula día a día a la tasa anual cargada y no afecta el saldo hasta que marcás el préstamo como devuelto — ahí se registra la salida de capital + interés acumulado.
@@ -8988,6 +9100,7 @@ export default function ConcretarApp() {
                         <button onClick={() => setEditandoMovimiento({ origen: "cobros_socios", origenId: c.id })} className={btnGhost}>
                           <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
                         </button>
+                        <BotonEliminar onClick={() => moverAPapelera("cobros_socios", c.id, setCobrosSocios, `Cobro de ${c.socio}`)} title="Eliminar cobro" />
                       </div>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
@@ -9102,6 +9215,7 @@ export default function ConcretarApp() {
                               <button onClick={() => editarCliente(cli)} className={btnGhost}>
                                 <span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span>
                               </button>
+                              <BotonEliminar onClick={() => moverAPapelera("clientes", cli.id, setClientes, nombreComercial(cli))} title="Eliminar cliente" />
                             </div>
                           </div>
                           <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
@@ -9213,6 +9327,7 @@ export default function ConcretarApp() {
                               <button onClick={() => editarProveedor(p)} className={btnGhost}>
                                 <span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span>
                               </button>
+                              <BotonEliminar onClick={() => moverAPapelera("proveedores", p.id, setProveedores, nombreComercial(p))} title="Eliminar proveedor" />
                             </div>
                           </div>
                           <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
@@ -9349,6 +9464,93 @@ export default function ConcretarApp() {
                 ))}
               </div>
             </Panel>
+          </div>
+        )}
+
+        {tab === "papelera" && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Papelera</h2>
+            <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
+              Todo lo que eliminás en la app (herramientas, personal, gastos, ingresos, proveedores, clientes, préstamos, cobros, órdenes de compra y pedidos) aparece acá.
+              Restaurar lo devuelve tal cual estaba, con la plata sumada/restada de nuevo en Cuentas. Si no lo restaurás, se borra solo a los 7 días.
+              Las obras canceladas tienen su propia Papelera de 24hs, dentro de la pestaña Obras.
+            </div>
+            {totalEnPapelera === 0 ? (
+              <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">La Papelera está vacía.</div>
+            ) : (
+              <div className="space-y-5">
+                <SeccionPapelera
+                  titulo="Herramientas"
+                  items={herramientasPapelera}
+                  nombreDe={(h) => h.nombre}
+                  detalleDe={(h) => h.categoria}
+                  onRestaurar={(h) => restaurarDePapelera("herramientas", h.id, setHerramientas)}
+                />
+                <SeccionPapelera
+                  titulo="Personal"
+                  items={personalPapelera}
+                  nombreDe={(p) => nombreCompletoDe(p)}
+                  detalleDe={(p) => p.categoria}
+                  onRestaurar={(p) => restaurarDePapelera("personal", p.id, setPersonal)}
+                />
+                <SeccionPapelera
+                  titulo="Gastos y Facturas"
+                  items={comprasFacturasPapelera}
+                  nombreDe={(c) => `${c.proveedor} — ${fmtARS(c.monto)}`}
+                  detalleDe={(c) => `${fmtFecha(c.fecha)} · ${c.categoria}`}
+                  onRestaurar={(c) => restaurarDePapelera("compras_facturas", c.id, setComprasFacturas)}
+                />
+                <SeccionPapelera
+                  titulo="Ingresos"
+                  items={ingresosPapelera}
+                  nombreDe={(i) => `${i.concepto} — ${fmtARS(i.monto)}`}
+                  detalleDe={(i) => fmtFecha(i.fecha)}
+                  onRestaurar={(i) => restaurarDePapelera("ingresos", i.id, setIngresos)}
+                />
+                <SeccionPapelera
+                  titulo="Proveedores"
+                  items={proveedoresPapelera}
+                  nombreDe={(p) => nombreComercial(p)}
+                  detalleDe={(p) => p.contacto}
+                  onRestaurar={(p) => restaurarDePapelera("proveedores", p.id, setProveedores)}
+                />
+                <SeccionPapelera
+                  titulo="Clientes"
+                  items={clientesPapelera}
+                  nombreDe={(c) => nombreComercial(c)}
+                  detalleDe={(c) => c.contacto}
+                  onRestaurar={(c) => restaurarDePapelera("clientes", c.id, setClientes)}
+                />
+                <SeccionPapelera
+                  titulo="Préstamos"
+                  items={prestamosPapelera}
+                  nombreDe={(p) => p.acreedor}
+                  detalleDe={(p) => `Capital: ${fmtARS(p.capital)}`}
+                  onRestaurar={(p) => restaurarDePapelera("prestamos", p.id, setPrestamos)}
+                />
+                <SeccionPapelera
+                  titulo="Cobros Ricardo y Pablo"
+                  items={cobrosSociosPapelera}
+                  nombreDe={(c) => `Cobro de ${c.socio} — ${fmtARS(c.monto)}`}
+                  detalleDe={(c) => fmtFecha(c.fecha)}
+                  onRestaurar={(c) => restaurarDePapelera("cobros_socios", c.id, setCobrosSocios)}
+                />
+                <SeccionPapelera
+                  titulo="Órdenes de Compra"
+                  items={ordenesCompraPapelera}
+                  nombreDe={(oc) => `${oc.proveedor} — ${oc.item}`}
+                  detalleDe={(oc) => fmtFecha(oc.fecha)}
+                  onRestaurar={(oc) => restaurarDePapelera("ordenes_compra", oc.id, setOrdenesCompra)}
+                />
+                <SeccionPapelera
+                  titulo="Pedidos de Obra"
+                  items={pedidosMaterialesPapelera}
+                  nombreDe={(p) => `Pedido #${p.id}`}
+                  detalleDe={(p) => `${fmtFecha(p.fecha)} · ${p.items?.length || 0} ítem(s)`}
+                  onRestaurar={(p) => restaurarDePapelera("pedidos_materiales", p.id, setPedidosMateriales)}
+                />
+              </div>
+            )}
           </div>
         )}
 
