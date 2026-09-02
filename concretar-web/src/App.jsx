@@ -654,7 +654,7 @@ function totalADevolverPrestamo(p) {
   return (p.capital || 0) + interesAcumuladoPrestamo(p);
 }
 
-function TablaPrestamos({ items, onMarcarDevuelto }) {
+function TablaPrestamos({ items, onMarcarDevuelto, onEditar }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay préstamos cargados.</div>;
   }
@@ -680,11 +680,14 @@ function TablaPrestamos({ items, onMarcarDevuelto }) {
                 <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Total a devolver</div><div className="font-mono font-semibold text-rose-600">{fmtARS(total)}</div></div>
                 <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Fecha estimada</div><div className="text-slate-700">{fmtFecha(p.fechaEstimadaDevolucion)}</div></div>
               </div>
-              {p.estado !== "Pagado" && (
-                <div className="mt-2 border-t border-stone-100 pt-2 text-right">
+              <div className="mt-2 flex flex-wrap justify-end gap-1.5 border-t border-stone-100 pt-2">
+                {p.estado !== "Pagado" && (
                   <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>
-                </div>
-              )}
+                )}
+                <button onClick={() => onEditar(p)} className={btnGhost}>
+                  <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                </button>
+              </div>
             </div>
           );
         })}
@@ -723,7 +726,14 @@ function TablaPrestamos({ items, onMarcarDevuelto }) {
                   <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(total)}</td>
                   <td className="px-2 py-1 text-slate-600">{fmtFecha(p.fechaEstimadaDevolucion)}</td>
                   <td className="px-2 py-1"><Badge estado={p.estado} /></td>
-                  <td className="px-2 py-1">{p.estado !== "Pagado" && <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>}</td>
+                  <td className="px-2 py-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {p.estado !== "Pagado" && <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>}
+                      <button onClick={() => onEditar(p)} className={btnGhost}>
+                        <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
@@ -731,6 +741,74 @@ function TablaPrestamos({ items, onMarcarDevuelto }) {
         </table>
       </div>
     </>
+  );
+}
+
+// Modal para corregir un préstamo ya cargado (fecha, acreedor, capital, tasa,
+// cuenta, formalidad, fecha estimada de devolución) por si se cometió un error al alta.
+function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
+  const [form, setForm] = useState(prestamo || {});
+  if (!prestamo) return null;
+
+  function guardar(e) {
+    e.preventDefault();
+    onGuardar(prestamo.id, {
+      fecha: form.fecha,
+      acreedor: form.acreedor,
+      capital: Number(form.capital) || 0,
+      tasaAnualPct: Number(form.tasaAnualPct) || 0,
+      cuenta: form.cuenta,
+      formalidad: form.formalidad,
+      fechaEstimadaDevolucion: form.fechaEstimadaDevolucion || null,
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-900">Editar préstamo</h3>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+        <form onSubmit={guardar} className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <Field label="Fecha">
+            <input type="date" value={form.fecha} onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+          </Field>
+          <Field label="Acreedor (inversor / banco)">
+            <input value={form.acreedor} onChange={(e) => setForm((f) => ({ ...f, acreedor: e.target.value }))} required className={inputCls} />
+          </Field>
+          <Field label="Capital ($)">
+            <MoneyInput value={form.capital} onChange={(v) => setForm((f) => ({ ...f, capital: v }))} className={inputCls} />
+          </Field>
+          <Field label="Tasa anual (%)">
+            <input
+              type="number" min="0" step="0.01"
+              value={form.tasaAnualPct}
+              onChange={(e) => setForm((f) => ({ ...f, tasaAnualPct: e.target.value }))}
+              required
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Cuenta donde entró">
+            <select value={form.cuenta} onChange={(e) => setForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+              {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Formalidad">
+            <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+              {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
+            </select>
+          </Field>
+          <Field label="Fecha estimada de devolución">
+            <input type="date" value={form.fechaEstimadaDevolucion || ""} onChange={(e) => setForm((f) => ({ ...f, fechaEstimadaDevolucion: e.target.value }))} className={inputCls} />
+          </Field>
+          <div className="flex items-end gap-2 md:col-span-3">
+            <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
+            <button type="button" onClick={onClose} className={btnGhost}>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -2729,6 +2807,11 @@ export default function ConcretarApp() {
     const total = totalADevolverPrestamo(p);
     if (!window.confirm(`¿Marcar "${p.acreedor}" como devuelto? Se registra una salida de ${fmtARS(total)} (capital + interés acumulado) de ${p.cuenta}.`)) return;
     updateRecord("prestamos", p.id, { estado: "Pagado", fechaPago: hoyISO(), montoPagado: total }, setPrestamos);
+  }
+  const [editandoPrestamoId, setEditandoPrestamoId] = useState(null);
+  function guardarEdicionPrestamo(id, patch) {
+    updateRecord("prestamos", id, patch, setPrestamos);
+    setEditandoPrestamoId(null);
   }
 
   // ---------- Cobros Ricardo y Pablo (retiros de los socios) ----------
@@ -8526,7 +8609,7 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Préstamos</h3>
-              <TablaPrestamos items={prestamos} onMarcarDevuelto={marcarPrestamoDevuelto} />
+              <TablaPrestamos items={prestamos} onMarcarDevuelto={marcarPrestamoDevuelto} onEditar={(p) => setEditandoPrestamoId(p.id)} />
               <div className="mt-1.5 text-[11px] text-slate-400">
                 El capital ya está sumado al saldo de la cuenta donde entró. El interés se calcula día a día a la tasa anual cargada y no afecta el saldo hasta que marcás el préstamo como devuelto — ahí se registra la salida de capital + interés acumulado.
               </div>
@@ -9087,6 +9170,15 @@ export default function ConcretarApp() {
           onClose={() => setEditandoMovimiento(null)}
           onGuardarCompra={guardarEdicionCompra}
           onGuardarCobro={guardarEdicionCobro}
+        />
+      )}
+
+      {editandoPrestamoId && (
+        <ModalEditarPrestamo
+          key={editandoPrestamoId}
+          prestamo={prestamos.find((p) => p.id === editandoPrestamoId)}
+          onClose={() => setEditandoPrestamoId(null)}
+          onGuardar={guardarEdicionPrestamo}
         />
       )}
     </div>
