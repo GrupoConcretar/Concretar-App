@@ -330,6 +330,8 @@ function Field({ label, children }) {
 
 const inputCls = "rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30";
 const btnGhost = "rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-stone-100";
+// Botón amarillo de "agregar/cargar" — se repetía a mano en cada pestaña.
+const btnPrimary = "flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400";
 
 // Campo de plata: mientras escribís va agregando puntos de miles en vivo
 // (1 -> 10 -> 100 -> 1.000), como en una caja registradora — y Borrar saca un
@@ -397,7 +399,11 @@ function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) 
 
   const busqueda = texto.trim().toLowerCase();
   const opciones = busqueda ? proveedores.filter((p) => nombreComercial(p).toLowerCase().includes(busqueda)) : proveedores;
-  const coincideExacto = proveedores.some((p) => nombreComercial(p).toLowerCase() === busqueda);
+  // Comparamos ignorando mayúsculas para no obligar a tipear el nombre exacto,
+  // pero guardamos el nombre TAL COMO está cargado el proveedor (no lo que
+  // escribió el usuario) — si no, una compra podía quedar con otra
+  // capitalización y dejar de coincidir con el proveedor real en Cuentas.
+  const coincidenciaExacta = proveedores.find((p) => nombreComercial(p).toLowerCase() === busqueda);
 
   function elegir(p) {
     setTexto(nombreComercial(p));
@@ -428,7 +434,7 @@ function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) 
         autoComplete="off"
         className={inputCls}
       />
-      <input type="hidden" name={name} value={seleccionado || (coincideExacto ? texto.trim() : "")} />
+      <input type="hidden" name={name} value={seleccionado || (coincidenciaExacta ? nombreComercial(coincidenciaExacta) : "")} />
       {abierto && (
         <div className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-md border border-stone-200 bg-white py-1 shadow-lg">
           {opciones.length === 0 && !busqueda && (
@@ -445,7 +451,7 @@ function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) 
               {nombreComercial(p)}
             </button>
           ))}
-          {busqueda && !coincideExacto && onCrearProveedor && (
+          {busqueda && !coincidenciaExacta && onCrearProveedor && (
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
@@ -1620,9 +1626,6 @@ export default function ConcretarApp() {
   const ingresosPapelera = ingresosRaw.filter((i) => i.eliminadoEn);
   const prestamosPapelera = prestamosRaw.filter((p) => p.eliminadoEn);
   const cobrosSociosPapelera = cobrosSociosRaw.filter((c) => c.eliminadoEn);
-  const totalEnPapelera = personalPapelera.length + herramientasPapelera.length + proveedoresPapelera.length
-    + clientesPapelera.length + pedidosMaterialesPapelera.length + ordenesCompraPapelera.length
-    + comprasFacturasPapelera.length + ingresosPapelera.length + prestamosPapelera.length + cobrosSociosPapelera.length;
 
   const [dbLoading, setDbLoading] = useState(isSupabaseConfigured);
   const [dbError, setDbError] = useState(null);
@@ -1693,8 +1696,11 @@ export default function ConcretarApp() {
     })();
   }, [reloadKey]);
 
-  let nextId = 200;
-  const genId = () => nextId++;
+  // useRef (no una variable suelta) para que el contador sobreviva entre renders —
+  // si no, cada nuevo render lo reiniciaba a 200 y dos altas separadas en modo demo
+  // terminaban con el mismo id.
+  const nextIdRef = useRef(200);
+  const genId = () => nextIdRef.current++;
 
   async function addRecord(table, obj, setter) {
     if (isSupabaseConfigured) {
@@ -3322,7 +3328,10 @@ export default function ConcretarApp() {
     const letraTipo = LETRA_TIPO_HERRAMIENTA[categoria] || "X";
     const letrasMarca = (marca || "GEN").replace(/[^a-zA-Zñ]/g, "").toUpperCase().padEnd(3, "X").slice(0, 3);
     const prefijo = `${letraTipo}-${letrasMarca}`;
-    const existentes = herramientas.filter((h) => (h.numeroSerie || "").startsWith(prefijo));
+    // Cuenta sobre TODAS las herramientas (incluidas las que están en la Papelera,
+    // que siguen existiendo en la base hasta que se purguen a los 7 días) para no
+    // repetirle el mismo número de serie a una herramienta nueva.
+    const existentes = herramientasRaw.filter((h) => (h.numeroSerie || "").startsWith(prefijo));
     const numero = String(existentes.length + 1).padStart(2, "0");
     return `${prefijo}${numero}`;
   }
@@ -4708,7 +4717,7 @@ export default function ConcretarApp() {
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Obras</h2>
-              <button onClick={() => setShowObraForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+              <button onClick={() => setShowObraForm((v) => !v)} className={btnPrimary}>
                 <Plus size={16} /> Nueva obra
               </button>
             </div>
@@ -5177,7 +5186,7 @@ export default function ConcretarApp() {
                 {canCrearPersonal && (
                   <button
                     onClick={() => (showPersonalForm ? cancelPersonalForm() : setShowPersonalForm(true))}
-                    className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                    className={btnPrimary}
                   >
                     <Plus size={16} /> Añadir personal
                   </button>
@@ -5622,7 +5631,7 @@ export default function ConcretarApp() {
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Asistencia</h2>
-              <button onClick={abrirCargaAsistencia} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+              <button onClick={abrirCargaAsistencia} className={btnPrimary}>
                 <Plus size={16} /> Cargar asistencia
               </button>
             </div>
@@ -5933,7 +5942,7 @@ export default function ConcretarApp() {
             {vistaLiquidacion === "tanteros" && (
               <>
                 <div className="flex items-center justify-end">
-                  <button onClick={() => setShowTanteroForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                  <button onClick={() => setShowTanteroForm((v) => !v)} className={btnPrimary}>
                     <Plus size={16} /> Nuevo grupo
                   </button>
                 </div>
@@ -6435,7 +6444,7 @@ export default function ConcretarApp() {
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-500">Maquinaria y herramientas de alto valor, controladas de forma individual por número de serie.</div>
-                  <button onClick={startAddHerramienta} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                  <button onClick={startAddHerramienta} className={btnPrimary}>
                     <Plus size={16} /> Nueva herramienta
                   </button>
                 </div>
@@ -6691,7 +6700,7 @@ export default function ConcretarApp() {
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-500">Cajas de herramientas manuales chicas, armadas por rubro. Primero se asignan a una obra y después a un operario de esa obra.</div>
-                  <button onClick={() => setShowComboForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                  <button onClick={() => setShowComboForm((v) => !v)} className={btnPrimary}>
                     <Plus size={16} /> Nueva caja
                   </button>
                 </div>
@@ -6850,7 +6859,7 @@ export default function ConcretarApp() {
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-500">Traslados de herramientas de Alto Valor entre Oficina, obras y talleres — con aprobación de salida y de recepción.</div>
-                  <button onClick={() => setShowRemitoForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                  <button onClick={() => setShowRemitoForm((v) => !v)} className={btnPrimary}>
                     <Plus size={16} /> Nuevo remito
                   </button>
                 </div>
@@ -6980,7 +6989,7 @@ export default function ConcretarApp() {
                 <div className="flex items-center justify-end">
                   <button
                     onClick={() => { setShowAuditoriaForm((v) => !v); setPresentesAuditoria([]); setObsAuditoria(""); }}
-                    className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                    className={btnPrimary}
                   >
                     <ClipboardCheck size={16} /> Hacer un control manual
                   </button>
@@ -7500,7 +7509,7 @@ export default function ConcretarApp() {
                               </div>
                             )}
                             {seleccionPresupuesto.length > 0 && (
-                              <button onClick={abrirArmadoPedido} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                              <button onClick={abrirArmadoPedido} className={btnPrimary}>
                                 <ShoppingCart size={16} /> Armar pedido con {seleccionPresupuesto.length} ítem(s)
                               </button>
                             )}
@@ -8063,7 +8072,7 @@ export default function ConcretarApp() {
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Órdenes de Compra</h2>
-              <button onClick={() => setShowOcForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+              <button onClick={() => setShowOcForm((v) => !v)} className={btnPrimary}>
                 <Plus size={16} /> Nueva orden
               </button>
             </div>
@@ -8198,7 +8207,15 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "facturas" && (
+        {tab === "facturas" && !canVerFinanzas && (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
+            <Receipt size={28} className="text-slate-400" />
+            <div className="text-sm font-semibold text-slate-700">Sección restringida</div>
+            <div className="max-w-sm text-xs text-slate-500">Solo Gerente y Contador pueden ver y cargar gastos y facturas.</div>
+          </div>
+        )}
+
+        {tab === "facturas" && canVerFinanzas && (
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Gastos y Facturas</h2>
@@ -8206,7 +8223,7 @@ export default function ConcretarApp() {
                 <button onClick={generarPdfContadores} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
                   <FileDown size={16} /> PDF para el contador ({nombreMesCuentas(mesReporteContador)})
                 </button>
-                <button onClick={() => setShowFacturaForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+                <button onClick={() => setShowFacturaForm((v) => !v)} className={btnPrimary}>
                   <Plus size={16} /> Cargar gasto
                 </button>
               </div>
@@ -8396,7 +8413,7 @@ export default function ConcretarApp() {
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Ingresos</h2>
-              <button onClick={() => setShowIngresoForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400">
+              <button onClick={() => setShowIngresoForm((v) => !v)} className={btnPrimary}>
                 <Plus size={16} /> Cargar ingreso
               </button>
             </div>
@@ -8566,7 +8583,7 @@ export default function ConcretarApp() {
                 </button>
                 <button
                   onClick={() => setShowMovimientoForm((v) => !v)}
-                  className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                  className={btnPrimary}
                 >
                   <Plus size={16} /> Agregar movimiento
                 </button>
@@ -8936,7 +8953,7 @@ export default function ConcretarApp() {
                 </button>
                 <button
                   onClick={() => setShowCobroSocioForm((v) => !v)}
-                  className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                  className={btnPrimary}
                 >
                   <Plus size={16} /> Registrar cobro
                 </button>
@@ -9149,7 +9166,7 @@ export default function ConcretarApp() {
                       setEditandoClienteId(null);
                       setShowClienteForm(true);
                     }}
-                    className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                    className={btnPrimary}
                   >
                     <Plus size={16} /> Nuevo cliente
                   </button>
@@ -9244,7 +9261,7 @@ export default function ConcretarApp() {
                       setEditandoProveedorId(null);
                       setShowProveedorForm(true);
                     }}
-                    className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                    className={btnPrimary}
                   >
                     <Plus size={16} /> Nuevo proveedor
                   </button>
@@ -9474,8 +9491,12 @@ export default function ConcretarApp() {
               Todo lo que eliminás en la app (herramientas, personal, gastos, ingresos, proveedores, clientes, préstamos, cobros, órdenes de compra y pedidos) aparece acá.
               Restaurar lo devuelve tal cual estaba, con la plata sumada/restada de nuevo en Cuentas. Si no lo restaurás, se borra solo a los 7 días.
               Las obras canceladas tienen su propia Papelera de 24hs, dentro de la pestaña Obras.
+              {!canVerFinanzas && " Los gastos, ingresos, préstamos y cobros eliminados solo los ve Gerente/Contador, igual que en sus pestañas."}
             </div>
-            {totalEnPapelera === 0 ? (
+            {(herramientasPapelera.length + personalPapelera.length + proveedoresPapelera.length + clientesPapelera.length
+              + ordenesCompraPapelera.length + pedidosMaterialesPapelera.length
+              + (canVerFinanzas ? comprasFacturasPapelera.length + ingresosPapelera.length + prestamosPapelera.length + cobrosSociosPapelera.length : 0)
+            ) === 0 ? (
               <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">La Papelera está vacía.</div>
             ) : (
               <div className="space-y-5">
@@ -9494,20 +9515,6 @@ export default function ConcretarApp() {
                   onRestaurar={(p) => restaurarDePapelera("personal", p.id, setPersonal)}
                 />
                 <SeccionPapelera
-                  titulo="Gastos y Facturas"
-                  items={comprasFacturasPapelera}
-                  nombreDe={(c) => `${c.proveedor} — ${fmtARS(c.monto)}`}
-                  detalleDe={(c) => `${fmtFecha(c.fecha)} · ${c.categoria}`}
-                  onRestaurar={(c) => restaurarDePapelera("compras_facturas", c.id, setComprasFacturas)}
-                />
-                <SeccionPapelera
-                  titulo="Ingresos"
-                  items={ingresosPapelera}
-                  nombreDe={(i) => `${i.concepto} — ${fmtARS(i.monto)}`}
-                  detalleDe={(i) => fmtFecha(i.fecha)}
-                  onRestaurar={(i) => restaurarDePapelera("ingresos", i.id, setIngresos)}
-                />
-                <SeccionPapelera
                   titulo="Proveedores"
                   items={proveedoresPapelera}
                   nombreDe={(p) => nombreComercial(p)}
@@ -9521,20 +9528,38 @@ export default function ConcretarApp() {
                   detalleDe={(c) => c.contacto}
                   onRestaurar={(c) => restaurarDePapelera("clientes", c.id, setClientes)}
                 />
-                <SeccionPapelera
-                  titulo="Préstamos"
-                  items={prestamosPapelera}
-                  nombreDe={(p) => p.acreedor}
-                  detalleDe={(p) => `Capital: ${fmtARS(p.capital)}`}
-                  onRestaurar={(p) => restaurarDePapelera("prestamos", p.id, setPrestamos)}
-                />
-                <SeccionPapelera
-                  titulo="Cobros Ricardo y Pablo"
-                  items={cobrosSociosPapelera}
-                  nombreDe={(c) => `Cobro de ${c.socio} — ${fmtARS(c.monto)}`}
-                  detalleDe={(c) => fmtFecha(c.fecha)}
-                  onRestaurar={(c) => restaurarDePapelera("cobros_socios", c.id, setCobrosSocios)}
-                />
+                {canVerFinanzas && (
+                  <>
+                    <SeccionPapelera
+                      titulo="Gastos y Facturas"
+                      items={comprasFacturasPapelera}
+                      nombreDe={(c) => `${c.proveedor} — ${fmtARS(c.monto)}`}
+                      detalleDe={(c) => `${fmtFecha(c.fecha)} · ${c.categoria}`}
+                      onRestaurar={(c) => restaurarDePapelera("compras_facturas", c.id, setComprasFacturas)}
+                    />
+                    <SeccionPapelera
+                      titulo="Ingresos"
+                      items={ingresosPapelera}
+                      nombreDe={(i) => `${i.concepto} — ${fmtARS(i.monto)}`}
+                      detalleDe={(i) => fmtFecha(i.fecha)}
+                      onRestaurar={(i) => restaurarDePapelera("ingresos", i.id, setIngresos)}
+                    />
+                    <SeccionPapelera
+                      titulo="Préstamos"
+                      items={prestamosPapelera}
+                      nombreDe={(p) => p.acreedor}
+                      detalleDe={(p) => `Capital: ${fmtARS(p.capital)}`}
+                      onRestaurar={(p) => restaurarDePapelera("prestamos", p.id, setPrestamos)}
+                    />
+                    <SeccionPapelera
+                      titulo="Cobros Ricardo y Pablo"
+                      items={cobrosSociosPapelera}
+                      nombreDe={(c) => `Cobro de ${c.socio} — ${fmtARS(c.monto)}`}
+                      detalleDe={(c) => fmtFecha(c.fecha)}
+                      onRestaurar={(c) => restaurarDePapelera("cobros_socios", c.id, setCobrosSocios)}
+                    />
+                  </>
+                )}
                 <SeccionPapelera
                   titulo="Órdenes de Compra"
                   items={ordenesCompraPapelera}
