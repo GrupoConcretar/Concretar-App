@@ -645,16 +645,29 @@ function ResumenObrasCuentas({ items }) {
 function diasTranscurridosDesde(fechaStr, hastaStr) {
   return Math.max(0, Math.round((fechaLocal(hastaStr) - fechaLocal(fechaStr)) / 86400000));
 }
-function interesAcumuladoPrestamo(p) {
-  const hasta = p.estado === "Pagado" ? (p.fechaPago || p.fecha) : hoyISO();
-  const dias = diasTranscurridosDesde(p.fecha, hasta);
-  return (p.capital || 0) * ((p.tasaAnualPct || 0) / 100) * (dias / 365);
-}
-function totalADevolverPrestamo(p) {
-  return (p.capital || 0) + interesAcumuladoPrestamo(p);
+// Recalcula el estado de un préstamo pisando los pagos parciales que se hayan
+// hecho: cada pago primero cubre el interés acumulado desde el pago anterior
+// (o desde el alta) y lo que sobra amortiza capital — así el interés de ahí en
+// adelante corre sobre el saldo de capital que quede, no sobre el capital original.
+function calcularEstadoPrestamo(p, pagos) {
+  const tasa = (p.tasaAnualPct || 0) / 100;
+  const pagosDelPrestamo = pagos.filter((pg) => pg.prestamoId === p.id).sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+  let saldoCapital = p.capital || 0;
+  let fechaCorte = p.fecha;
+  for (const pago of pagosDelPrestamo) {
+    const dias = diasTranscurridosDesde(fechaCorte, pago.fecha);
+    const interesDelPeriodo = saldoCapital * tasa * (dias / 365);
+    const aCapital = Math.max(0, (pago.monto || 0) - interesDelPeriodo);
+    saldoCapital = Math.max(0, saldoCapital - aCapital);
+    fechaCorte = pago.fecha;
+  }
+  const hasta = p.estado === "Pagado" ? (p.fechaPago || fechaCorte) : hoyISO();
+  const interesAcumulado = saldoCapital * tasa * (diasTranscurridosDesde(fechaCorte, hasta) / 365);
+  const totalPagado = pagosDelPrestamo.reduce((s, pg) => s + (pg.monto || 0), 0);
+  return { saldoCapital, interesAcumulado, totalADevolver: saldoCapital + interesAcumulado, totalPagado, pagos: pagosDelPrestamo, fechaCorte, dias: diasTranscurridosDesde(fechaCorte, hasta) };
 }
 
-function TablaPrestamos({ items, onMarcarDevuelto, onEditar }) {
+function TablaPrestamos({ items, pagos, onMarcarDevuelto, onEditar, onRegistrarPago }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay préstamos cargados.</div>;
   }
@@ -663,9 +676,7 @@ function TablaPrestamos({ items, onMarcarDevuelto, onEditar }) {
       {/* Celular: una tarjeta por préstamo. */}
       <div className="space-y-2 sm:hidden">
         {items.map((p) => {
-          const interes = interesAcumuladoPrestamo(p);
-          const total = totalADevolverPrestamo(p);
-          const dias = diasTranscurridosDesde(p.fecha, p.estado === "Pagado" ? (p.fechaPago || p.fecha) : hoyISO());
+          const estado = calcularEstadoPrestamo(p, pagos);
           return (
             <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-3 text-xs shadow-sm">
               <div className="flex items-center justify-between gap-2">
@@ -673,16 +684,38 @@ function TablaPrestamos({ items, onMarcarDevuelto, onEditar }) {
                 <Badge estado={p.estado} />
               </div>
               <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
-                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Capital</div><div className="font-mono font-semibold text-slate-800">{fmtARS(p.capital)}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Capital original</div><div className="font-mono font-semibold text-slate-800">{fmtARS(p.capital)}</div></div>
                 <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Tasa anual</div><div className="font-mono text-slate-700">{p.tasaAnualPct}%</div></div>
-                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Días transcurridos</div><div className="font-mono text-slate-700">{dias}</div></div>
-                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Interés acumulado</div><div className="font-mono text-amber-700">{fmtARS(interes)}</div></div>
-                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Total a devolver</div><div className="font-mono font-semibold text-rose-600">{fmtARS(total)}</div></div>
+                {estado.totalPagado > 0 && (
+                  <>
+                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Pagado hasta ahora</div><div className="font-mono text-emerald-700">{fmtARS(estado.totalPagado)}</div></div>
+                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Saldo de capital</div><div className="font-mono text-slate-700">{fmtARS(estado.saldoCapital)}</div></div>
+                  </>
+                )}
+                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Días {estado.totalPagado > 0 ? "desde el último pago" : "transcurridos"}</div><div className="font-mono text-slate-700">{estado.dias}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Interés acumulado</div><div className="font-mono text-amber-700">{fmtARS(estado.interesAcumulado)}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Total a devolver</div><div className="font-mono font-semibold text-rose-600">{fmtARS(estado.totalADevolver)}</div></div>
                 <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Fecha estimada</div><div className="text-slate-700">{fmtFecha(p.fechaEstimadaDevolucion)}</div></div>
               </div>
+              {estado.pagos.length > 0 && (
+                <div className="mt-2 border-t border-stone-100 pt-2">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Pagos parciales</div>
+                  <div className="space-y-1">
+                    {estado.pagos.map((pg) => (
+                      <div key={pg.id} className="flex items-center justify-between text-[11px] text-slate-600">
+                        <span>{fmtFecha(pg.fecha)} · {pg.cuenta}</span>
+                        <span className="font-mono">{fmtARS(pg.monto)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="mt-2 flex flex-wrap justify-end gap-1.5 border-t border-stone-100 pt-2">
                 {p.estado !== "Pagado" && (
-                  <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>
+                  <>
+                    <button onClick={() => onRegistrarPago(p)} className={btnGhost}>Registrar pago parcial</button>
+                    <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>
+                  </>
                 )}
                 <button onClick={() => onEditar(p)} className={btnGhost}>
                   <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
@@ -699,9 +732,10 @@ function TablaPrestamos({ items, onMarcarDevuelto, onEditar }) {
           <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-2 py-1.5">Acreedor</th>
-              <th className="px-2 py-1.5 text-right">Capital</th>
+              <th className="px-2 py-1.5 text-right">Capital original</th>
+              <th className="px-2 py-1.5 text-right">Pagado</th>
+              <th className="px-2 py-1.5 text-right">Saldo capital</th>
               <th className="px-2 py-1.5 text-right">Tasa anual</th>
-              <th className="px-2 py-1.5">Fecha alta</th>
               <th className="px-2 py-1.5 text-right">Días</th>
               <th className="px-2 py-1.5 text-right">Interés acumulado</th>
               <th className="px-2 py-1.5 text-right">Total a devolver</th>
@@ -712,23 +746,30 @@ function TablaPrestamos({ items, onMarcarDevuelto, onEditar }) {
           </thead>
           <tbody>
             {items.map((p) => {
-              const interes = interesAcumuladoPrestamo(p);
-              const total = totalADevolverPrestamo(p);
-              const dias = diasTranscurridosDesde(p.fecha, p.estado === "Pagado" ? (p.fechaPago || p.fecha) : hoyISO());
+              const estado = calcularEstadoPrestamo(p, pagos);
               return (
                 <tr key={p.id} className="border-t border-stone-100">
-                  <td className="px-2 py-1 font-medium text-slate-900">{p.acreedor}</td>
+                  <td className="px-2 py-1 font-medium text-slate-900">
+                    {p.acreedor}
+                    {estado.pagos.length > 0 && <div className="font-normal text-slate-400">{estado.pagos.length} pago{estado.pagos.length > 1 ? "s" : ""} parcial{estado.pagos.length > 1 ? "es" : ""}</div>}
+                  </td>
                   <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(p.capital)}</td>
+                  <td className="px-2 py-1 text-right font-mono text-emerald-700">{estado.totalPagado > 0 ? fmtARS(estado.totalPagado) : "—"}</td>
+                  <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(estado.saldoCapital)}</td>
                   <td className="px-2 py-1 text-right font-mono text-slate-700">{p.tasaAnualPct}%</td>
-                  <td className="px-2 py-1 text-slate-600">{fmtFecha(p.fecha)}</td>
-                  <td className="px-2 py-1 text-right font-mono text-slate-700">{dias}</td>
-                  <td className="px-2 py-1 text-right font-mono text-amber-700">{fmtARS(interes)}</td>
-                  <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(total)}</td>
+                  <td className="px-2 py-1 text-right font-mono text-slate-700">{estado.dias}</td>
+                  <td className="px-2 py-1 text-right font-mono text-amber-700">{fmtARS(estado.interesAcumulado)}</td>
+                  <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(estado.totalADevolver)}</td>
                   <td className="px-2 py-1 text-slate-600">{fmtFecha(p.fechaEstimadaDevolucion)}</td>
                   <td className="px-2 py-1"><Badge estado={p.estado} /></td>
                   <td className="px-2 py-1">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {p.estado !== "Pagado" && <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>}
+                      {p.estado !== "Pagado" && (
+                        <>
+                          <button onClick={() => onRegistrarPago(p)} className={btnGhost}>Registrar pago parcial</button>
+                          <button onClick={() => onMarcarDevuelto(p)} className={btnGhost}>Marcar devuelto</button>
+                        </>
+                      )}
                       <button onClick={() => onEditar(p)} className={btnGhost}>
                         <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
                       </button>
@@ -803,6 +844,66 @@ function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
             <input type="date" value={form.fechaEstimadaDevolucion || ""} onChange={(e) => setForm((f) => ({ ...f, fechaEstimadaDevolucion: e.target.value }))} className={inputCls} />
           </Field>
           <div className="flex items-end gap-2 md:col-span-3">
+            <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
+            <button type="button" onClick={onClose} className={btnGhost}>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Modal para registrar una devolución parcial de un préstamo. El pago cubre
+// primero el interés acumulado hasta esa fecha y lo que sobra amortiza
+// capital — de ahí en más el interés corre sobre el saldo que quede.
+function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
+  const [fecha, setFecha] = useState(hoyISO());
+  const [monto, setMonto] = useState(0);
+  const [cuenta, setCuenta] = useState(prestamo?.cuenta);
+  if (!prestamo) return null;
+
+  const estadoActual = calcularEstadoPrestamo(prestamo, pagos);
+  const dias = diasTranscurridosDesde(estadoActual.fechaCorte, fecha);
+  const interesAlPagar = estadoActual.saldoCapital * ((prestamo.tasaAnualPct || 0) / 100) * (dias / 365);
+  const aCapital = Math.max(0, (Number(monto) || 0) - interesAlPagar);
+  const saldoRestante = Math.max(0, estadoActual.saldoCapital - aCapital);
+
+  function guardar(e) {
+    e.preventDefault();
+    onGuardar(prestamo.id, { fecha, monto: Number(monto) || 0, cuenta });
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-900">Registrar pago parcial — {prestamo.acreedor}</h3>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="mb-3 text-xs text-slate-500">
+          Saldo de capital actual: <span className="font-mono font-semibold text-slate-700">{fmtARS(estadoActual.saldoCapital)}</span>.
+          El pago cubre primero el interés acumulado y lo que sobra amortiza capital.
+        </div>
+        <form onSubmit={guardar} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Field label="Fecha del pago">
+            <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} />
+          </Field>
+          <Field label="Cuenta de la que sale">
+            <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={inputCls}>
+              {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </Field>
+          <div className="md:col-span-2">
+            <Field label="Monto a devolver ($)">
+              <MoneyInput value={monto} onChange={setMonto} className={inputCls} />
+            </Field>
+          </div>
+          <div className="rounded-md border border-dashed border-stone-300 bg-stone-50 p-3 text-xs text-slate-600 md:col-span-2">
+            <div className="flex items-center justify-between"><span>Interés acumulado hasta esta fecha</span><span className="font-mono">{fmtARS(interesAlPagar)}</span></div>
+            <div className="flex items-center justify-between"><span>Va a amortizar capital</span><span className="font-mono">{fmtARS(aCapital)}</span></div>
+            <div className="mt-1 flex items-center justify-between border-t border-stone-200 pt-1 font-semibold text-slate-800"><span>Saldo de capital restante</span><span className="font-mono">{fmtARS(saldoRestante)}</span></div>
+          </div>
+          <div className="flex items-end gap-2 md:col-span-2">
             <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
             <button type="button" onClick={onClose} className={btnGhost}>Cancelar</button>
           </div>
@@ -1368,6 +1469,9 @@ export default function ConcretarApp() {
     { id: 1, fecha: "2026-06-01", acreedor: "Inversor Juan Pérez", capital: 5000000, tasaAnualPct: 60, cuenta: "Banco", formalidad: "Blanco", fechaEstimadaDevolucion: "2026-12-01", estado: "Vigente", fechaPago: null, montoPagado: null },
     { id: 2, fecha: "2026-01-15", acreedor: "Banco San Juan", capital: 2000000, tasaAnualPct: 40, cuenta: "Banco", formalidad: "Blanco", fechaEstimadaDevolucion: "2026-04-15", estado: "Pagado", fechaPago: "2026-04-10", montoPagado: 2186301.37 },
   ];
+  const DEMO_PRESTAMOS_PAGOS = [
+    { id: 1, prestamoId: 1, fecha: "2026-07-15", monto: 1000000, cuenta: "Banco" },
+  ];
 
   const DEMO_COBROS_SOCIOS = [
     { id: 1, fecha: "2026-07-15", socio: "Ricardo", monto: 1500000, cuenta: "Banco", medioBancario: "Transferencia", formalidad: "Blanco", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" },
@@ -1421,6 +1525,9 @@ export default function ConcretarApp() {
   // pero es una deuda, no un ingreso — el interés se calcula solo, día a día, hasta
   // que se marca como devuelto. Siempre "General" (sin obra), como pidió el usuario.
   const [prestamos, setPrestamos] = useState(isSupabaseConfigured ? [] : DEMO_PRESTAMOS);
+  // Devoluciones parciales de cada préstamo — cada una recalcula cuánto capital
+  // queda pendiente y, de ahí en más, el interés corre sobre ese saldo.
+  const [prestamosPagos, setPrestamosPagos] = useState(isSupabaseConfigured ? [] : DEMO_PRESTAMOS_PAGOS);
   // Retiros de los socios (Ricardo y Pablo) — plata real que sale de la caja de la
   // empresa, separada de Gastos/Facturas para poder ver el historial de cada uno.
   const [cobrosSocios, setCobrosSocios] = useState(isSupabaseConfigured ? [] : DEMO_COBROS_SOCIOS);
@@ -1440,7 +1547,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -1450,6 +1557,7 @@ export default function ConcretarApp() {
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
           sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"), sbSelect("cobros_socios"),
+          sbSelect("prestamos_pagos"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -1485,6 +1593,7 @@ export default function ConcretarApp() {
         setDineroReal(dr);
         setPrestamos(pr);
         setCobrosSocios(cs);
+        setPrestamosPagos(pp);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -2772,15 +2881,19 @@ export default function ConcretarApp() {
       .filter((m) => m.formalidad === formalidad)
       .reduce((s, m) => s + (m.cuentaOrigen === cuenta ? -(m.monto || 0) : 0) + (m.cuentaDestino === cuenta ? (m.monto || 0) : 0), 0);
     // El capital de un préstamo entra a la cuenta como plata real (no es ganancia,
-    // pero sí caja); al devolverlo, sale el capital + interés acumulado hasta esa fecha.
+    // pero sí caja); cada devolución (parcial o la final) sale de la cuenta que se
+    // eligió en ese pago — no necesariamente la misma en la que entró el capital.
     const totalPrestamos = prestamos
       .filter((p) => p.cuenta === cuenta && p.formalidad === formalidad)
-      .reduce((s, p) => s + (p.capital || 0) - (p.estado === "Pagado" ? (p.montoPagado || 0) : 0), 0);
+      .reduce((s, p) => s + (p.capital || 0), 0);
+    const totalPagosPrestamos = prestamosPagos
+      .filter((pg) => pg.cuenta === cuenta && prestamos.find((p) => p.id === pg.prestamoId)?.formalidad === formalidad)
+      .reduce((s, pg) => s + (pg.monto || 0), 0);
     // Un cobro de Ricardo o Pablo es plata real que sale de la caja de la empresa.
     const totalCobrosSocios = cobrosSocios
       .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad)
       .reduce((s, c) => s + (c.monto || 0), 0);
-    return totalIngresos - totalEgresos + totalManual + totalPrestamos - totalCobrosSocios;
+    return totalIngresos - totalEgresos + totalManual + totalPrestamos - totalPagosPrestamos - totalCobrosSocios;
   }
 
   const totalBlanco = FORMALIDADES[0] && CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Blanco"), 0);
@@ -2804,14 +2917,22 @@ export default function ConcretarApp() {
     setShowPrestamoForm(false);
   }
   function marcarPrestamoDevuelto(p) {
-    const total = totalADevolverPrestamo(p);
-    if (!window.confirm(`¿Marcar "${p.acreedor}" como devuelto? Se registra una salida de ${fmtARS(total)} (capital + interés acumulado) de ${p.cuenta}.`)) return;
-    updateRecord("prestamos", p.id, { estado: "Pagado", fechaPago: hoyISO(), montoPagado: total }, setPrestamos);
+    const estadoActual = calcularEstadoPrestamo(p, prestamosPagos);
+    const total = estadoActual.totalADevolver;
+    if (!window.confirm(`¿Marcar "${p.acreedor}" como devuelto? Se registra una salida de ${fmtARS(total)} (saldo de capital + interés acumulado) de ${p.cuenta}.`)) return;
+    const hoy = hoyISO();
+    addRecord("prestamos_pagos", { prestamoId: p.id, fecha: hoy, monto: total, cuenta: p.cuenta }, setPrestamosPagos);
+    updateRecord("prestamos", p.id, { estado: "Pagado", fechaPago: hoy, montoPagado: total }, setPrestamos);
   }
   const [editandoPrestamoId, setEditandoPrestamoId] = useState(null);
   function guardarEdicionPrestamo(id, patch) {
     updateRecord("prestamos", id, patch, setPrestamos);
     setEditandoPrestamoId(null);
+  }
+  const [pagandoPrestamoId, setPagandoPrestamoId] = useState(null);
+  function guardarPagoPrestamo(prestamoId, pago) {
+    addRecord("prestamos_pagos", { prestamoId, ...pago }, setPrestamosPagos);
+    setPagandoPrestamoId(null);
   }
 
   // ---------- Cobros Ricardo y Pablo (retiros de los socios) ----------
@@ -2906,9 +3027,12 @@ export default function ConcretarApp() {
     ...prestamos.map((p) => ({
       id: `prestamo-alta-${p.id}`, fecha: p.fecha, tipo: "Ingreso", obraId: null, detalle: `Préstamo recibido — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: p.capital || 0, estado: null,
     })),
-    ...prestamos.filter((p) => p.estado === "Pagado").map((p) => ({
-      id: `prestamo-pago-${p.id}`, fecha: p.fechaPago, tipo: "Egreso", obraId: null, detalle: `Devolución préstamo — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: -(p.montoPagado || totalADevolverPrestamo(p)), estado: "Pagada",
-    })),
+    ...prestamosPagos.map((pg) => {
+      const p = prestamos.find((x) => x.id === pg.prestamoId);
+      return {
+        id: `prestamo-pago-${pg.id}`, fecha: pg.fecha, tipo: "Egreso", obraId: null, detalle: `Devolución préstamo — ${p?.acreedor || "?"}`, formalidad: p?.formalidad, cuenta: pg.cuenta, monto: -(pg.monto || 0), estado: "Pagada",
+      };
+    }),
     ...cobrosSocios.map((c) => ({
       id: `cobro-socio-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: null, detalle: `Cobro — ${c.socio}`, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: "Pagada",
       origen: "cobros_socios", origenId: c.id, tipoFactura: c.tipoFactura,
@@ -8511,7 +8635,7 @@ export default function ConcretarApp() {
                       <div className="space-y-1.5">
                         {prestamosPorDevolver.map((p) => {
                           const dias = p.fechaEstimadaDevolucion ? diasHasta(p.fechaEstimadaDevolucion) : null;
-                          const total = totalADevolverPrestamo(p);
+                          const total = calcularEstadoPrestamo(p, prestamosPagos).totalADevolver;
                           return (
                             <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
                               <span className="font-medium text-slate-800">{p.acreedor}</span>
@@ -8668,7 +8792,13 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Préstamos</h3>
-              <TablaPrestamos items={prestamos} onMarcarDevuelto={marcarPrestamoDevuelto} onEditar={(p) => setEditandoPrestamoId(p.id)} />
+              <TablaPrestamos
+                items={prestamos}
+                pagos={prestamosPagos}
+                onMarcarDevuelto={marcarPrestamoDevuelto}
+                onEditar={(p) => setEditandoPrestamoId(p.id)}
+                onRegistrarPago={(p) => setPagandoPrestamoId(p.id)}
+              />
               <div className="mt-1.5 text-[11px] text-slate-400">
                 El capital ya está sumado al saldo de la cuenta donde entró. El interés se calcula día a día a la tasa anual cargada y no afecta el saldo hasta que marcás el préstamo como devuelto — ahí se registra la salida de capital + interés acumulado.
               </div>
@@ -9238,6 +9368,16 @@ export default function ConcretarApp() {
           prestamo={prestamos.find((p) => p.id === editandoPrestamoId)}
           onClose={() => setEditandoPrestamoId(null)}
           onGuardar={guardarEdicionPrestamo}
+        />
+      )}
+
+      {pagandoPrestamoId && (
+        <ModalPagoPrestamo
+          key={pagandoPrestamoId}
+          prestamo={prestamos.find((p) => p.id === pagandoPrestamoId)}
+          pagos={prestamosPagos}
+          onClose={() => setPagandoPrestamoId(null)}
+          onGuardar={guardarPagoPrestamo}
         />
       )}
     </div>
