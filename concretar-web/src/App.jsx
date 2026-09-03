@@ -5,14 +5,11 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
-  ShoppingCart, Receipt, Plus, MapPin, TrendingUp, TrendingDown, X, AlertTriangle, CheckCircle2,
+  ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
   Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight
 } from "lucide-react";
-import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend
-} from "recharts";
 
 // Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
 const BRAND = {
@@ -5180,6 +5177,7 @@ export default function ConcretarApp() {
                   });
                 });
               historialGastosObra.sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+              const resumenObraSel = resumenPorObra.find((r) => r.obra.id === obraSel.id);
 
               return (
                 <>
@@ -5289,42 +5287,46 @@ export default function ConcretarApp() {
                     )}
                   </Panel>
 
-                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                    <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Presupuesto</div>
-                      <div className="mt-1 font-mono text-lg font-bold text-slate-900">{fmtARS(obraSel.presupuesto)}</div>
-                    </div>
-                    <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Gastado a la fecha</div>
-                      <div className="mt-1 font-mono text-lg font-bold text-slate-900">{fmtARS(puntoActual.Real)}</div>
-                    </div>
-                    <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Desvío vs. plan</div>
-                      <div className={`mt-1 flex items-center gap-1 font-mono text-lg font-bold ${desvioAbs > 0 ? "text-rose-600" : "text-emerald-600"}`}>
-                        {desvioAbs > 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                        {desvioPct.toFixed(1)}%
-                      </div>
-                    </div>
-                    <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Herramientas en uso</div>
-                      <div className="mt-1 font-mono text-lg font-bold text-slate-900">{herramientasEnUso}</div>
-                    </div>
+                  <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Herramientas en uso</div>
+                    <div className="mt-1 font-mono text-lg font-bold text-slate-900">{herramientasEnUso}</div>
                   </div>
 
-                  <Panel title="Curva de inversión — planificado vs. real">
-                    <div className="h-72 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
-                          <XAxis dataKey="mes" tick={{ fontSize: 12 }} stroke="#78716c" />
-                          <YAxis tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`} tick={{ fontSize: 12 }} stroke="#78716c" />
-                          <Tooltip formatter={(v) => fmtARS(v)} />
-                          <Legend />
-                          <Line type="monotone" dataKey="Planificado" stroke="#78716c" strokeDasharray="5 4" strokeWidth={2} dot={false} />
-                          <Line type="monotone" dataKey="Real" stroke="#f59e0b" strokeWidth={3} dot={{ r: 3 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
+                  <Panel title="Balance de la obra">
+                    {(() => {
+                      const celda = (v) => (v === null || v === undefined ? "—" : fmtARS(v));
+                      const r = resumenObraSel;
+                      const parItem = (labelIzq, valIzq, labelDer, valDer, destacarNegativo) => (
+                        <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{labelIzq}</div>
+                              <div className="mt-0.5 font-mono text-lg font-bold text-slate-900">{celda(valIzq)}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{labelDer}</div>
+                              <div className={`mt-0.5 font-mono text-lg font-bold ${destacarNegativo && valDer !== null && valDer < 0 ? "text-rose-600" : "text-slate-900"}`}>{celda(valDer)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                      return (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          {parItem("Precio de obra", r.precioObra, "Falta cobrar", r.faltaCobrar)}
+                          {parItem("Presupuesto M.O.", r.presupuestadoManoObra, "Pagado en mano de obra", r.gastadoManoObra)}
+                          {parItem("Presupuesto Eq. y Mat.", r.presupuestadoEqYMat, "Gastado en Eq. y Mat.", r.gastadoEqYMat)}
+                          {parItem("Gastado hasta el momento", r.gastado, "Dinero en caja", r.dineroEnCaja, true)}
+                          <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ganancia estimada</div>
+                            <div className={`mt-0.5 font-mono text-lg font-bold ${r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.gananciaEstimada)}</div>
+                          </div>
+                          <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">% Ganancia</div>
+                            <div className="mt-0.5 font-mono text-lg font-bold text-slate-900">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </Panel>
 
                   <Panel title="Historial de gastos">
@@ -5332,7 +5334,6 @@ export default function ConcretarApp() {
                   </Panel>
 
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(obraSel.id); }} className={btnGhost}>Ver Materiales de esta obra</button>
                     <button onClick={() => { setTab("personal"); }} className={btnGhost}>Ver Personal</button>
                   </div>
                 </>
