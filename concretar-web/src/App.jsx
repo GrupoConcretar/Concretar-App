@@ -655,7 +655,7 @@ function diasTranscurridosDesde(fechaStr, hastaStr) {
 // hecho: cada pago primero cubre el interés acumulado desde el pago anterior
 // (o desde el alta) y lo que sobra amortiza capital — así el interés de ahí en
 // adelante corre sobre el saldo de capital que quede, no sobre el capital original.
-function calcularEstadoPrestamo(p, pagos) {
+function calcularEstadoPrestamo(p, pagos, hastaOverride) {
   const tasa = (p.tasaAnualPct || 0) / 100;
   const pagosDelPrestamo = pagos.filter((pg) => pg.prestamoId === p.id).sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
   let saldoCapital = p.capital || 0;
@@ -667,7 +667,10 @@ function calcularEstadoPrestamo(p, pagos) {
     saldoCapital = Math.max(0, saldoCapital - aCapital);
     fechaCorte = pago.fecha;
   }
-  const hasta = p.estado === "Pagado" ? (p.fechaPago || fechaCorte) : hoyISO();
+  // hastaOverride sirve para proyectar cuánto habría que devolver en una fecha
+  // futura (ej: la fecha estimada de devolución), sin tocar el cálculo normal
+  // "a hoy" que usa el resto de la app.
+  const hasta = hastaOverride || (p.estado === "Pagado" ? (p.fechaPago || fechaCorte) : hoyISO());
   const interesAcumulado = saldoCapital * tasa * (diasTranscurridosDesde(fechaCorte, hasta) / 365);
   const totalPagado = pagosDelPrestamo.reduce((s, pg) => s + (pg.monto || 0), 0);
   return { saldoCapital, interesAcumulado, totalADevolver: saldoCapital + interesAcumulado, totalPagado, pagos: pagosDelPrestamo, fechaCorte, dias: diasTranscurridosDesde(fechaCorte, hasta) };
@@ -683,6 +686,9 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
       <div className="space-y-2 sm:hidden">
         {items.map((p) => {
           const estado = calcularEstadoPrestamo(p, pagos);
+          const proyeccion = (p.estado !== "Pagado" && p.fechaEstimadaDevolucion)
+            ? calcularEstadoPrestamo(p, pagos, p.fechaEstimadaDevolucion).totalADevolver
+            : null;
           return (
             <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-3 text-xs shadow-sm">
               <div className="flex items-center justify-between gap-2">
@@ -702,6 +708,9 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
                 <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Interés acumulado</div><div className="font-mono text-amber-700">{fmtARS(estado.interesAcumulado)}</div></div>
                 <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Total a devolver</div><div className="font-mono font-semibold text-rose-600">{fmtARS(estado.totalADevolver)}</div></div>
                 <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Fecha estimada</div><div className="text-slate-700">{fmtFecha(p.fechaEstimadaDevolucion)}</div></div>
+                {proyeccion !== null && (
+                  <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Monto a devolver en fecha estimada</div><div className="font-mono font-semibold text-slate-800">{fmtARS(proyeccion)}</div></div>
+                )}
               </div>
               {estado.pagos.length > 0 && (
                 <div className="mt-2 border-t border-stone-100 pt-2">
@@ -744,6 +753,7 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
               <th className="px-2 py-1.5 text-right">Interés acumulado</th>
               <th className="px-2 py-1.5 text-right">Total a devolver</th>
               <th className="px-2 py-1.5">Fecha estimada</th>
+              <th className="px-2 py-1.5 text-right">Monto a devolver en fecha estimada</th>
               <th className="px-2 py-1.5">Estado</th>
               <th className="px-2 py-1.5"></th>
             </tr>
@@ -751,6 +761,9 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
           <tbody>
             {items.map((p) => {
               const estado = calcularEstadoPrestamo(p, pagos);
+              const proyeccion = (p.estado !== "Pagado" && p.fechaEstimadaDevolucion)
+                ? calcularEstadoPrestamo(p, pagos, p.fechaEstimadaDevolucion).totalADevolver
+                : null;
               return (
                 <tr key={p.id} className="border-t border-stone-100">
                   <td className="px-2 py-1 font-medium text-slate-900">
@@ -765,6 +778,7 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
                   <td className="px-2 py-1 text-right font-mono text-amber-700">{fmtARS(estado.interesAcumulado)}</td>
                   <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(estado.totalADevolver)}</td>
                   <td className="px-2 py-1 text-slate-600">{fmtFecha(p.fechaEstimadaDevolucion)}</td>
+                  <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800">{proyeccion !== null ? fmtARS(proyeccion) : "—"}</td>
                   <td className="px-2 py-1"><Badge estado={p.estado} /></td>
                   <td className="px-2 py-1">
                     <div className="flex flex-wrap items-center gap-1.5">
