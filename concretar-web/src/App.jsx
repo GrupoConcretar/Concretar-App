@@ -3186,9 +3186,57 @@ export default function ConcretarApp() {
   // ---------- Resumen por obra (balance de cada obra en curso) ----------
   // Sale de lo que ya tenemos cargado: precio acordado (obra.presupuesto), lo
   // presupuestado por rubro si se importó un Excel de presupuesto (presupuestoGeneral),
-  // y lo efectivamente cobrado/gastado según Ingresos y Gastos/Facturas de esa obra.
-  // La mano de obra pagada informalmente (asistencia/liquidaciones) no está incluida en
-  // "Gastado" — sólo lo que pasó por Gastos y Facturas.
+  // y lo efectivamente cobrado/gastado según Ingresos, Gastos/Facturas y mano de obra
+  // (personal en negro, personal en blanco y tanteros) de esa obra.
+  // Personal en negro: lo ya pagado usa el monto real abonado; lo todavía pendiente de
+  // pago se estima con el costo por hora vigente, para que el gasto de la obra no se
+  // quede atrasado esperando a que se liquide.
+  // Personal en blanco: usa el costo real cargado por Contaduría en "Liquidación formal"
+  // cuando ya está confirmado; si esa quincena todavía no se confirmó, se estima con las
+  // mismas fórmulas (UOCRA) que usa esa pantalla.
+  function costoManoDeObraDeObra(obraId) {
+    const asistenciaObra = asistencia.filter((a) => a.obraId === obraId && a.estado !== "Ausente" && (a.horas || 0) > 0);
+
+    let costoNegro = 0;
+    asistenciaObra
+      .filter((a) => tipoTrabajadorDe(a.nombre) !== "En blanco")
+      .forEach((a) => { costoNegro += a.estadoPago === "Pagado" ? (a.montoAbonado || 0) : montoDe(a); });
+
+    let costoBlanco = 0;
+    const gruposBlanco = {}; // "mes|quincena|nombre" -> horas trabajadas
+    asistenciaObra
+      .filter((a) => tipoTrabajadorDe(a.nombre) === "En blanco")
+      .forEach((a) => {
+        const mes = a.fecha.slice(0, 7);
+        const quincena = quincenaDeFecha(a.fecha);
+        const key = `${mes}|${quincena}|${a.nombre}`;
+        if (!gruposBlanco[key]) gruposBlanco[key] = { mes, quincena, nombre: a.nombre, horas: 0 };
+        gruposBlanco[key].horas += a.horas || 0;
+      });
+    Object.values(gruposBlanco).forEach((g) => {
+      const registro = liquidacionesFormales.find((l) => l.obraId === obraId && l.mes === g.mes && l.quincena === g.quincena && l.nombre === g.nombre);
+      if (registro?.costoRealBlanco != null) { costoBlanco += registro.costoRealBlanco; return; }
+      const categoria = categoriaDe(g.nombre) || CATEGORIAS_PERSONAL[0];
+      const horasRecibo = registro?.horasRecibo ?? Math.round((g.horas / 2) * 100) / 100;
+      const presentismo = registro?.presentismo ?? false;
+      const horasNegroDeBlanco = Math.max(0, g.horas - horasRecibo);
+      const basicoHora = basicoConvenioDeCategoria(categoria, `${g.mes}-01`);
+      const costoHoraInformal = costoHoraDeCategoria(categoria, `${g.mes}-01`);
+      const montoBasico = horasRecibo * basicoHora;
+      const montoPresentismo = presentismo ? montoBasico * ((cfgLiq.presentismoPct || 0) / 100) : 0;
+      const bruto = montoBasico + montoPresentismo;
+      const contribPct = (cfgLiq.contribObraSocialPct || 0) + (cfgLiq.contribEmpresariaPct || 0) + (cfgLiq.contribJubilacionPct || 0);
+      const contribuciones = bruto * (contribPct / 100);
+      const fondoCese = bruto * ((cfgLiq.fondoCesePosteriorPct || 0) / 100);
+      const costoEmpresa = bruto + contribuciones + fondoCese + (cfgLiq.iericMontoFijo || 0);
+      costoBlanco += costoEmpresa + horasNegroDeBlanco * costoHoraInformal;
+    });
+
+    const tanterosDeObra = new Set(tanteros.filter((t) => t.obraId === obraId).map((t) => t.id));
+    const costoTanteros = avancesTanteros.filter((av) => tanterosDeObra.has(av.tanteroId)).reduce((s, av) => s + (av.monto || 0), 0);
+
+    return costoNegro + costoBlanco + costoTanteros;
+  }
   function fechaFinEstimada(obra) {
     if (!obra.inicio || !obra.meses) return null;
     const [y, m, d] = obra.inicio.split("-").map(Number);
@@ -3205,8 +3253,10 @@ export default function ConcretarApp() {
       const presupuestadoEqYMat = pg ? (pg.totalEquipos || 0) + (pg.totalMateriales || 0) + (pg.totalHerramientas || 0) : null;
       const precioObra = o.presupuesto || pg?.precioTotalConIva || 0;
       const cobrado = ingresos.filter((i) => i.obraId === o.id && i.estado !== "Pendiente").reduce((s, i) => s + (i.monto || 0), 0);
-      const gastado = comprasFacturas.filter((c) => c.obraId === o.id).reduce((s, c) => s + (c.monto || 0), 0);
-      const disponibleEqYMat = presupuestadoEqYMat !== null ? presupuestadoEqYMat - gastado : null;
+      const gastadoEqYMat = comprasFacturas.filter((c) => c.obraId === o.id).reduce((s, c) => s + (c.monto || 0), 0);
+      const gastadoManoObra = costoManoDeObraDeObra(o.id);
+      const gastado = gastadoEqYMat + gastadoManoObra;
+      const disponibleEqYMat = presupuestadoEqYMat !== null ? presupuestadoEqYMat - gastadoEqYMat : null;
       const costoPresupuestado = pg ? presupuestadoManoObra + presupuestadoEqYMat : null;
       const gananciaEstimada = costoPresupuestado !== null ? precioObra - costoPresupuestado : null;
       return {
@@ -3216,6 +3266,8 @@ export default function ConcretarApp() {
         faltaCobrar: precioObra - cobrado,
         presupuestadoManoObra,
         presupuestadoEqYMat,
+        gastadoEqYMat,
+        gastadoManoObra,
         gastado,
         disponibleEqYMat,
         gananciaEstimada,
@@ -8918,7 +8970,7 @@ export default function ConcretarApp() {
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Balance por obra</h3>
               <ResumenObrasCuentas items={resumenPorObra} />
               <div className="mt-1.5 text-[11px] text-slate-400">
-                "Presup." sale del Excel de presupuesto importado en la obra (si no se importó ninguno, queda en "—"). "Gastado" y "Falta cobrar" son lo que ya se cargó en Gastos/Facturas e Ingresos de esa obra — no incluye mano de obra pagada por Personal/Cuadrillas. "Ganancia estimada" = Precio de obra − presupuestado (M.O. + Eq. y Mat.), no lo ya cobrado.
+                "Presup." sale del Excel de presupuesto importado en la obra (si no se importó ninguno, queda en "—"). "Falta cobrar" sale de Ingresos. "Gastado" es todo el costo ya cargado para esa obra: Gastos/Facturas (materiales, equipos, EPPs, consumibles, combustible) más mano de obra — personal en negro pagado o pendiente, personal en blanco (real si Contaduría ya cargó el costo en "Liquidación formal", estimado si todavía no) y tanteros. "Disponible Eq. y Mat." solo descuenta Gastos/Facturas (no mano de obra) del presupuesto de Eq. y Mat. "Ganancia estimada" = Precio de obra − presupuestado (M.O. + Eq. y Mat.), no lo ya cobrado ni gastado.
               </div>
             </div>
 
