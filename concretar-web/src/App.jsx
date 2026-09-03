@@ -3429,6 +3429,17 @@ export default function ConcretarApp() {
     ingresosPendientes.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
     return Object.values(grupos).sort((a, b) => (a.clave === "sin-fecha" ? 1 : b.clave === "sin-fecha" ? -1 : a.clave.localeCompare(b.clave)));
   })();
+  // El acumulado arranca de la plata que hay hoy en las cuentas (Blanco + Negro) y le va
+  // sumando el total (ingreso - egreso) de cada mes en orden — así se ve en qué mes, si
+  // se cumplen estas fechas estimadas, la empresa se quedaría sin plata (acumulado en rojo).
+  // Lo "sin fecha" no entra en la cuenta porque no se sabe cuándo va a pasar.
+  const saldoActualTotal = totalBlanco + totalNegro;
+  let acumuladoProximosRunning = saldoActualTotal;
+  const gruposMesesProximosConAcumulado = gruposMesesProximos.map((m) => {
+    if (m.clave === "sin-fecha") return { ...m, acumulado: null };
+    acumuladoProximosRunning += m.ingresos - m.egresos;
+    return { ...m, acumulado: acumuladoProximosRunning };
+  });
 
   // ---------- Dinero real (arqueo de caja) ----------
   // La plata física no distingue blanco de negro, por eso "Dinero real" se compara
@@ -9015,26 +9026,93 @@ export default function ConcretarApp() {
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">Próximos pagos e ingresos</h2>
 
             {mesProximosSeleccionado === null ? (
-              gruposMesesProximos.length === 0 ? (
+              gruposMesesProximosConAcumulado.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-sm text-slate-400">
                   No hay pagos ni ingresos pendientes proyectados.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {gruposMesesProximos.map((m) => (
-                    <button
-                      key={m.clave}
-                      onClick={() => setMesProximosSeleccionado(m.clave)}
-                      className="flex w-full items-center justify-between gap-3 rounded-lg border border-stone-200 bg-white p-3.5 text-left shadow-sm hover:border-amber-300 hover:shadow-md"
-                    >
-                      <span className="text-sm font-semibold text-slate-900">{m.clave === "sin-fecha" ? "Sin fecha estimada" : nombreMesCuentas(m.clave)}</span>
-                      <div className="flex items-center gap-3 font-mono text-xs">
-                        {m.ingresos > 0 && <span className="font-semibold text-emerald-700">+{fmtARS(m.ingresos)}</span>}
-                        {m.egresos > 0 && <span className="font-semibold text-rose-600">-{fmtARS(m.egresos)}</span>}
+                <>
+                  {/* Celular: tarjetas compactas. */}
+                  <div className="space-y-1.5 sm:hidden">
+                    <div className="rounded-lg border-2 border-stone-300 bg-stone-50 p-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-700">Saldo actual</span>
+                        <span className="font-mono text-sm font-bold text-slate-900">{fmtARS(saldoActualTotal)}</span>
                       </div>
-                    </button>
-                  ))}
-                </div>
+                    </div>
+                    {gruposMesesProximosConAcumulado.map((m) => {
+                      const totalMes = m.ingresos - m.egresos;
+                      const clickable = m.clave !== "sin-fecha";
+                      return (
+                        <button
+                          key={m.clave}
+                          onClick={() => clickable && setMesProximosSeleccionado(m.clave)}
+                          disabled={!clickable}
+                          className={`w-full rounded-lg border border-stone-200 bg-white p-2.5 text-left text-xs shadow-sm ${clickable ? "hover:border-amber-300" : ""}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-slate-900">{m.clave === "sin-fecha" ? "Sin fecha estimada" : nombreMesCuentas(m.clave)}</span>
+                            <span className={`font-mono font-bold ${m.acumulado === null ? "text-slate-400" : m.acumulado < 0 ? "text-rose-600" : "text-emerald-700"}`}>
+                              {m.acumulado === null ? "—" : fmtARS(m.acumulado)}
+                            </span>
+                          </div>
+                          <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5">
+                            <div><div className="text-[9px] uppercase tracking-wide text-slate-400">Ingreso</div><div className="font-mono text-emerald-700">{fmtARS(m.ingresos)}</div></div>
+                            <div><div className="text-[9px] uppercase tracking-wide text-slate-400">Egreso</div><div className="font-mono text-rose-600">{fmtARS(m.egresos)}</div></div>
+                            <div><div className="text-[9px] uppercase tracking-wide text-slate-400">Total mes</div><div className={`font-mono font-semibold ${totalMes < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalMes)}</div></div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Tablet/PC: tabla tipo Excel. */}
+                  <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:block">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-2">Mes</th>
+                          <th className="px-4 py-2 text-right">Ingreso</th>
+                          <th className="px-4 py-2 text-right">Egreso</th>
+                          <th className="px-4 py-2 text-right">Total del mes</th>
+                          <th className="px-4 py-2 text-right">Acumulado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-t-2 border-stone-300 bg-stone-50">
+                          <td className="px-4 py-2 font-bold text-slate-900">Saldo actual</td>
+                          <td className="px-4 py-2 text-right text-slate-400">—</td>
+                          <td className="px-4 py-2 text-right text-slate-400">—</td>
+                          <td className="px-4 py-2 text-right text-slate-400">—</td>
+                          <td className="px-4 py-2 text-right font-mono font-bold text-slate-900">{fmtARS(saldoActualTotal)}</td>
+                        </tr>
+                        {gruposMesesProximosConAcumulado.map((m) => {
+                          const totalMes = m.ingresos - m.egresos;
+                          const clickable = m.clave !== "sin-fecha";
+                          return (
+                            <tr
+                              key={m.clave}
+                              onClick={() => clickable && setMesProximosSeleccionado(m.clave)}
+                              className={`border-t border-stone-100 ${clickable ? "cursor-pointer hover:bg-stone-50" : ""}`}
+                            >
+                              <td className="px-4 py-2 font-medium text-slate-900">{m.clave === "sin-fecha" ? "Sin fecha estimada" : nombreMesCuentas(m.clave)}</td>
+                              <td className="px-4 py-2 text-right font-mono text-emerald-700">{fmtARS(m.ingresos)}</td>
+                              <td className="px-4 py-2 text-right font-mono text-rose-600">{fmtARS(m.egresos)}</td>
+                              <td className={`px-4 py-2 text-right font-mono font-semibold ${totalMes < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalMes)}</td>
+                              <td className={`px-4 py-2 text-right font-mono font-bold ${m.acumulado === null ? "text-slate-400" : m.acumulado < 0 ? "text-rose-600" : "text-slate-900"}`}>
+                                {m.acumulado === null ? "—" : fmtARS(m.acumulado)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="text-[11px] text-slate-400">
+                    "Acumulado" arranca del dinero que hay hoy en las cuentas (Blanco + Negro) y le va sumando el total de cada mes en orden — si en algún mes aparece en rojo, esa proyección indica que para esa fecha va a faltar plata: conviene pedir un préstamo, atrasar algún pago o apurar a algún cliente para que cobre antes. "Sin fecha estimada" no entra en el acumulado porque no se sabe cuándo va a pasar. Tocá un mes para ver el detalle.
+                  </div>
+                </>
               )
             ) : (
               (() => {
