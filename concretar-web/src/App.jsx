@@ -961,8 +961,7 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
           <button onClick={onClose}><X size={18} /></button>
         </div>
         <div className="mb-3 text-xs text-slate-500">
-          Saldo de capital actual: <span className="font-mono font-semibold text-slate-700">{fmtARS(estadoActual.saldoCapital)}</span>.
-          El pago cubre primero el interés acumulado y lo que sobra amortiza capital. Si el monto cubre el 100% del saldo, el préstamo se marca como devuelto solo.
+          Saldo de capital actual: <span className="font-mono font-semibold text-slate-700">{fmtARS(estadoActual.saldoCapital)}</span>
         </div>
         <form onSubmit={guardar} className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Field label="Fecha del pago">
@@ -5024,9 +5023,6 @@ export default function ConcretarApp() {
                     </button>
                   </div>
                 </form>
-                <div className="mt-3 text-[11px] text-slate-400">
-                  El encargado de obra aprueba la recepción de los remitos que le lleguen a esta obra. Gerencia siempre puede aprobar cualquier remito, sea cual sea el encargado. El día/hora de cierre dispara el aviso de auditoría semanal de herramientas.
-                </div>
               </Panel>
             )}
 
@@ -5474,10 +5470,6 @@ export default function ConcretarApp() {
 
             {showCostosPanel && (
               <Panel title="Precios Mano de Obra" action={<button onClick={() => setShowCostosPanel(false)}><X size={16} /></button>}>
-                <div className="mb-3 text-xs text-slate-500">
-                  El costo por hora de cada categoría varía mes a mes. Al tomar asistencia, Salario Personal usa solo el precio del mes en que se trabajó. Si un mes no tiene precio cargado, se usa el último mes anterior que sí lo tenga.
-                  {!canEditarCostos && " Solo Gerente y RRHH pueden modificarlo."}
-                </div>
 
                 <div className="mb-3 flex flex-wrap gap-2">
                   {aniosCostosDisponibles.map((a) => (
@@ -5932,9 +5924,6 @@ export default function ConcretarApp() {
                   </div>
                 )}
 
-                <div className="mt-3 text-[11px] text-slate-400">
-                  La fecha, el centro de costo, las horas y el estado quedan fijos entre carga y carga — solo cambiá el nombre para ir sumando a toda la cuadrilla rápido. "Cargado por" se completa solo con tu rol actual; cuando armemos el login real, va a quedar el nombre de quien inició sesión.
-                </div>
               </Panel>
             )}
 
@@ -5979,9 +5968,6 @@ export default function ConcretarApp() {
                     <button type="button" onClick={cancelEditAsistencia} className={btnGhost}>Cancelar</button>
                   </div>
                 </form>
-                <div className="mt-3 text-[11px] text-slate-400">
-                  Esta corrección va a quedar visible para los gerentes en el panel de Alertas del Dashboard, junto con el motivo.
-                </div>
               </Panel>
             )}
 
@@ -6185,9 +6171,6 @@ export default function ConcretarApp() {
                     );
                   })
                 )}
-                <div className="text-[11px] text-slate-400">
-                  Cada línea es el total de esa persona, en esa obra, para toda la semana (lunes a domingo). Tocá una fila para incluirla en el pago — no hace falta elegir día por día.
-                </div>
               </>
             )}
 
@@ -6197,10 +6180,6 @@ export default function ConcretarApp() {
                   <button onClick={() => setShowTanteroForm((v) => !v)} className={btnPrimary}>
                     <Plus size={16} /> Nuevo grupo
                   </button>
-                </div>
-
-                <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-                  Para que alguien aparezca acá, primero marcalo como "Tantero" en su ficha de Personal. Estos grupos no cobran por hora — tienen un precio cerrado por el trabajo, y vos cargás los avances que les vas pagando.
                 </div>
 
                 {showTanteroForm && (
@@ -6643,11 +6622,6 @@ export default function ConcretarApp() {
                         </tfoot>
                       </table>
                     </div>
-                    <div className="text-[11px] text-slate-400">
-                      "Hs. presentes" es de referencia (lo cargado en Asistencia) y no se edita acá. "Hs. en recibo" arranca en la mitad de las
-                      presentes pero se puede cambiar libremente — lo que no quede ahí se cuenta como horas en negro. "Costo real (recibo)" se
-                      carga a mano una vez que el contador liquida — mientras esté vacío, esta quincena sigue figurando como pendiente de pago.
-                    </div>
                   </>
                 )}
               </>
@@ -6784,11 +6758,6 @@ export default function ConcretarApp() {
                         {editingHerramientaId && <button type="button" onClick={cancelHerrForm} className={btnGhost}>Cancelar</button>}
                       </div>
                     </form>
-                    {!editingHerramientaId && (
-                      <div className="mt-3 text-[11px] text-slate-400">
-                        Ubicación inicial: Oficina. Estado inicial: Disponible. El responsable en obra va a ser el capataz asignado (próximamente). El N° de serie se genera solo: letra del tipo + 3 letras de la marca + N° correlativo. Ej: Bosch, Herramienta Eléctrica → <span className="font-mono">E-BOS01</span>.
-                      </div>
-                    )}
                   </Panel>
                 )}
 
@@ -6966,7 +6935,7 @@ export default function ConcretarApp() {
                         </select>
                       </Field>
                       <div className="text-[11px] text-slate-400">
-                        Se va a llamar <span className="font-semibold text-slate-600">"Caja {comboForm.tipo} {generarNumeroCaja(comboForm.tipo)}"</span>. Todavía no tiene a nadie asignado — eso se hace después de guardarla.
+                        Se va a llamar <span className="font-semibold text-slate-600">"Caja {comboForm.tipo} {generarNumeroCaja(comboForm.tipo)}"</span>
                       </div>
 
                       <div>
@@ -7101,9 +7070,6 @@ export default function ConcretarApp() {
                     })}
                   </div>
                 )}
-                <div className="text-[11px] text-slate-400">
-                  "Roto" = requiere devolución física para reposición. "Perdido" = se gestiona descuento o reposición con la persona. Las cajas se asignan/devuelven directo por ahora; el traslado formal con remito es para las herramientas de Alto Valor, en la pestaña "Remitos".
-                </div>
               </>
             )}
 
@@ -7165,9 +7131,6 @@ export default function ConcretarApp() {
 
                       <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Confirmar salida</button>
                     </form>
-                    <div className="mt-3 text-[11px] text-slate-400">
-                      Al confirmar, el remito queda "En tránsito". La herramienta cambia de ubicación recién cuando el destino confirma la recepción.
-                    </div>
                   </Panel>
                 )}
 
@@ -7217,9 +7180,6 @@ export default function ConcretarApp() {
 
             {vistaHerramientas === "auditoria" && (
               <>
-                <div className="text-xs text-slate-500">
-                  Control semanal de herramientas por obra: cierre (última hora del día de cierre) y apertura (lunes, al arrancar).
-                </div>
 
                 {(obrasEnVentanaCierre.length > 0 || obrasSinAperturaLunes.length > 0) && (
                   <div className="space-y-2">
@@ -7551,11 +7511,6 @@ export default function ConcretarApp() {
                               </div>
                             )}
                             <button type="button" onClick={agregarItemManualPedido} className={btnGhost}>+ Agregar</button>
-                          </div>
-                          <div className="mt-1 text-[11px] text-slate-400">
-                            {canVerPreciosPedido
-                              ? "Esto es para algo que no estaba en el presupuesto original — se agrega igual, a mano. No hace falta el precio ahora: lo carga Logística/Contabilidad cuando llega la compra."
-                              : "Esto es para algo que no estaba en el presupuesto original — no hace falta precio ni categoría, eso lo completa Logística."}
                           </div>
 
                           <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-3">
@@ -7956,7 +7911,6 @@ export default function ConcretarApp() {
                                           </Field>
                                         </div>
                                         <button type="button" onClick={() => aplicarTotalFactura(totalFacturaRapido)} className={btnGhost}>Repartir entre los ítems</button>
-                                        <div className="text-[11px] text-slate-400">Reparte el total a prorrata de cantidad — no toca lo marcado "Propio".</div>
                                       </div>
 
                                       <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -8071,10 +8025,6 @@ export default function ConcretarApp() {
                   </div>
                 </Panel>
 
-                <div className="text-xs text-slate-500">
-                  Se completa solo con lo que vas importando — el precio que ves es el último cargado para cada material.
-                </div>
-
                 {catalogoMateriales.length === 0 ? (
                   <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
                     Todavía no hay materiales en el catálogo. Importá un presupuesto para empezar a llenarlo.
@@ -8109,10 +8059,6 @@ export default function ConcretarApp() {
 
             {vistaMateriales === "consolidar" && (
               <>
-                <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-                  Pedidos pendientes de todas las obras, agrupados por proveedor — así logística compra todo junto (ej: todo el cemento) en un solo viaje. El proveedor se sugiere solo según la última vez que se compró ese material; lo podés cambiar antes de generar los remitos.
-                </div>
-
                 {Object.keys(gruposPorProveedor).length === 0 ? (
                   <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
                     No hay pedidos pendientes de enviar en este momento.
@@ -8256,10 +8202,6 @@ export default function ConcretarApp() {
 
             {vistaMateriales === "stock" && (
               <>
-                <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-                  Lo que compraste pero no entró completo a una obra queda acá — el gasto ya se hizo y quedó anotado como "general" hasta que lo asignes a alguna obra.
-                </div>
-
                 {stockMateriales.filter((s) => s.cantidad > 0).length === 0 ? (
                   <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
                     No hay materiales en stock general por ahora.
@@ -8327,10 +8269,6 @@ export default function ConcretarApp() {
               <button onClick={() => setShowOcForm((v) => !v)} className={btnPrimary}>
                 <Plus size={16} /> Nueva orden
               </button>
-            </div>
-
-            <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-              Todo pedido armado en una obra (Pedidos de Obra) llega automáticamente acá como "Requiere aprobación". Las órdenes cargadas a mano por {fmtARS(UMBRAL_APROBACION_OC)} o más también quedan así hasta que las apruebes, rechaces (con el motivo, para que Logística lo vea) o modifiques.
             </div>
 
             {showOcForm && (
@@ -8670,10 +8608,6 @@ export default function ConcretarApp() {
               </button>
             </div>
 
-            <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-              Lo que cobrás de cada obra — con esto más los gastos de "Gastos y Facturas" se arma el resumen de "Cuentas".
-            </div>
-
             {showIngresoForm && (
               <Panel title="Cargar ingreso" action={<button onClick={() => setShowIngresoForm(false)}><X size={16} /></button>}>
                 <form
@@ -9006,16 +8940,10 @@ export default function ConcretarApp() {
                 </tbody>
               </table>
             </div>
-            <div className="text-[11px] text-slate-400">
-              Cada columna = Ingresos − Gastos/Facturas de esa cuenta y formalidad. Total = Blanco + Negro (una puede compensar momentáneamente a la otra si alguna está en negativo). "Dinero real" es lo que contás a mano (caja física o resumen bancario) — si no coincide con el Total, "Arreglo de caja" carga la diferencia como "Error de cálculo".
-            </div>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Balance por obra</h3>
               <ResumenObrasCuentas items={resumenPorObra} />
-              <div className="mt-1.5 text-[11px] text-slate-400">
-                "Presup." sale del Excel de presupuesto importado en la obra (si no se importó ninguno, queda en "—"). "Falta cobrar" sale de Ingresos. "Gastado" es todo el costo ya cargado para esa obra: Gastos/Facturas (materiales, equipos, EPPs, consumibles, combustible) más mano de obra — personal en negro pagado o pendiente, personal en blanco (real si Contaduría ya cargó el costo en "Liquidación formal", estimado si todavía no) y tanteros. "Disponible Eq. y Mat." solo descuenta Gastos/Facturas (no mano de obra) del presupuesto de Eq. y Mat. "Ganancia estimada" = Precio de obra − presupuestado (M.O. + Eq. y Mat.), no lo ya cobrado ni gastado.
-              </div>
             </div>
 
             <div>
@@ -9043,9 +8971,6 @@ export default function ConcretarApp() {
                 onRegistrarPago={(p) => setPagandoPrestamoId(p.id)}
                 onEliminar={(p) => moverAPapelera("prestamos", p.id, setPrestamos, p.acreedor)}
               />
-              <div className="mt-1.5 text-[11px] text-slate-400">
-                El capital ya está sumado al saldo de la cuenta donde entró. El interés se calcula día a día a la tasa anual cargada y no afecta el saldo hasta que marcás el préstamo como devuelto — ahí se registra la salida de capital + interés acumulado.
-              </div>
             </div>
           </div>
         )}
@@ -9143,10 +9068,6 @@ export default function ConcretarApp() {
                         })}
                       </tbody>
                     </table>
-                  </div>
-
-                  <div className="text-[11px] text-slate-400">
-                    "Acumulado" arranca del dinero que hay hoy en las cuentas (Blanco + Negro) y le va sumando el total de cada mes en orden — si en algún mes aparece en rojo, esa proyección indica que para esa fecha va a faltar plata: conviene pedir un préstamo, atrasar algún pago o apurar a algún cliente para que cobre antes. El "Egreso" de cada mes también incluye una estimación de las obras en curso: lo que todavía les queda disponible de presupuesto (mano de obra + Eq. y Mat.) se reparte en partes iguales entre el mes actual y los que quedan de obra (mínimo 2 meses), asumiendo que esa plata probablemente se termine gastando. "Sin fecha estimada" no entra en el acumulado porque no se sabe cuándo va a pasar. Tocá un mes para ver el detalle.
                   </div>
                 </>
               )
@@ -9801,9 +9722,6 @@ export default function ConcretarApp() {
                   ))}
                 </div>
               )}
-              <div className="mt-3 text-[11px] text-slate-400">
-                Los días marcados acá quedan excluidos de las alarmas de auditoría semanal (cierre/apertura) de todas las obras.
-              </div>
             </Panel>
 
             <Panel title="Ficha horaria por obra">
@@ -9874,12 +9792,6 @@ export default function ConcretarApp() {
         {tab === "papelera" && (
           <div className="space-y-6">
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">Papelera</h2>
-            <div className="rounded-md border border-stone-200 bg-white px-4 py-2 text-xs text-slate-500">
-              Todo lo que eliminás en la app (herramientas, personal, gastos, ingresos, proveedores, clientes, préstamos, cobros, órdenes de compra y pedidos) aparece acá.
-              Restaurar lo devuelve tal cual estaba, con la plata sumada/restada de nuevo en Cuentas. Si no lo restaurás, se borra solo a los 7 días.
-              Las obras canceladas tienen su propia Papelera de 24hs, dentro de la pestaña Obras.
-              {!canVerFinanzas && " Los gastos, ingresos, préstamos y cobros eliminados solo los ve Gerente/Contador, igual que en sus pestañas."}
-            </div>
             {(herramientasPapelera.length + personalPapelera.length + proveedoresPapelera.length + clientesPapelera.length
               + ordenesCompraPapelera.length + pedidosMaterialesPapelera.length
               + (canVerFinanzas ? comprasFacturasPapelera.length + ingresosPapelera.length + prestamosPapelera.length + cobrosSociosPapelera.length : 0)
