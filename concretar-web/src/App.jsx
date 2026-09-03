@@ -91,7 +91,7 @@ function nombreComercial(p) {
 }
 
 const ESTADOS_HERRAMIENTA = ["Disponible", "En Obra", "En Reparación", "Mal Estado", "Rota"];
-const ESTADOS_OBRA = ["En curso", "Pausada", "Finalizada"];
+const ESTADOS_OBRA = ["En curso", "Pendiente de cobro", "Pausada", "Finalizada"];
 const ESTADOS_ITEM_COMBO = ["Entregado", "Roto", "Perdido", "Devuelto"];
 const TIPOS_CAJA = ["Electricista", "Civil", "Pintor", "Metalúrgico"];
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -264,6 +264,7 @@ const BADGE_STYLES = {
   Blanco: "border-sky-600 text-sky-700",
   Negro: "border-slate-600 text-slate-700",
   "En curso": "border-amber-600 text-amber-700",
+  "Pendiente de cobro": "border-sky-600 text-sky-700",
   Pausada: "border-rose-600 text-rose-700",
   Finalizada: "border-emerald-600 text-emerald-700",
   Papelera: "border-slate-400 text-slate-500",
@@ -3411,12 +3412,15 @@ export default function ConcretarApp() {
     updateRecord("ingresos", ingreso.id, { estado: "Cobrado" }, setIngresos);
   }
 
-  // Obras en curso: lo que todavía queda disponible para gastar (mano de obra + Eq. y
+  // Obras "En curso": lo que todavía queda disponible para gastar (mano de obra + Eq. y
   // Mat. presupuestados, sin contar lo que ya se pasó de presupuesto) es plata que muy
   // probablemente se termine gastando antes de que termine la obra — se reparte en
   // partes iguales entre el mes actual y los meses que quedan de obra, como mínimo el
   // actual y el siguiente (si queda 1 mes o menos, igual se reparte en 2), para tener una
   // proyección aproximada de en qué mes vamos a necesitar esa plata.
+  // Las obras "Pendiente de cobro" quedan afuera a propósito: ya están prácticamente sin
+  // gastos por delante (entregadas, o falta algo mínimo) y sólo resta cobrarlas, así que no
+  // tiene sentido seguir proyectándoles gasto disponible en los balances mensuales.
   function mesesRestantesDeObra(finEstimado) {
     if (!finEstimado) return 1;
     return Math.max(1, monthsBetween(fechaLocal(hoyISO()), fechaLocal(finEstimado)) + 1);
@@ -4917,6 +4921,7 @@ export default function ConcretarApp() {
             <div className="flex flex-wrap gap-2">
               {[
                 { estado: "En curso", label: "Activas", activeCls: "border-amber-500 bg-amber-500 text-slate-900", idleCls: "border-amber-300 text-amber-700 hover:bg-amber-50" },
+                { estado: "Pendiente de cobro", label: "Pendientes de cobro", activeCls: "border-sky-600 bg-sky-600 text-white", idleCls: "border-sky-300 text-sky-700 hover:bg-sky-50" },
                 { estado: "Finalizada", label: "Finalizadas", activeCls: "border-emerald-600 bg-emerald-600 text-white", idleCls: "border-emerald-300 text-emerald-700 hover:bg-emerald-50" },
                 { estado: "Pausada", label: "Pausadas", activeCls: "border-rose-600 bg-rose-600 text-white", idleCls: "border-rose-300 text-rose-700 hover:bg-rose-50" },
                 { estado: "Papelera", label: "Papelera", activeCls: "border-slate-500 bg-slate-500 text-white", idleCls: "border-slate-300 text-slate-600 hover:bg-slate-50" },
