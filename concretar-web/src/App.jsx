@@ -5296,33 +5296,26 @@ export default function ConcretarApp() {
                     {(() => {
                       const celda = (v) => (v === null || v === undefined ? "—" : fmtARS(v));
                       const r = resumenObraSel;
-                      const parItem = (labelIzq, valIzq, labelDer, valDer, destacarNegativo) => (
-                        <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{labelIzq}</div>
-                              <div className="mt-0.5 font-mono text-lg font-bold text-slate-900">{celda(valIzq)}</div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{labelDer}</div>
-                              <div className={`mt-0.5 font-mono text-lg font-bold ${destacarNegativo && valDer !== null && valDer < 0 ? "text-rose-600" : "text-slate-900"}`}>{celda(valDer)}</div>
-                            </div>
-                          </div>
+                      const item = (label, val, tono) => (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
+                          <div className={`font-mono text-xs font-semibold ${tono || "text-slate-800"}`}>{celda(val)}</div>
                         </div>
                       );
                       return (
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                          {parItem("Precio de obra", r.precioObra, "Falta cobrar", r.faltaCobrar)}
-                          {parItem("Presupuesto M.O.", r.presupuestadoManoObra, "Pagado en mano de obra", r.gastadoManoObra)}
-                          {parItem("Presupuesto Eq. y Mat.", r.presupuestadoEqYMat, "Gastado en Eq. y Mat.", r.gastadoEqYMat)}
-                          {parItem("Gastado hasta el momento", r.gastado, "Dinero en caja", r.dineroEnCaja, true)}
-                          <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ganancia estimada</div>
-                            <div className={`mt-0.5 font-mono text-lg font-bold ${r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.gananciaEstimada)}</div>
-                          </div>
-                          <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">% Ganancia</div>
-                            <div className="mt-0.5 font-mono text-lg font-bold text-slate-900">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
+                          {item("Precio de obra", r.precioObra)}
+                          {item("Falta cobrar", r.faltaCobrar)}
+                          {item("Presup. M.O.", r.presupuestadoManoObra)}
+                          {item("Pagado M.O.", r.gastadoManoObra)}
+                          {item("Presup. Eq. y Mat.", r.presupuestadoEqYMat)}
+                          {item("Gastado Eq. y Mat.", r.gastadoEqYMat)}
+                          {item("Gastado total", r.gastado)}
+                          {item("Dinero en caja", r.dineroEnCaja, r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700")}
+                          {item("Ganancia estimada", r.gananciaEstimada, r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700")}
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wide text-slate-400">% Ganancia</div>
+                            <div className="font-mono text-xs font-semibold text-slate-800">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</div>
                           </div>
                         </div>
                       );
