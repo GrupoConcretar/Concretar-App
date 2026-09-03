@@ -915,6 +915,19 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
   const ganttFileInputRef = useRef(null);
   const obraIdParaImportarRef = useRef(null);
   const [importandoObraId, setImportandoObraId] = useState(null);
+  // El calendario (meses/semanas) queda fijo arriba mientras se scrollea la
+  // lista de obras/etapas, en vez de perderse de vista — vive fuera del
+  // contenedor que scrollea horizontalmente (si no, "position: sticky" no
+  // funciona: al tener overflow-x, el navegador también le mete overflow-y
+  // "auto" a ese div, y deja de pegarse a la página) y sincronizamos su
+  // desplazamiento horizontal a mano con el del cuerpo.
+  const cuerpoScrollRef = useRef(null);
+  const headerScrollRef = useRef(null);
+  const sincronizarScrollHeader = () => {
+    if (headerScrollRef.current && cuerpoScrollRef.current) {
+      headerScrollRef.current.scrollLeft = cuerpoScrollRef.current.scrollLeft;
+    }
+  };
   const abrirSelectorGantt = (obraId) => {
     obraIdParaImportarRef.current = obraId;
     ganttFileInputRef.current?.click();
@@ -1096,41 +1109,46 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
       {obras.length === 0 ? (
         <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-xs text-slate-400">Todavía no hay obras cargadas.</div>
       ) : (
-        <div className="overflow-x-auto">
-          <div style={{ width: minWidthPx, minWidth: minWidthPx }}>
-            <div className="flex">
-              <div className="sticky left-0 z-10 w-[240px] shrink-0 bg-white" />
-              <div className="relative h-5 flex-1">
-                {bandas.map((b, i) => (
-                  <div
-                    key={i}
-                    className="absolute top-0 bottom-0 border-l border-stone-200 pl-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"
-                    style={{ left: `${b.izq}%`, width: `${b.ancho}%` }}
-                  >
-                    {MESES_CORTO[b.mes]}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex">
-              <div className="sticky left-0 z-10 w-[240px] shrink-0 bg-white" />
-              <div className="relative h-5 flex-1 border-b border-stone-200">
-                {semanas.map((s, i) => {
-                  const esHoy = hoy >= s && hoy < new Date(s.getTime() + 7 * 86400000);
-                  return (
+        <>
+          <div className="sticky top-0 z-20 overflow-hidden bg-white pb-1 shadow-[0_2px_2px_-1px_rgba(0,0,0,0.05)]" ref={headerScrollRef}>
+            <div style={{ width: minWidthPx, minWidth: minWidthPx }}>
+              <div className="flex">
+                <div className="w-[240px] shrink-0 bg-white" />
+                <div className="relative h-5 flex-1">
+                  {bandas.map((b, i) => (
                     <div
                       key={i}
-                      className={`absolute top-0 bottom-0 flex items-center justify-center border-l border-stone-100 text-[10px] font-medium ${esHoy ? "bg-rose-50 font-bold text-rose-600" : "text-slate-400"}`}
-                      style={{ left: `${i * anchoSemana}%`, width: `${anchoSemana}%` }}
+                      className="absolute top-0 bottom-0 border-l border-stone-200 pl-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"
+                      style={{ left: `${b.izq}%`, width: `${b.ancho}%` }}
                     >
-                      {String(s.getDate()).padStart(2, "0")}
+                      {MESES_CORTO[b.mes]}
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
+              </div>
+              <div className="flex">
+                <div className="w-[240px] shrink-0 bg-white" />
+                <div className="relative h-5 flex-1 border-b border-stone-200">
+                  {semanas.map((s, i) => {
+                    const esHoy = hoy >= s && hoy < new Date(s.getTime() + 7 * 86400000);
+                    return (
+                      <div
+                        key={i}
+                        className={`absolute top-0 bottom-0 flex items-center justify-center border-l border-stone-100 text-[10px] font-medium ${esHoy ? "bg-rose-50 font-bold text-rose-600" : "text-slate-400"}`}
+                        style={{ left: `${i * anchoSemana}%`, width: `${anchoSemana}%` }}
+                      >
+                        {String(s.getDate()).padStart(2, "0")}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
+          </div>
 
-            <div className="relative mt-4">
+        <div className="overflow-x-auto" ref={cuerpoScrollRef} onScroll={sincronizarScrollHeader}>
+          <div style={{ width: minWidthPx, minWidth: minWidthPx }}>
+            <div className="relative mt-2">
               <div className="pointer-events-none absolute inset-y-0" style={{ left: 240, right: 0 }}>
                 <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-500" style={{ left: `${pct(hoy)}%` }} />
                 <span
@@ -1238,6 +1256,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
             </div>
           </div>
         </div>
+        </>
       )}
       </>
       )}
