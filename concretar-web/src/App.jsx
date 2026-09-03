@@ -826,7 +826,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
     }
   }
   const pxPorSemana = ZOOM_NIVELES_GANTT[zoomIdx];
-  const minWidthPx = Math.max(560, Math.round(semanas.length * pxPorSemana + 220));
+  const minWidthPx = Math.max(560, Math.round(semanas.length * pxPorSemana + 240));
 
   const etapasPorObra = new Map();
   etapasActivas.forEach((e) => {
@@ -913,7 +913,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
               onClick={() => setZoomIdx((z) => Math.max(0, z - 1))}
               disabled={zoomIdx === 0}
               title="Alejar (ver más tiempo)"
-              className="flex h-5 w-5 items-center justify-center rounded-full text-sm font-bold text-slate-600 hover:bg-stone-100 disabled:opacity-30"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-base font-bold text-slate-600 hover:bg-stone-100 disabled:opacity-30"
             >
               −
             </button>
@@ -922,7 +922,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
               onClick={() => setZoomIdx((z) => Math.min(ZOOM_NIVELES_GANTT.length - 1, z + 1))}
               disabled={zoomIdx === ZOOM_NIVELES_GANTT.length - 1}
               title="Acercar (ver más detalle)"
-              className="flex h-5 w-5 items-center justify-center rounded-full text-sm font-bold text-slate-600 hover:bg-stone-100 disabled:opacity-30"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-base font-bold text-slate-600 hover:bg-stone-100 disabled:opacity-30"
             >
               +
             </button>
@@ -937,7 +937,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
         <div className="overflow-x-auto">
           <div style={{ minWidth: minWidthPx }}>
             <div className="flex">
-              <div className="w-[240px] shrink-0" />
+              <div className="sticky left-0 z-10 w-[240px] shrink-0 bg-white" />
               <div className="relative h-5 flex-1">
                 {bandas.map((b, i) => (
                   <div
@@ -951,7 +951,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
               </div>
             </div>
             <div className="flex">
-              <div className="w-[240px] shrink-0" />
+              <div className="sticky left-0 z-10 w-[240px] shrink-0 bg-white" />
               <div className="relative h-5 flex-1 border-b border-stone-200">
                 {semanas.map((s, i) => {
                   const esHoy = hoy >= s && hoy < new Date(s.getTime() + 7 * 86400000);
@@ -983,7 +983,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                       className="flex cursor-pointer items-center gap-3 py-1"
                       style={{ backgroundColor: `${colorDeObra(obra)}17` }}
                     >
-                      <div className="flex w-[240px] shrink-0 items-center gap-2 pl-2 pr-2">
+                      <div className="sticky left-0 z-10 flex w-[240px] shrink-0 items-center gap-2 pl-2 pr-2">
                         <span className="h-full min-h-[1.5rem] w-1 self-stretch rounded" style={{ backgroundColor: colorDeObra(obra) }} />
                         <ChevronRight size={13} className={`shrink-0 text-slate-400 transition-transform ${abierta ? "rotate-90" : ""}`} />
                         <div className="min-w-0">
@@ -1014,7 +1014,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                       const width = Math.max(pct(fechaLocal(etapa.fin)) - left, 0.5);
                       return (
                         <div key={etapa.id} className="flex items-start gap-3 border-t border-stone-100 py-1">
-                          <div className="flex w-[240px] shrink-0 items-start justify-between gap-1 pl-4 pr-2">
+                          <div className="sticky left-0 z-10 flex w-[240px] shrink-0 items-start justify-between gap-1 bg-white pl-4 pr-2">
                             <div className="min-w-0">
                               <div className="flex items-start gap-1 text-[11px] font-semibold leading-tight text-slate-800">
                                 {estado === "Atrasada" && <AlertTriangle size={10} className="mt-0.5 shrink-0 text-rose-500" />}
