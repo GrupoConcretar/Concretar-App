@@ -899,12 +899,13 @@ function FormEtapa({ inicial, onGuardar, onCancelar }) {
 // etapas cargadas a mano en un Gantt día por día. Todavía no depende de nada
 // más — cuando conectemos más adelante un botón "Ver planificación" desde el
 // detalle de cada obra, esto ya queda listo.
-// Ancho de la columna de nombres (obra/etapa) — más angosto en celular para
-// dejarle todo el espacio posible al calendario, que siempre ocupa el 100%
-// del ancho disponible (nunca se corta ni scrollea de costado: en pantallas
-// chicas los días quedan más comprimidos en vez de desbordar).
-const GANTT_LABEL_COL = "w-[92px] sm:w-[170px] md:w-[220px]";
-const GANTT_LABEL_LEFT = "left-[92px] sm:left-[170px] md:left-[220px]";
+// Ancho fijo (en píxeles, no responsive) de cada columna de día y de la
+// columna de nombres — igual que en una planilla de cálculo: los días
+// siempre miden lo mismo para que el número se lea bien, y si el proyecto
+// es largo el Gantt scrollea de costado en vez de achicar todo hasta
+// volverse ilegible.
+const GANTT_DIA_PX = 22;
+const GANTT_LABEL_PX = 260;
 // El calendario (meses + días) se calcula por obra, no uno global para todas
 // juntas — así el rango de fechas de una obra puntual no se estira para
 // cubrir también las demás, y los días de cada una se ven legibles en vez de
@@ -916,11 +917,13 @@ function calendarioGantt(etapasDeObra, hoy) {
   const maxFecha = fechas.length ? new Date(Math.max(...fechas)) : hoy;
   const inicio = lunesOAntes(new Date(Math.min(minFecha.getTime(), hoy.getTime() - 14 * 86400000)));
   const fin = domingoODespues(new Date(Math.max(maxFecha.getTime(), hoy.getTime() + 30 * 86400000)));
-  const totalMs = fin - inicio;
-  const pct = (d) => ((d - inicio) / totalMs) * 100;
   const dias = [];
   for (let cur = new Date(inicio); cur <= fin; cur.setDate(cur.getDate() + 1)) dias.push(new Date(cur));
-  const anchoDia = 100 / dias.length;
+  // Posición de una fecha en índice de día (puede ser fraccionario si cae a
+  // mitad de un día, aunque en la práctica siempre trabajamos a medianoche).
+  const indice = (d) => (d - inicio) / 86400000;
+  // Bandas de mes, en cantidad de días (no en %) — se convierten a píxeles
+  // multiplicando por el ancho fijo de columna.
   const bandas = [];
   {
     let i = 0;
@@ -928,11 +931,195 @@ function calendarioGantt(etapasDeObra, hoy) {
       const m = dias[i].getMonth();
       let j = i;
       while (j < dias.length && dias[j].getMonth() === m) j++;
-      bandas.push({ mes: m, izq: i * anchoDia, ancho: (j - i) * anchoDia });
+      bandas.push({ mes: m, desde: i, cantidad: j - i });
       i = j;
     }
   }
-  return { dias, anchoDia, bandas, pct };
+  // Semanas de 7 días (la última puede ser más corta), numeradas desde el
+  // inicio del rango — igual que la fila "Semana N" de la planilla.
+  const semanas = [];
+  for (let i = 0; i < dias.length; i += 7) {
+    semanas.push({ numero: semanas.length + 1, desde: i, cantidad: Math.min(7, dias.length - i) });
+  }
+  return { dias, bandas, semanas, indice };
+}
+
+// Gantt de una obra puntual: encabezado (mes / semana / día) + filas de
+// etapas, en formato compacto tipo planilla de cálculo — cada fila una sola
+// línea, columnas de día de ancho fijo. Es su propio componente (no un
+// bloque más de PlanificacionObras) porque necesita sus propias refs para
+// sincronizar a mano el scroll horizontal entre el encabezado (fijo arriba,
+// sin scrollbar propia) y el cuerpo (el que el usuario realmente scrollea) —
+// eso solo se puede hacer con un estado propio por obra, no dentro de un
+// simple .map().
+function ObraGanttBlock({
+  obra, etapasDeObra, hoy, abierta, onToggle, importando,
+  onEliminarGantt, onAbrirSelectorGantt,
+  agregandoEtapaObraId, setAgregandoEtapaObraId,
+  editandoEtapaId, setEditandoEtapaId,
+  onGuardarEdicionEtapa, onEliminarEtapa, onAgregarEtapa, marcarTerminada,
+}) {
+  const cal = calendarioGantt(etapasDeObra, hoy);
+  const anchoGridPx = cal.dias.length * GANTT_DIA_PX;
+  const px = (d) => cal.indice(d) * GANTT_DIA_PX;
+  const headerScrollRef = useRef(null);
+  const sincronizarHeader = (e) => {
+    if (headerScrollRef.current) headerScrollRef.current.scrollLeft = e.target.scrollLeft;
+  };
+
+  return (
+    <div className="mb-1">
+      <div className={abierta ? "sticky top-0 z-20 bg-white pb-1 shadow-[0_2px_2px_-1px_rgba(0,0,0,0.05)]" : ""}>
+        <div
+          onClick={onToggle}
+          className="flex cursor-pointer items-center gap-3 py-1"
+          style={{ backgroundColor: `${colorDeObra(obra)}2e` }}
+        >
+          <div className="flex shrink-0 items-center gap-2 pl-2 pr-2" style={{ width: GANTT_LABEL_PX }}>
+            <span className="h-full min-h-[1.5rem] w-1 self-stretch rounded" style={{ backgroundColor: colorDeObra(obra) }} />
+            <ChevronRight size={13} className={`shrink-0 text-slate-400 transition-transform ${abierta ? "rotate-90" : ""}`} />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-bold text-slate-900">{obra.nombre}</div>
+              <div className="text-[11px] text-slate-400">{etapasDeObra.length} etapa{etapasDeObra.length === 1 ? "" : "s"}</div>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center justify-end gap-1 pr-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); onEliminarGantt(obra.id); }}
+              title="Elimina todas las etapas de esta obra (se pueden restaurar desde la Papelera)"
+              className={btnGhost}
+            >
+              <span className="flex items-center gap-1 text-rose-500"><Trash2 size={12} /> Eliminar Gantt</span>
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onAbrirSelectorGantt(obra.id); }}
+              disabled={importando}
+              title='Carga tareas desde la hoja "Gant" de un Excel'
+              className={btnGhost}
+            >
+              <span className="flex items-center gap-1">
+                {importando ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                {importando ? "Leyendo…" : "Agregar Gantt"}
+              </span>
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setAgregandoEtapaObraId(agregandoEtapaObraId === obra.id ? null : obra.id); if (!abierta) onToggle(); }}
+              className={btnGhost}
+            >
+              <span className="flex items-center gap-1"><Plus size={12} /> Agregar etapa</span>
+            </button>
+          </div>
+        </div>
+
+        {abierta && (
+          <div className="overflow-hidden" ref={headerScrollRef}>
+            <div style={{ width: GANTT_LABEL_PX + anchoGridPx }}>
+              <div className="flex">
+                <div className="shrink-0 bg-white" style={{ width: GANTT_LABEL_PX }} />
+                <div className="relative h-4" style={{ width: anchoGridPx }}>
+                  {cal.bandas.map((b, i) => (
+                    <div
+                      key={i}
+                      className="absolute top-0 bottom-0 overflow-hidden whitespace-nowrap border-l border-stone-300 pl-1 text-[9px] font-bold uppercase tracking-wide text-slate-500"
+                      style={{ left: b.desde * GANTT_DIA_PX, width: b.cantidad * GANTT_DIA_PX }}
+                    >
+                      {MESES_CORTO[b.mes]}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex">
+                <div className="shrink-0 bg-white" style={{ width: GANTT_LABEL_PX }} />
+                <div className="relative h-3.5" style={{ width: anchoGridPx }}>
+                  {cal.semanas.map((s, i) => (
+                    <div
+                      key={i}
+                      className="absolute top-0 bottom-0 overflow-hidden whitespace-nowrap border-l border-stone-200 pl-1 text-[8px] font-semibold text-slate-400"
+                      style={{ left: s.desde * GANTT_DIA_PX, width: s.cantidad * GANTT_DIA_PX }}
+                    >
+                      Sem {s.numero}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex">
+                <div className="shrink-0 bg-white" style={{ width: GANTT_LABEL_PX }} />
+                <div className="relative h-4 border-b border-stone-300" style={{ width: anchoGridPx }}>
+                  {cal.dias.map((d, i) => {
+                    const esHoy = d.getTime() === hoy.getTime();
+                    const esFinde = d.getDay() === 0 || d.getDay() === 6;
+                    return (
+                      <div
+                        key={i}
+                        className={`absolute top-0 bottom-0 flex items-center justify-center border-l text-[9px] font-medium ${esHoy ? "border-rose-300 bg-rose-100 font-bold text-rose-600" : esFinde ? "border-stone-200 bg-amber-50 text-slate-400" : "border-stone-100 text-slate-400"}`}
+                        style={{ left: i * GANTT_DIA_PX, width: GANTT_DIA_PX }}
+                      >
+                        {String(d.getDate()).padStart(2, "0")}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {abierta && (
+        <div className="overflow-x-auto" onScroll={sincronizarHeader}>
+          <div className="relative" style={{ width: GANTT_LABEL_PX + anchoGridPx }}>
+            <div className="pointer-events-none absolute inset-y-0" style={{ left: GANTT_LABEL_PX, width: anchoGridPx }}>
+              <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-500" style={{ left: px(hoy) }} />
+            </div>
+
+            {etapasDeObra.map((etapa) => {
+              if (editandoEtapaId === etapa.id) {
+                return (
+                  <div key={etapa.id} className="py-2 pl-2 pr-2">
+                    <FormEtapa inicial={etapa} onGuardar={(datos) => onGuardarEdicionEtapa(etapa, datos)} onCancelar={() => setEditandoEtapaId(null)} />
+                  </div>
+                );
+              }
+              const estado = estadoEtapa(etapa, hoy);
+              const left = px(fechaLocal(etapa.inicio));
+              // Piso chico en píxeles para que una etapa de un solo día no
+              // desaparezca del todo.
+              const width = Math.max(px(fechaLocal(etapa.fin)) - left, 6);
+              return (
+                <div key={etapa.id} className="flex items-center gap-2 border-t border-stone-100 py-0.5 text-[11px]">
+                  <div className="sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-white pl-2 pr-1" style={{ width: GANTT_LABEL_PX }}>
+                    {estado === "Atrasada" && <AlertTriangle size={9} className="shrink-0 text-rose-500" />}
+                    <span
+                      className="truncate font-semibold text-slate-800"
+                      title={`${etapa.nombre} — ${fmtFecha(etapa.inicio)} → ${fmtFecha(etapa.fin)} · ${etapa.avance || 0}%`}
+                    >
+                      {etapa.nombre}
+                    </span>
+                    <div className="ml-auto flex shrink-0 items-center gap-0.5 text-slate-400">
+                      <button onClick={() => marcarTerminada(etapa)} title="Marcar como terminada" className="rounded p-0.5 hover:bg-emerald-50 hover:text-emerald-600"><CheckCircle2 size={11} /></button>
+                      <button onClick={() => setEditandoEtapaId(etapa.id)} title="Editar etapa" className="rounded p-0.5 hover:bg-stone-100 hover:text-slate-600"><Pencil size={10} /></button>
+                      <button onClick={() => onEliminarEtapa(etapa)} title="Eliminar etapa" className="rounded p-0.5 hover:bg-stone-100 hover:text-rose-500"><Trash2 size={10} /></button>
+                    </div>
+                  </div>
+                  <div className="relative h-3.5" style={{ width: anchoGridPx }}>
+                    <div className="absolute top-0 h-3.5 rounded-sm border" style={{ left, width, backgroundColor: ETAPA_COLOR_TRACK[estado], borderColor: ETAPA_COLOR_BARRA[estado] }}>
+                      <div className="h-full rounded-sm" style={{ width: `${Math.min(etapa.avance || 0, 100)}%`, backgroundColor: ETAPA_COLOR_BARRA[estado] }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {abierta && agregandoEtapaObraId === obra.id && (
+        <div className="py-2 pl-2 pr-2">
+          <FormEtapa onGuardar={(datos) => onAgregarEtapa(obra.id, datos)} onCancelar={() => setAgregandoEtapaObraId(null)} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoEtapaObraId, editandoEtapaId, setEditandoEtapaId, onAgregarEtapa, onGuardarEdicionEtapa, onEliminarEtapa, onEliminarGantt, onImportarGantt }) {
@@ -1079,155 +1266,27 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
       {obras.length === 0 ? (
         <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-xs text-slate-400">Todavía no hay obras cargadas.</div>
       ) : (
-        obras.map((obra) => {
-          const etapasDeObra = etapasPorObra.get(obra.id) || [];
-          const abierta = obrasAbiertas.has(obra.id);
-          // El calendario de cada obra se calcula recién al abrirla, con su
-          // propio rango de fechas — así no se ve afectado por las demás
-          // obras ni se calcula de más mientras está colapsada.
-          const cal = abierta ? calendarioGantt(etapasDeObra, hoy) : null;
-          return (
-            <div key={obra.id} className="mb-1">
-              <div className={abierta ? "sticky top-0 z-20 bg-white pb-1 shadow-[0_2px_2px_-1px_rgba(0,0,0,0.05)]" : ""}>
-                <div
-                  onClick={() => toggleObraAbierta(obra.id)}
-                  className="flex cursor-pointer items-center gap-3 py-1"
-                  style={{ backgroundColor: `${colorDeObra(obra)}2e` }}
-                >
-                  <div className={`flex ${GANTT_LABEL_COL} shrink-0 items-center gap-2 pl-2 pr-2`}>
-                    <span className="h-full min-h-[1.5rem] w-1 self-stretch rounded" style={{ backgroundColor: colorDeObra(obra) }} />
-                    <ChevronRight size={13} className={`shrink-0 text-slate-400 transition-transform ${abierta ? "rotate-90" : ""}`} />
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-slate-900">{obra.nombre}</div>
-                      <div className="text-[11px] text-slate-400">{etapasDeObra.length} etapa{etapasDeObra.length === 1 ? "" : "s"}</div>
-                    </div>
-                  </div>
-                  <div className="flex flex-1 items-center justify-end gap-1 pr-2">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onEliminarGantt(obra.id); }}
-                      title="Elimina todas las etapas de esta obra (se pueden restaurar desde la Papelera)"
-                      className={btnGhost}
-                    >
-                      <span className="flex items-center gap-1 text-rose-500"><Trash2 size={12} /> Eliminar Gantt</span>
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); abrirSelectorGantt(obra.id); }}
-                      disabled={importandoObraId === obra.id}
-                      title='Carga tareas desde la hoja "Gant" de un Excel'
-                      className={btnGhost}
-                    >
-                      <span className="flex items-center gap-1">
-                        {importandoObraId === obra.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                        {importandoObraId === obra.id ? "Leyendo…" : "Agregar Gantt"}
-                      </span>
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setAgregandoEtapaObraId(agregandoEtapaObraId === obra.id ? null : obra.id); if (!abierta) toggleObraAbierta(obra.id); }}
-                      className={btnGhost}
-                    >
-                      <span className="flex items-center gap-1"><Plus size={12} /> Agregar etapa</span>
-                    </button>
-                  </div>
-                </div>
-
-                {abierta && (
-                  <>
-                    <div className="flex">
-                      <div className={`${GANTT_LABEL_COL} shrink-0 bg-white`} />
-                      <div className="relative h-5 flex-1">
-                        {cal.bandas.map((b, i) => (
-                          <div
-                            key={i}
-                            className="absolute top-0 bottom-0 overflow-hidden whitespace-nowrap border-l border-stone-200 pl-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400"
-                            style={{ left: `${b.izq}%`, width: `${b.ancho}%` }}
-                          >
-                            {MESES_CORTO[b.mes]}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex">
-                      <div className={`${GANTT_LABEL_COL} shrink-0 bg-white`} />
-                      <div className="relative h-4 flex-1 border-b border-stone-200">
-                        {cal.dias.map((d, i) => {
-                          const esHoy = d.getTime() === hoy.getTime();
-                          const esFinde = d.getDay() === 0 || d.getDay() === 6;
-                          return (
-                            <div
-                              key={i}
-                              className={`absolute top-0 bottom-0 flex items-center justify-center overflow-hidden border-l border-stone-100 text-[7px] font-medium sm:text-[8px] ${esHoy ? "bg-rose-50 font-bold text-rose-600" : esFinde ? "bg-stone-50 text-slate-300" : "text-slate-400"}`}
-                              style={{ left: `${i * cal.anchoDia}%`, width: `${cal.anchoDia}%` }}
-                            >
-                              {String(d.getDate()).padStart(2, "0")}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {abierta && (
-                <div className="relative mt-1">
-                  <div className={`pointer-events-none absolute inset-y-0 right-0 ${GANTT_LABEL_LEFT}`}>
-                    <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-500" style={{ left: `${cal.pct(hoy)}%` }} />
-                    <span
-                      className="absolute -top-4 -translate-x-1/2 whitespace-nowrap rounded bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold text-white"
-                      style={{ left: `${cal.pct(hoy)}%` }}
-                    >
-                      Hoy {String(hoy.getDate()).padStart(2, "0")}/{String(hoy.getMonth() + 1).padStart(2, "0")}
-                    </span>
-                  </div>
-
-                  {etapasDeObra.map((etapa) => {
-                    if (editandoEtapaId === etapa.id) {
-                      return (
-                        <div key={etapa.id} className="py-2 pl-2 pr-2">
-                          <FormEtapa inicial={etapa} onGuardar={(datos) => onGuardarEdicionEtapa(etapa, datos)} onCancelar={() => setEditandoEtapaId(null)} />
-                        </div>
-                      );
-                    }
-                    const estado = estadoEtapa(etapa, hoy);
-                    const left = cal.pct(fechaLocal(etapa.inicio));
-                    // Piso chico en % (no en píxeles) para que una etapa de un solo día
-                    // no desaparezca del todo aunque la columna de ese día sea angosta.
-                    const width = Math.max(cal.pct(fechaLocal(etapa.fin)) - left, 0.6);
-                    return (
-                      <div key={etapa.id} className="flex items-start gap-3 border-t border-stone-100 py-1">
-                        <div className={`flex ${GANTT_LABEL_COL} shrink-0 items-start justify-between gap-1 bg-white pl-4 pr-2`}>
-                          <div className="min-w-0">
-                            <div className="flex items-start gap-1 text-[11px] font-semibold leading-tight text-slate-800">
-                              {estado === "Atrasada" && <AlertTriangle size={10} className="mt-0.5 shrink-0 text-rose-500" />}
-                              <span>{etapa.nombre}</span>
-                            </div>
-                            <div className="text-[9px] leading-tight text-slate-400">{fmtFecha(etapa.inicio)} → {fmtFecha(etapa.fin)} · {etapa.avance || 0}%</div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-0.5 text-slate-400">
-                            <button onClick={() => marcarTerminada(etapa)} title="Marcar como terminada" className="rounded p-0.5 hover:bg-emerald-50 hover:text-emerald-600"><CheckCircle2 size={12} /></button>
-                            <button onClick={() => setEditandoEtapaId(etapa.id)} title="Editar etapa" className="rounded p-0.5 hover:bg-stone-100 hover:text-slate-600"><Pencil size={11} /></button>
-                            <button onClick={() => onEliminarEtapa(etapa)} title="Eliminar etapa" className="rounded p-0.5 hover:bg-stone-100 hover:text-rose-500"><Trash2 size={11} /></button>
-                          </div>
-                        </div>
-                        <div className="relative mt-0.5 h-4 flex-1">
-                          <div className="absolute top-0 h-4 rounded border" style={{ left: `${left}%`, width: `${width}%`, backgroundColor: ETAPA_COLOR_TRACK[estado], borderColor: ETAPA_COLOR_BARRA[estado] }}>
-                            <div className="h-full rounded-sm" style={{ width: `${Math.min(etapa.avance || 0, 100)}%`, backgroundColor: ETAPA_COLOR_BARRA[estado] }} />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {abierta && agregandoEtapaObraId === obra.id && (
-                <div className="py-2 pl-2 pr-2">
-                  <FormEtapa onGuardar={(datos) => onAgregarEtapa(obra.id, datos)} onCancelar={() => setAgregandoEtapaObraId(null)} />
-                </div>
-              )}
-            </div>
-          );
-        })
+        obras.map((obra) => (
+          <ObraGanttBlock
+            key={obra.id}
+            obra={obra}
+            etapasDeObra={etapasPorObra.get(obra.id) || []}
+            hoy={hoy}
+            abierta={obrasAbiertas.has(obra.id)}
+            onToggle={() => toggleObraAbierta(obra.id)}
+            importando={importandoObraId === obra.id}
+            onEliminarGantt={onEliminarGantt}
+            onAbrirSelectorGantt={abrirSelectorGantt}
+            agregandoEtapaObraId={agregandoEtapaObraId}
+            setAgregandoEtapaObraId={setAgregandoEtapaObraId}
+            editandoEtapaId={editandoEtapaId}
+            setEditandoEtapaId={setEditandoEtapaId}
+            onGuardarEdicionEtapa={onGuardarEdicionEtapa}
+            onEliminarEtapa={onEliminarEtapa}
+            onAgregarEtapa={onAgregarEtapa}
+            marcarTerminada={marcarTerminada}
+          />
+        ))
       )}
       </>
       )}
