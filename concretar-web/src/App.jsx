@@ -475,57 +475,94 @@ function TablaMovimientos({ items, obras, onEditar }) {
   // (ingresos, transferencias manuales, préstamos, avances) no tiene ese dato.
   const tieneFactura = (origen) => origen === "compras_facturas" || origen === "cobros_socios";
   return (
-    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-      <table className="w-full text-left text-[11px]">
-        <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="whitespace-nowrap px-2 py-1">Fecha</th>
-            <th className="px-2 py-1">Tipo</th>
-            <th className="px-2 py-1">Obra</th>
-            <th className="px-2 py-1">Detalle</th>
-            <th className="px-2 py-1">Form.</th>
-            <th className="px-2 py-1">Cuenta</th>
-            <th className="px-2 py-1 text-right">Monto</th>
-            <th className="px-2 py-1">Estado</th>
-            <th className="px-2 py-1">Factura</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((m) => {
-            const obra = obras.find((o) => o.id === m.obraId);
-            const clickable = !!(m.origen && onEditar);
-            return (
-              <tr
-                key={m.id}
-                onClick={clickable ? () => onEditar(m) : undefined}
-                title={clickable ? "Tocá para modificar o eliminar" : undefined}
-                className={`border-t border-stone-100 ${clickable ? "cursor-pointer hover:bg-amber-50" : ""}`}
-              >
-                <td className="whitespace-nowrap px-2 py-0.5 text-slate-600">{fmtFecha(m.fecha)}</td>
-                <td className="px-2 py-0.5">
-                  <span className={`rounded border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
-                    {m.tipo}
+    <>
+      {/* Celular: tarjetas apiladas, sin scroll horizontal. */}
+      <div className="space-y-1.5 sm:hidden">
+        {items.map((m) => {
+          const obra = obras.find((o) => o.id === m.obraId);
+          return (
+            <div key={m.id} className="rounded-lg border border-stone-200 bg-white p-2.5 text-xs shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-medium text-slate-900">{m.detalle}</span>
+                <span className={`whitespace-nowrap font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-500">
+                <span>{fmtFecha(m.fecha)}</span>
+                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
+                  {m.tipo}
+                </span>
+                <Badge estado={m.formalidad || "Blanco"} />
+                <span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span>
+                <span>{obra?.nombre || "General"}</span>
+                {m.estado && <Badge estado={m.estado} />}
+                {tieneFactura(m.origen) && (
+                  <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "border-amber-300 bg-amber-50 text-amber-700" : "border-emerald-300 bg-emerald-50 text-emerald-700"}`}>
+                    {(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "Sin factura" : `Factura ${m.tipoFactura}`}
                   </span>
-                </td>
-                <td className="max-w-[9rem] truncate px-2 py-0.5 text-slate-600">{obra?.nombre || "General"}</td>
-                <td className="px-2 py-0.5 font-medium text-slate-900">{m.detalle}</td>
-                <td className="px-2 py-0.5"><Badge estado={m.formalidad || "Blanco"} /></td>
-                <td className="whitespace-nowrap px-2 py-0.5 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
-                <td className={`whitespace-nowrap px-2 py-0.5 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
-                <td className="px-2 py-0.5">{m.estado && <Badge estado={m.estado} />}</td>
-                <td className="whitespace-nowrap px-2 py-0.5">
-                  {tieneFactura(m.origen) && (
-                    (!m.tipoFactura || m.tipoFactura === "Sin factura")
-                      ? <span className="text-[10px] font-semibold text-amber-700">Sin factura</span>
-                      : <span className="text-[10px] font-semibold text-emerald-700">Factura {m.tipoFactura}</span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                )}
+              </div>
+              {m.origen && onEditar && (
+                <div className="mt-1.5 border-t border-stone-100 pt-1.5 text-right">
+                  <button onClick={() => onEditar(m)} className={btnGhost}>
+                    <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tablet/PC: tabla completa. */}
+      <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:block">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Tipo</th><th className="px-2 py-1.5">Obra</th>
+              <th className="px-2 py-1.5">Detalle</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th>
+              <th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((m) => {
+              const obra = obras.find((o) => o.id === m.obraId);
+              return (
+                <tr key={m.id} className="border-t border-stone-100">
+                  <td className="px-2 py-1 text-slate-600">{fmtFecha(m.fecha)}</td>
+                  <td className="px-2 py-1">
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
+                      {m.tipo}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
+                  <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
+                  <td className="px-2 py-1"><Badge estado={m.formalidad || "Blanco"} /></td>
+                  <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
+                  <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
+                  <td className="px-2 py-1">{m.estado && <Badge estado={m.estado} />}</td>
+                  <td className="px-2 py-1">
+                    {tieneFactura(m.origen) && (
+                      (!m.tipoFactura || m.tipoFactura === "Sin factura") ? (
+                        <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Sin factura</span>
+                      ) : (
+                        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Factura {m.tipoFactura}</span>
+                      )
+                    )}
+                  </td>
+                  <td className="px-2 py-1">
+                    {m.origen && onEditar && (
+                      <button onClick={() => onEditar(m)} className={btnGhost}>
+                        <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -1688,7 +1725,7 @@ export default function ConcretarApp() {
   ];
 
   const DEMO_TANTEROS = [
-    { id: 1, nombreGrupo: "Mario Electricista", obraId: 1, integrantes: [7, 8], precioTotal: 12000000 },
+    { id: 1, nombreGrupo: "Mario Electricista", obraId: 1, integrantes: [7, 8], precioTotal: 12000000, formalidad: "Blanco" },
   ];
   const DEMO_AVANCES_TANTEROS = [
     { id: 1, tanteroId: 1, fecha: "2026-06-01", monto: 4000000, descripcion: "1er avance — cableado planta baja", cuenta: "Banco", formalidad: "Blanco" },
@@ -3072,11 +3109,15 @@ export default function ConcretarApp() {
 
   // ---------- Tanteros (mano de obra por precio cerrado) ----------
   const [showTanteroForm, setShowTanteroForm] = useState(false);
-  const emptyTanteroForm = { nombreGrupo: "", obraId: obras[0]?.id ?? "", precioTotal: "", integrantes: [] };
+  const emptyTanteroForm = { nombreGrupo: "", obraId: obras[0]?.id ?? "", precioTotal: "", integrantes: [], formalidad: FORMALIDADES[0] };
   const [tanteroForm, setTanteroForm] = useState(emptyTanteroForm);
   const [avanceAbiertoId, setAvanceAbiertoId] = useState(null);
   const [editandoAvanceId, setEditandoAvanceId] = useState(null);
-  const emptyAvanceForm = { fecha: hoyISO(), monto: "", descripcion: "", cuenta: CUENTAS[0], formalidad: FORMALIDADES[0] };
+  // La cuenta arranca vacía a propósito: si no se elige, el avance queda "sin
+  // asignar" y no se descuenta de ningún saldo — mejor eso que adivinar mal de
+  // dónde salió la plata. La formalidad no se elige acá: la define el grupo de
+  // tanteros (un tantero es en blanco o en negro siempre, no pago por pago).
+  const emptyAvanceForm = { fecha: hoyISO(), monto: "", descripcion: "", cuenta: "" };
   const [avanceForm, setAvanceForm] = useState(emptyAvanceForm);
 
   const tanterosDisponibles = personal.filter((p) => p.tipoTrabajador === "Tantero");
@@ -3099,6 +3140,7 @@ export default function ConcretarApp() {
       obraId: Number(tanteroForm.obraId),
       precioTotal: Number(tanteroForm.precioTotal) || 0,
       integrantes: tanteroForm.integrantes,
+      formalidad: tanteroForm.formalidad,
     }, setTanteros);
     setTanteroForm(emptyTanteroForm);
     setShowTanteroForm(false);
@@ -3110,12 +3152,14 @@ export default function ConcretarApp() {
 
   function submitAvanceForm(e, tanteroId) {
     e.preventDefault();
+    // La formalidad siempre es la del grupo — no se re-elige pago por pago.
+    const formalidadGrupo = tanteros.find((t) => t.id === tanteroId)?.formalidad || null;
     const patch = {
       fecha: avanceForm.fecha,
       monto: Number(avanceForm.monto) || 0,
       descripcion: avanceForm.descripcion,
-      cuenta: avanceForm.cuenta,
-      formalidad: avanceForm.formalidad,
+      cuenta: avanceForm.cuenta || null,
+      formalidad: formalidadGrupo,
     };
     if (editandoAvanceId) {
       updateRecord("avances_tanteros", editandoAvanceId, patch, setAvancesTanteros);
@@ -3131,8 +3175,7 @@ export default function ConcretarApp() {
       fecha: avance.fecha,
       monto: avance.monto || "",
       descripcion: avance.descripcion || "",
-      cuenta: avance.cuenta || CUENTAS[0],
-      formalidad: avance.formalidad || FORMALIDADES[0],
+      cuenta: avance.cuenta || "",
     });
     setEditandoAvanceId(avance.id);
     setAvanceAbiertoId(avance.tanteroId);
@@ -6323,6 +6366,11 @@ export default function ConcretarApp() {
                       <Field label="Precio cerrado (ARS)">
                         <MoneyInput value={tanteroForm.precioTotal} onChange={(v) => setTanteroForm((f) => ({ ...f, precioTotal: v }))} className={inputCls} />
                       </Field>
+                      <Field label="Formalidad del grupo">
+                        <select value={tanteroForm.formalidad} onChange={(e) => setTanteroForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+                          {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
+                        </select>
+                      </Field>
                       <div className="md:col-span-3">
                         <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Integrantes del grupo</div>
                         {tanterosDisponibles.length === 0 ? (
@@ -6404,7 +6452,7 @@ export default function ConcretarApp() {
                             </button>
                           </div>
 
-                          <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                          <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                             <div>
                               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Precio cerrado</div>
                               <div className="font-mono font-semibold text-slate-900">{fmtARS(t.precioTotal)}</div>
@@ -6416,6 +6464,17 @@ export default function ConcretarApp() {
                             <div>
                               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Saldo</div>
                               <div className={`font-mono font-semibold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
+                            </div>
+                            <div>
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Formalidad del grupo</div>
+                              <select
+                                value={t.formalidad || ""}
+                                onChange={(e) => updateRecord("tanteros", t.id, { formalidad: e.target.value }, setTanteros)}
+                                className={`${inputCls} ${!t.formalidad ? "border-amber-400" : ""}`}
+                              >
+                                <option value="" disabled>Elegir…</option>
+                                {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
+                              </select>
                             </div>
                           </div>
 
@@ -6432,12 +6491,8 @@ export default function ConcretarApp() {
                               </Field>
                               <Field label="Cuenta">
                                 <select value={avanceForm.cuenta} onChange={(e) => setAvanceForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+                                  <option value="">Sin definir</option>
                                   {CUENTAS.map((c) => <option key={c}>{c}</option>)}
-                                </select>
-                              </Field>
-                              <Field label="Formalidad">
-                                <select value={avanceForm.formalidad} onChange={(e) => setAvanceForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-                                  {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
                                 </select>
                               </Field>
                               <div className="md:col-span-4">
