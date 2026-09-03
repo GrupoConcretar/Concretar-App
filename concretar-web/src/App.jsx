@@ -778,8 +778,15 @@ function FormEtapa({ inicial, onGuardar, onCancelar }) {
 // etapas cargadas a mano en un Gantt semanal (lunes a domingo). Todavía no
 // depende de nada más — cuando conectemos más adelante un botón "Ver
 // planificación" desde el detalle de cada obra, esto ya queda listo.
+// Niveles de zoom horizontal del Gantt, en píxeles por semana — de más
+// alejado (entra más tiempo en pantalla) a más acercado (semanas más anchas
+// y fáciles de tocar). Las barras y encabezados están en % del contenedor,
+// así que cambiar este ancho reescala todo el Gantt automáticamente.
+const ZOOM_NIVELES_GANTT = [14, 20, 26, 34, 46];
+
 function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoEtapaObraId, editandoEtapaId, setEditandoEtapaId, onAgregarEtapa, onGuardarEdicionEtapa, onEliminarEtapa }) {
   const hoy = fechaLocal(hoyISO());
+  const [zoomIdx, setZoomIdx] = useState(1);
   const fechas = etapas.flatMap((e) => [fechaLocal(e.inicio), fechaLocal(e.fin)]).filter(Boolean);
   const minFecha = fechas.length ? new Date(Math.min(...fechas)) : hoy;
   const maxFecha = fechas.length ? new Date(Math.max(...fechas)) : hoy;
@@ -802,7 +809,8 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
       i = j;
     }
   }
-  const minWidthPx = Math.max(720, Math.round(semanas.length * 34 + 220));
+  const pxPorSemana = ZOOM_NIVELES_GANTT[zoomIdx];
+  const minWidthPx = Math.max(560, Math.round(semanas.length * pxPorSemana + 220));
 
   const etapasPorObra = new Map();
   etapas.forEach((e) => {
@@ -812,14 +820,33 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
 
   return (
     <Panel title="Planificación — todas las obras">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-4 text-xs text-slate-600">
+      <div className="mb-2.5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
           {["Finalizada", "En curso", "Atrasada", "Pendiente"].map((estado) => (
             <span key={estado} className="flex items-center gap-1.5">
               <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: ETAPA_COLOR_BARRA[estado] }} />
               {estado}
             </span>
           ))}
+          <div className="flex items-center gap-1 rounded-full border border-stone-300 bg-white p-0.5">
+            <button
+              onClick={() => setZoomIdx((z) => Math.max(0, z - 1))}
+              disabled={zoomIdx === 0}
+              title="Alejar (ver más tiempo)"
+              className="flex h-5 w-5 items-center justify-center rounded-full text-sm font-bold text-slate-600 hover:bg-stone-100 disabled:opacity-30"
+            >
+              −
+            </button>
+            <span className="w-9 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">Zoom</span>
+            <button
+              onClick={() => setZoomIdx((z) => Math.min(ZOOM_NIVELES_GANTT.length - 1, z + 1))}
+              disabled={zoomIdx === ZOOM_NIVELES_GANTT.length - 1}
+              title="Acercar (ver más detalle)"
+              className="flex h-5 w-5 items-center justify-center rounded-full text-sm font-bold text-slate-600 hover:bg-stone-100 disabled:opacity-30"
+            >
+              +
+            </button>
+          </div>
         </div>
         <div className="text-[11px] text-slate-400">Semanas de lunes a domingo — el número es el día del mes en que arranca cada semana.</div>
       </div>
@@ -831,7 +858,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
           <div style={{ minWidth: minWidthPx }}>
             <div className="flex">
               <div className="w-[220px] shrink-0" />
-              <div className="relative h-6 flex-1">
+              <div className="relative h-5 flex-1">
                 {bandas.map((b, i) => (
                   <div
                     key={i}
@@ -845,7 +872,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
             </div>
             <div className="flex">
               <div className="w-[220px] shrink-0" />
-              <div className="relative h-6 flex-1 border-b border-stone-200">
+              <div className="relative h-5 flex-1 border-b border-stone-200">
                 {semanas.map((s, i) => {
                   const esHoy = hoy >= s && hoy < new Date(s.getTime() + 7 * 86400000);
                   return (
@@ -870,7 +897,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                 const etapasDeObra = etapasPorObra.get(obra.id) || [];
                 return (
                   <div key={obra.id}>
-                    <div className="flex items-center gap-3 py-2" style={{ backgroundColor: `${colorDeObra(obra)}17` }}>
+                    <div className="flex items-center gap-3 py-1" style={{ backgroundColor: `${colorDeObra(obra)}17` }}>
                       <div className="flex w-[220px] shrink-0 items-center gap-2 pl-2 pr-2">
                         <span className="h-full min-h-[1.5rem] w-1 self-stretch rounded" style={{ backgroundColor: colorDeObra(obra) }} />
                         <div className="min-w-0">
@@ -900,22 +927,22 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                       const left = pct(fechaLocal(etapa.inicio));
                       const width = Math.max(pct(fechaLocal(etapa.fin)) - left, 0.5);
                       return (
-                        <div key={etapa.id} className="flex items-center gap-3 border-t border-stone-100 py-2">
-                          <div className="flex w-[220px] shrink-0 items-start justify-between gap-1 pl-4 pr-2">
+                        <div key={etapa.id} className="flex items-center gap-3 border-t border-stone-100 py-0.5">
+                          <div className="flex w-[220px] shrink-0 items-center justify-between gap-1 pl-4 pr-2">
                             <div className="min-w-0">
-                              <div className="flex items-start gap-1 text-xs font-semibold text-slate-800">
-                                {estado === "Atrasada" && <AlertTriangle size={11} className="mt-0.5 shrink-0 text-rose-500" />}
-                                <span>{etapa.nombre}</span>
+                              <div className="flex items-center gap-1 text-[11px] font-semibold leading-tight text-slate-800">
+                                {estado === "Atrasada" && <AlertTriangle size={10} className="shrink-0 text-rose-500" />}
+                                <span className="truncate">{etapa.nombre}</span>
                               </div>
-                              <div className="text-[10px] text-slate-400">{fmtFecha(etapa.inicio)} → {fmtFecha(etapa.fin)} · {etapa.avance || 0}%</div>
+                              <div className="text-[9px] leading-tight text-slate-400">{fmtFecha(etapa.inicio)} → {fmtFecha(etapa.fin)} · {etapa.avance || 0}%</div>
                             </div>
                             <div className="flex shrink-0 items-center gap-0.5 text-slate-400">
-                              <button onClick={() => setEditandoEtapaId(etapa.id)} title="Editar etapa" className="rounded p-1 hover:bg-stone-100 hover:text-slate-600"><Pencil size={12} /></button>
-                              <button onClick={() => onEliminarEtapa(etapa)} title="Eliminar etapa" className="rounded p-1 hover:bg-stone-100 hover:text-rose-500"><Trash2 size={12} /></button>
+                              <button onClick={() => setEditandoEtapaId(etapa.id)} title="Editar etapa" className="rounded p-0.5 hover:bg-stone-100 hover:text-slate-600"><Pencil size={11} /></button>
+                              <button onClick={() => onEliminarEtapa(etapa)} title="Eliminar etapa" className="rounded p-0.5 hover:bg-stone-100 hover:text-rose-500"><Trash2 size={11} /></button>
                             </div>
                           </div>
-                          <div className="relative h-5 flex-1">
-                            <div className="absolute top-0 h-5 rounded" style={{ left: `${left}%`, width: `${width}%`, backgroundColor: ETAPA_COLOR_TRACK[estado] }}>
+                          <div className="relative h-3.5 flex-1">
+                            <div className="absolute top-0 h-3.5 rounded" style={{ left: `${left}%`, width: `${width}%`, backgroundColor: ETAPA_COLOR_TRACK[estado] }}>
                               <div className="h-full rounded" style={{ width: `${Math.min(etapa.avance || 0, 100)}%`, backgroundColor: ETAPA_COLOR_BARRA[estado] }} />
                             </div>
                           </div>
