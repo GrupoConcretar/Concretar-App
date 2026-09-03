@@ -813,7 +813,10 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
   const semanas = [];
   for (let cur = new Date(weekStart); cur <= weekEnd; cur.setDate(cur.getDate() + 7)) semanas.push(new Date(cur));
   const anchoSemana = 100 / semanas.length;
-  const mesDeSemana = (w) => new Date(w.getTime() + 3 * 86400000).getMonth();
+  // Mismo criterio que el número de día que se muestra debajo (el lunes de
+  // cada semana) — si no, una semana podía quedar agrupada bajo el mes
+  // siguiente mientras el número mostrado todavía era del mes anterior.
+  const mesDeSemana = (w) => w.getMonth();
   const bandas = [];
   {
     let i = 0;
@@ -968,9 +971,15 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
               </div>
             </div>
 
-            <div className="relative mt-1">
+            <div className="relative mt-4">
               <div className="pointer-events-none absolute inset-y-0" style={{ left: 240, right: 0 }}>
                 <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-500" style={{ left: `${pct(hoy)}%` }} />
+                <span
+                  className="absolute -top-4 -translate-x-1/2 whitespace-nowrap rounded bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold text-white"
+                  style={{ left: `${pct(hoy)}%` }}
+                >
+                  Hoy {String(hoy.getDate()).padStart(2, "0")}/{String(hoy.getMonth() + 1).padStart(2, "0")}
+                </span>
               </div>
 
               {obras.map((obra) => {
