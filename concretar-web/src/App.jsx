@@ -3411,9 +3411,38 @@ export default function ConcretarApp() {
     updateRecord("ingresos", ingreso.id, { estado: "Cobrado" }, setIngresos);
   }
 
-  // Agrupa todo lo de arriba (préstamos, cheques, cuentas corrientes de obras/proveedores
-  // e ingresos) mes a mes, para la pantalla completa de "Próximos pagos e ingresos" — lo
-  // que no tiene fecha estimada cargada queda en un grupo aparte al final.
+  // Obras en curso: lo que todavía queda disponible para gastar (mano de obra + Eq. y
+  // Mat. presupuestados, sin contar lo que ya se pasó de presupuesto) es plata que muy
+  // probablemente se termine gastando antes de que termine la obra — se reparte en
+  // partes iguales entre el mes actual y los meses que quedan de obra, como mínimo el
+  // actual y el siguiente (si queda 1 mes o menos, igual se reparte en 2), para tener una
+  // proyección aproximada de en qué mes vamos a necesitar esa plata.
+  function mesesRestantesDeObra(finEstimado) {
+    if (!finEstimado) return 1;
+    return Math.max(1, monthsBetween(fechaLocal(hoyISO()), fechaLocal(finEstimado)) + 1);
+  }
+  function sumarMesesAClave(clave, n) {
+    const [y, m] = clave.split("-").map(Number);
+    const d = new Date(y, m - 1 + n, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+  const obrasDisponibleProyectado = resumenPorObra
+    .filter((r) => r.obra.estado === "En curso")
+    .map((r) => {
+      const disponibleManoObra = r.presupuestadoManoObra !== null ? Math.max(0, r.presupuestadoManoObra - r.gastadoManoObra) : 0;
+      const disponibleEqYMat = r.disponibleEqYMat !== null ? Math.max(0, r.disponibleEqYMat) : 0;
+      const disponibleTotal = disponibleManoObra + disponibleEqYMat;
+      const mesesParaRepartir = Math.max(2, mesesRestantesDeObra(r.finEstimado));
+      const montoPorMes = disponibleTotal / mesesParaRepartir;
+      const meses = Array.from({ length: mesesParaRepartir }, (_, i) => sumarMesesAClave(mesActualClave, i));
+      return { obra: r.obra, disponibleTotal, montoPorMes, meses };
+    })
+    .filter((x) => x.disponibleTotal > 0);
+
+  // Agrupa todo lo de arriba (préstamos, cheques, cuentas corrientes de obras/proveedores,
+  // ingresos y el disponible proyectado de obras) mes a mes, para la pantalla completa de
+  // "Próximos pagos e ingresos" — lo que no tiene fecha estimada cargada queda en un grupo
+  // aparte al final.
   const perteneceAMesProximos = (fecha, clave) => (clave === "sin-fecha" ? !fecha : !!fecha && claveMesCuentas(fecha) === clave);
   const gruposMesesProximos = (() => {
     const grupos = {};
@@ -3427,6 +3456,7 @@ export default function ConcretarApp() {
     echeqsEntrada.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
     cuentasCorrientesPorProveedor.forEach((g) => agregar(g.fechaVencimiento, g.monto, "egreso"));
     ingresosPendientes.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
+    obrasDisponibleProyectado.forEach((o) => o.meses.forEach((clave) => agregar(`${clave}-01`, o.montoPorMes, "egreso")));
     return Object.values(grupos).sort((a, b) => (a.clave === "sin-fecha" ? 1 : b.clave === "sin-fecha" ? -1 : a.clave.localeCompare(b.clave)));
   })();
   // El acumulado arranca de la plata que hay hoy en las cuentas (Blanco + Negro) y le va
@@ -9110,7 +9140,7 @@ export default function ConcretarApp() {
                   </div>
 
                   <div className="text-[11px] text-slate-400">
-                    "Acumulado" arranca del dinero que hay hoy en las cuentas (Blanco + Negro) y le va sumando el total de cada mes en orden — si en algún mes aparece en rojo, esa proyección indica que para esa fecha va a faltar plata: conviene pedir un préstamo, atrasar algún pago o apurar a algún cliente para que cobre antes. "Sin fecha estimada" no entra en el acumulado porque no se sabe cuándo va a pasar. Tocá un mes para ver el detalle.
+                    "Acumulado" arranca del dinero que hay hoy en las cuentas (Blanco + Negro) y le va sumando el total de cada mes en orden — si en algún mes aparece en rojo, esa proyección indica que para esa fecha va a faltar plata: conviene pedir un préstamo, atrasar algún pago o apurar a algún cliente para que cobre antes. El "Egreso" de cada mes también incluye una estimación de las obras en curso: lo que todavía les queda disponible de presupuesto (mano de obra + Eq. y Mat.) se reparte en partes iguales entre el mes actual y los que quedan de obra (mínimo 2 meses), asumiendo que esa plata probablemente se termine gastando. "Sin fecha estimada" no entra en el acumulado porque no se sabe cuándo va a pasar. Tocá un mes para ver el detalle.
                   </div>
                 </>
               )
@@ -9122,6 +9152,7 @@ export default function ConcretarApp() {
                 const echeqsEntradaDelMes = echeqsEntrada.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
                 const cuentasCorrientesDelMes = cuentasCorrientesPorProveedor.filter((g) => perteneceAMesProximos(g.fechaVencimiento, claveMes));
                 const ingresosDelMes = ingresosPendientes.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
+                const obrasDisponibleDelMes = obrasDisponibleProyectado.filter((o) => o.meses.includes(claveMes));
                 return (
                   <>
                     <button onClick={() => setMesProximosSeleccionado(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
@@ -9238,6 +9269,23 @@ export default function ConcretarApp() {
                                 </div>
                               );
                             })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Obras — presupuesto disponible por gastar (estimado)</div>
+                        {obrasDisponibleDelMes.length === 0 ? (
+                          <div className="text-xs text-slate-400">No hay obras con presupuesto disponible proyectado para este mes.</div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {obrasDisponibleDelMes.map((o) => (
+                              <div key={o.obra.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                <span className="font-medium text-slate-800">{o.obra.nombre}</span>
+                                <span className="text-xs text-slate-500">1/{o.meses.length} del disponible ({fmtARS(o.disponibleTotal)})</span>
+                                <span className="font-mono font-semibold text-rose-600">{fmtARS(o.montoPorMes)}</span>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
