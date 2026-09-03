@@ -2765,6 +2765,7 @@ export default function ConcretarApp() {
       inicio: f.get("inicio"),
       estado: "En curso",
       encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
+      horaApertura: f.get("horaApertura"),
       diaCierre: f.get("diaCierre"),
       horaCierre: f.get("horaCierre"),
       color: PALETA_OBRA[obras.length % PALETA_OBRA.length],
@@ -5439,6 +5440,9 @@ export default function ConcretarApp() {
                       <option value="">Sin asignar</option>
                       {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
                     </select>
+                  </Field>
+                  <Field label="Hora de apertura">
+                    <input name="horaApertura" type="time" defaultValue="08:00" className={inputCls} />
                   </Field>
                   <Field label="Día de cierre semanal">
                     <select name="diaCierre" defaultValue="Viernes" className={inputCls}>
