@@ -2211,7 +2211,8 @@ export default function ConcretarApp() {
 
   const chartData = meses.map((d, i) => {
     const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-    const real = gastosObra.filter((g) => fechaLocal(g.fecha) <= monthEnd).reduce((s, g) => s + g.monto, 0);
+    const real = gastosObra.filter((g) => fechaLocal(g.fecha) <= monthEnd).reduce((s, g) => s + g.monto, 0)
+      + costoManoDeObraDeObra(obraSel.id, monthEnd);
     const planificado = Math.round((obraSel.presupuesto * (i + 1)) / obraSel.meses);
     return { mes: d.toLocaleDateString("es-AR", { month: "short", year: "2-digit" }), Planificado: planificado, Real: real };
   });
@@ -3194,8 +3195,12 @@ export default function ConcretarApp() {
   // Personal en blanco: usa el costo real cargado por Contaduría en "Liquidación formal"
   // cuando ya está confirmado; si esa quincena todavía no se confirmó, se estima con las
   // mismas fórmulas (UOCRA) que usa esa pantalla.
-  function costoManoDeObraDeObra(obraId) {
-    const asistenciaObra = asistencia.filter((a) => a.obraId === obraId && a.estado !== "Ausente" && (a.horas || 0) > 0);
+  // "hasta" (Date) es opcional — sirve para cortar el cálculo a una fecha puntual (ej: fin
+  // de un mes en la curva de inversión de la pestaña Obras). Sin ese parámetro da el total
+  // acumulado a hoy, que es lo que usa el Balance por obra de Cuentas.
+  function costoManoDeObraDeObra(obraId, hasta) {
+    const dentroDePlazo = (fechaStr) => !hasta || fechaLocal(fechaStr) <= hasta;
+    const asistenciaObra = asistencia.filter((a) => a.obraId === obraId && a.estado !== "Ausente" && (a.horas || 0) > 0 && dentroDePlazo(a.fecha));
 
     let costoNegro = 0;
     asistenciaObra
@@ -3233,7 +3238,9 @@ export default function ConcretarApp() {
     });
 
     const tanterosDeObra = new Set(tanteros.filter((t) => t.obraId === obraId).map((t) => t.id));
-    const costoTanteros = avancesTanteros.filter((av) => tanterosDeObra.has(av.tanteroId)).reduce((s, av) => s + (av.monto || 0), 0);
+    const costoTanteros = avancesTanteros
+      .filter((av) => tanterosDeObra.has(av.tanteroId) && dentroDePlazo(av.fecha))
+      .reduce((s, av) => s + (av.monto || 0), 0);
 
     return costoNegro + costoBlanco + costoTanteros;
   }
