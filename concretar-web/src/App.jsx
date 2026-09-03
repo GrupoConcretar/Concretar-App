@@ -750,6 +750,127 @@ function domingoODespues(d) {
   return r;
 }
 
+// ---------- Importar Gantt desde el Excel de la empresa (hoja "Gant") ----------
+// La plantilla tiene Sector / N° item / Descripción y, a partir de ahí, una
+// grilla de días agrupada por Mes → Semana → día del mes. El calendario real
+// de cada tarea no está en una columna de fecha: está codificado como el
+// color de fondo de cada celda del día ("pintadito" de gris/negro oscuro).
+const NOMBRES_MES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+function normalizarTexto(s) {
+  return String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+function distanciaEdicion(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[a.length][b.length];
+}
+function mesDesdeTexto(texto) {
+  if (!texto) return null;
+  const t = normalizarTexto(texto);
+  for (let i = 0; i < 12; i++) {
+    if (t === NOMBRES_MES_ES[i] || t === NOMBRES_MES_ES[i].slice(0, 3)) return i;
+  }
+  // Tolera errores de tipeo en el Excel (ej. "Semptiembre" en vez de
+  // "Septiembre") buscando el mes más parecido por distancia de edición, en
+  // vez de perder silenciosamente todas las tareas de ese mes.
+  let mesMasParecido = null;
+  let distanciaMinima = Infinity;
+  for (let i = 0; i < 12; i++) {
+    const d = distanciaEdicion(t, NOMBRES_MES_ES[i]);
+    if (d < distanciaMinima) { distanciaMinima = d; mesMasParecido = i; }
+  }
+  return distanciaMinima <= 2 ? mesMasParecido : null;
+}
+function fechaAISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+// El color de "día de tarea" en la plantilla es un gris/negro del tema
+// (theme 0, con tint bien negativo) — distinto del amarillo de fin de semana
+// y de los bordes/bandas de encabezado, que no marcan nada por sí solos.
+function celdaEsDiaDeTarea(cell) {
+  const s = cell?.s;
+  if (!s || s.patternType !== "solid") return false;
+  const fg = s.fgColor;
+  return !!fg && fg.theme === 0 && typeof fg.tint === "number" && fg.tint < -0.3;
+}
+function parseEtapasDesdeExcelGantt(workbook) {
+  const sheetName =
+    workbook.SheetNames.find((n) => normalizarTexto(n) === "gant") ||
+    workbook.SheetNames.find((n) => normalizarTexto(n).includes("gant"));
+  if (!sheetName) throw new Error('No se encontró una hoja llamada "Gant" en el archivo.');
+  const ws = workbook.Sheets[sheetName];
+  if (!ws["!ref"]) throw new Error('La hoja "Gant" está vacía.');
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+  const colSector = range.s.c;
+  const colDesc = range.s.c + 2;
+  const colDiasInicio = range.s.c + 3;
+
+  // La fila de días es la que tiene varios números de 1 a 31 seguidos en la
+  // zona de la grilla — la buscamos entre las primeras filas del archivo.
+  let filaDia = -1;
+  for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 10); r++) {
+    let numeros = 0;
+    for (let c = colDiasInicio; c <= Math.min(range.e.c, colDiasInicio + 15); c++) {
+      const v = ws[XLSX.utils.encode_cell({ r, c })]?.v;
+      if (typeof v === "number" && v >= 1 && v <= 31) numeros++;
+    }
+    if (numeros >= 5) { filaDia = r; break; }
+  }
+  if (filaDia === -1) throw new Error("No se pudo ubicar la fila de días del Gantt.");
+  const filaMes = Math.max(range.s.r, filaDia - 2);
+
+  // Fecha real de cada columna de la grilla: el mes de la fila de mes (las
+  // celdas están combinadas, así que arrastramos el último visto) más el día
+  // de la fila de días. El año arranca en el actual y avanza cada vez que el
+  // mes "retrocede" (ej: diciembre -> enero), para soportar un Gantt que
+  // cruce fin de año.
+  const columnas = [];
+  let mesTexto = null;
+  let mesAnterior = null;
+  let anio = new Date().getFullYear();
+  for (let c = colDiasInicio; c <= range.e.c; c++) {
+    const dia = ws[XLSX.utils.encode_cell({ r: filaDia, c })]?.v;
+    if (typeof dia !== "number") continue;
+    const celdaMes = ws[XLSX.utils.encode_cell({ r: filaMes, c })]?.v;
+    if (celdaMes) mesTexto = celdaMes;
+    const mes = mesDesdeTexto(mesTexto);
+    if (mes === null) continue;
+    if (mesAnterior !== null && mes < mesAnterior) anio++;
+    mesAnterior = mes;
+    columnas.push({ c, fecha: new Date(anio, mes, dia) });
+  }
+  if (columnas.length === 0) throw new Error("No se pudieron leer las fechas del encabezado del Gantt.");
+
+  const tareas = [];
+  let sectorActual = "";
+  for (let r = filaDia + 1; r <= range.e.r; r++) {
+    const sector = ws[XLSX.utils.encode_cell({ r, c: colSector })]?.v;
+    if (sector) sectorActual = String(sector).trim();
+    const desc = ws[XLSX.utils.encode_cell({ r, c: colDesc })]?.v;
+    if (!desc || !String(desc).trim()) continue;
+    let inicio = null, fin = null;
+    for (const col of columnas) {
+      if (celdaEsDiaDeTarea(ws[XLSX.utils.encode_cell({ r, c: col.c })])) {
+        if (!inicio || col.fecha < inicio) inicio = col.fecha;
+        if (!fin || col.fecha > fin) fin = col.fecha;
+      }
+    }
+    if (!inicio || !fin) continue;
+    const nombre = sectorActual ? `${sectorActual} — ${String(desc).trim()}` : String(desc).trim();
+    tareas.push({ nombre, inicio: fechaAISO(inicio), fin: fechaAISO(fin) });
+  }
+  return tareas;
+}
+
 function FormEtapa({ inicial, onGuardar, onCancelar }) {
   const [nombre, setNombre] = useState(inicial?.nombre || "");
   const [inicio, setInicio] = useState(inicial?.inicio || hoyISO());
@@ -784,9 +905,46 @@ function FormEtapa({ inicial, onGuardar, onCancelar }) {
 // así que cambiar este ancho reescala todo el Gantt automáticamente.
 const ZOOM_NIVELES_GANTT = [14, 20, 26, 34, 46];
 
-function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoEtapaObraId, editandoEtapaId, setEditandoEtapaId, onAgregarEtapa, onGuardarEdicionEtapa, onEliminarEtapa }) {
+function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoEtapaObraId, editandoEtapaId, setEditandoEtapaId, onAgregarEtapa, onGuardarEdicionEtapa, onEliminarEtapa, onEliminarGantt, onImportarGantt }) {
   const hoy = fechaLocal(hoyISO());
   const [zoomIdx, setZoomIdx] = useState(1);
+  // Cargar Gantt desde Excel: un solo input de archivo compartido por todas
+  // las obras — al hacer click en "Agregar Gantt" de una obra puntual,
+  // guardamos su id en una ref (no en estado, para no depender del timing
+  // del re-render) y la usamos cuando el usuario elija el archivo.
+  const ganttFileInputRef = useRef(null);
+  const obraIdParaImportarRef = useRef(null);
+  const [importandoObraId, setImportandoObraId] = useState(null);
+  const abrirSelectorGantt = (obraId) => {
+    obraIdParaImportarRef.current = obraId;
+    ganttFileInputRef.current?.click();
+  };
+  const handleArchivoGantt = (e) => {
+    const file = e.target.files[0];
+    const obraId = obraIdParaImportarRef.current;
+    e.target.value = "";
+    if (!file || obraId == null) return;
+    setImportandoObraId(obraId);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: "array", cellStyles: true });
+        const tareas = parseEtapasDesdeExcelGantt(wb);
+        if (tareas.length === 0) {
+          alert('No se encontraron tareas con días marcados en la hoja "Gant".');
+        } else {
+          await onImportarGantt(obraId, tareas);
+          setObrasAbiertas((prev) => (prev.has(obraId) ? prev : new Set(prev).add(obraId)));
+        }
+      } catch (err) {
+        alert(err.message || 'No se pudo leer el archivo. Revisá que sea un Excel con una hoja "Gant".');
+      } finally {
+        setImportandoObraId(null);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
   // Todas las obras arrancan colapsadas — un click en el encabezado despliega
   // sus etapas. Evita tener que scrollear una lista larga para ver otra obra.
   const [obrasAbiertas, setObrasAbiertas] = useState(() => new Set());
@@ -863,6 +1021,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
         </div>
       }
     >
+      <input ref={ganttFileInputRef} type="file" accept=".xlsx,.xls" onChange={handleArchivoGantt} className="hidden" />
       {vistaEtapas === "finalizadas" ? (
         etapasFinalizadas.length === 0 ? (
           <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-xs text-slate-400">Todavía no hay etapas terminadas.</div>
@@ -1000,7 +1159,25 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                           <div className="text-[11px] text-slate-400">{etapasDeObra.length} etapa{etapasDeObra.length === 1 ? "" : "s"}</div>
                         </div>
                       </div>
-                      <div className="flex-1 pr-2 text-right">
+                      <div className="flex flex-1 items-center justify-end gap-1 pr-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onEliminarGantt(obra.id); }}
+                          title="Elimina todas las etapas de esta obra (se pueden restaurar desde la Papelera)"
+                          className={btnGhost}
+                        >
+                          <span className="flex items-center gap-1 text-rose-500"><Trash2 size={12} /> Eliminar Gantt</span>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); abrirSelectorGantt(obra.id); }}
+                          disabled={importandoObraId === obra.id}
+                          title='Carga tareas desde la hoja "Gant" de un Excel'
+                          className={btnGhost}
+                        >
+                          <span className="flex items-center gap-1">
+                            {importandoObraId === obra.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                            {importandoObraId === obra.id ? "Leyendo…" : "Agregar Gantt"}
+                          </span>
+                        </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setAgregandoEtapaObraId(agregandoEtapaObraId === obra.id ? null : obra.id); if (!abierta) toggleObraAbierta(obra.id); }}
                           className={btnGhost}
@@ -2950,6 +3127,23 @@ export default function ConcretarApp() {
   }
   function eliminarEtapa(etapa) {
     moverAPapelera("etapas_obra", etapa.id, setEtapasObra, etapa.nombre);
+  }
+  // Botón "Eliminar Gantt": manda a la Papelera todas las etapas (activas y
+  // finalizadas) de una obra puntual, para poder cargar un Gantt nuevo desde
+  // cero con "Agregar Gantt" sin que queden mezcladas con las viejas.
+  function eliminarGanttDeObra(obraId) {
+    const deLaObra = etapasObra.filter((e) => e.obraId === obraId);
+    if (deLaObra.length === 0) { alert("Esta obra todavía no tiene etapas cargadas."); return; }
+    if (!window.confirm(`¿Eliminar las ${deLaObra.length} etapa${deLaObra.length === 1 ? "" : "s"} del Gantt de esta obra? Vas a poder cargar uno nuevo con "Agregar Gantt". Se puede restaurar desde la Papelera durante 7 días.`)) return;
+    deLaObra.forEach((e) => updateRecord("etapas_obra", e.id, { eliminadoEn: new Date().toISOString() }, setEtapasObra));
+  }
+  // Botón "Agregar Gantt": vuelca las tareas leídas del Excel (ya con su
+  // Inicio/Fin real calculado a partir de los días pintados) como etapas
+  // nuevas de la obra, arrancando en 0% de avance para poder ajustarlas.
+  async function importarEtapasDesdeGantt(obraId, tareas) {
+    for (const t of tareas) {
+      await addRecord("etapas_obra", { obraId, nombre: t.nombre, inicio: t.inicio, fin: t.fin, avance: 0 }, setEtapasObra);
+    }
   }
   // Horas que le quedan a una obra en Papelera antes del borrado automático.
   function horasRestantesPapelera(obra) {
@@ -5517,6 +5711,8 @@ export default function ConcretarApp() {
                 onAgregarEtapa={agregarEtapa}
                 onGuardarEdicionEtapa={guardarEdicionEtapa}
                 onEliminarEtapa={eliminarEtapa}
+                onEliminarGantt={eliminarGanttDeObra}
+                onImportarGantt={importarEtapasDesdeGantt}
               />
             ) : (
               <>
