@@ -471,95 +471,61 @@ function TablaMovimientos({ items, obras, onEditar }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay movimientos.</div>;
   }
+  // Solo gastos/facturas y cobros de socios llevan tipo de factura — el resto
+  // (ingresos, transferencias manuales, préstamos, avances) no tiene ese dato.
+  const tieneFactura = (origen) => origen === "compras_facturas" || origen === "cobros_socios";
   return (
-    <>
-      {/* Celular: tarjetas apiladas, sin scroll horizontal. */}
-      <div className="space-y-1.5 sm:hidden">
-        {items.map((m) => {
-          const obra = obras.find((o) => o.id === m.obraId);
-          return (
-            <div key={m.id} className="rounded-lg border border-stone-200 bg-white p-2.5 text-xs shadow-sm">
-              <div className="flex items-start justify-between gap-2">
-                <span className="font-medium text-slate-900">{m.detalle}</span>
-                <span className={`whitespace-nowrap font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</span>
-              </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-500">
-                <span>{fmtFecha(m.fecha)}</span>
-                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
-                  {m.tipo}
-                </span>
-                <Badge estado={m.formalidad || "Blanco"} />
-                <span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span>
-                <span>{obra?.nombre || "General"}</span>
-                {m.estado && <Badge estado={m.estado} />}
-                {m.origen && (
-                  <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "border-amber-300 bg-amber-50 text-amber-700" : "border-emerald-300 bg-emerald-50 text-emerald-700"}`}>
-                    {(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "Sin factura" : `Factura ${m.tipoFactura}`}
+    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+      <table className="w-full text-left text-[11px]">
+        <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="whitespace-nowrap px-2 py-1">Fecha</th>
+            <th className="px-2 py-1">Tipo</th>
+            <th className="px-2 py-1">Obra</th>
+            <th className="px-2 py-1">Detalle</th>
+            <th className="px-2 py-1">Form.</th>
+            <th className="px-2 py-1">Cuenta</th>
+            <th className="px-2 py-1 text-right">Monto</th>
+            <th className="px-2 py-1">Estado</th>
+            <th className="px-2 py-1">Factura</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((m) => {
+            const obra = obras.find((o) => o.id === m.obraId);
+            const clickable = !!(m.origen && onEditar);
+            return (
+              <tr
+                key={m.id}
+                onClick={clickable ? () => onEditar(m) : undefined}
+                title={clickable ? "Tocá para modificar o eliminar" : undefined}
+                className={`border-t border-stone-100 ${clickable ? "cursor-pointer hover:bg-amber-50" : ""}`}
+              >
+                <td className="whitespace-nowrap px-2 py-0.5 text-slate-600">{fmtFecha(m.fecha)}</td>
+                <td className="px-2 py-0.5">
+                  <span className={`rounded border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
+                    {m.tipo}
                   </span>
-                )}
-              </div>
-              {m.origen && onEditar && (
-                <div className="mt-1.5 border-t border-stone-100 pt-1.5 text-right">
-                  <button onClick={() => onEditar(m)} className={btnGhost}>
-                    <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Tablet/PC: tabla completa. */}
-      <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:block">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Tipo</th><th className="px-2 py-1.5">Obra</th>
-              <th className="px-2 py-1.5">Detalle</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th>
-              <th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((m) => {
-              const obra = obras.find((o) => o.id === m.obraId);
-              return (
-                <tr key={m.id} className="border-t border-stone-100">
-                  <td className="px-2 py-1 text-slate-600">{fmtFecha(m.fecha)}</td>
-                  <td className="px-2 py-1">
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
-                      {m.tipo}
-                    </span>
-                  </td>
-                  <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
-                  <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
-                  <td className="px-2 py-1"><Badge estado={m.formalidad || "Blanco"} /></td>
-                  <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
-                  <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
-                  <td className="px-2 py-1">{m.estado && <Badge estado={m.estado} />}</td>
-                  <td className="px-2 py-1">
-                    {m.origen && (
-                      (!m.tipoFactura || m.tipoFactura === "Sin factura") ? (
-                        <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Sin factura</span>
-                      ) : (
-                        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Factura {m.tipoFactura}</span>
-                      )
-                    )}
-                  </td>
-                  <td className="px-2 py-1">
-                    {m.origen && onEditar && (
-                      <button onClick={() => onEditar(m)} className={btnGhost}>
-                        <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </>
+                </td>
+                <td className="max-w-[9rem] truncate px-2 py-0.5 text-slate-600">{obra?.nombre || "General"}</td>
+                <td className="px-2 py-0.5 font-medium text-slate-900">{m.detalle}</td>
+                <td className="px-2 py-0.5"><Badge estado={m.formalidad || "Blanco"} /></td>
+                <td className="whitespace-nowrap px-2 py-0.5 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
+                <td className={`whitespace-nowrap px-2 py-0.5 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
+                <td className="px-2 py-0.5">{m.estado && <Badge estado={m.estado} />}</td>
+                <td className="whitespace-nowrap px-2 py-0.5">
+                  {tieneFactura(m.origen) && (
+                    (!m.tipoFactura || m.tipoFactura === "Sin factura")
+                      ? <span className="text-[10px] font-semibold text-amber-700">Sin factura</span>
+                      : <span className="text-[10px] font-semibold text-emerald-700">Factura {m.tipoFactura}</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -1001,10 +967,12 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
 // desde su propia tabla y desde el ledger de Movimientos en Cuentas. Sirve sobre
 // todo para agregar la factura (tipo A/B/C, o el archivo) cuando al cargarlo
 // todavía no se tenía.
-function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, obras, onClose, onGuardarCompra, onGuardarCobro }) {
-  const registroInicial = editando.origen === "compras_facturas"
-    ? comprasFacturas.find((c) => c.id === editando.origenId)
-    : cobrosSocios.find((c) => c.id === editando.origenId);
+function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingresos, movimientosManual, obras, onClose, onGuardarCompra, onGuardarCobro, onGuardarIngreso, onGuardarManual, onEliminar }) {
+  const registroInicial =
+    editando.origen === "compras_facturas" ? comprasFacturas.find((c) => c.id === editando.origenId)
+    : editando.origen === "cobros_socios" ? cobrosSocios.find((c) => c.id === editando.origenId)
+    : editando.origen === "ingresos" ? ingresos.find((i) => i.id === editando.origenId)
+    : movimientosManual.find((m) => m.id === editando.origenId);
   const [form, setForm] = useState(registroInicial || {});
   if (!registroInicial) return null;
 
@@ -1023,7 +991,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, obras,
         nombreArchivo: form.nombreArchivo,
         tipoArchivo: form.tipoArchivo,
       });
-    } else {
+    } else if (editando.origen === "cobros_socios") {
       onGuardarCobro(editando.origenId, {
         socio: form.socio,
         fecha: form.fecha,
@@ -1037,18 +1005,48 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, obras,
         tipoArchivo: form.tipoArchivo,
         observaciones: form.observaciones,
       });
+    } else if (editando.origen === "ingresos") {
+      onGuardarIngreso(editando.origenId, {
+        obraId: form.obraId,
+        concepto: form.concepto,
+        monto: Number(form.monto) || 0,
+        formalidad: form.formalidad,
+        cuenta: form.cuenta,
+        medioBancario: form.cuenta === "Banco" ? form.medioBancario : null,
+        estado: form.estado,
+        fechaCobroEstimada: form.estado === "Pendiente" ? form.fechaCobroEstimada : null,
+        archivo: form.archivo,
+        nombreArchivo: form.nombreArchivo,
+        tipoArchivo: form.tipoArchivo,
+      });
+    } else {
+      onGuardarManual(editando.origenId, {
+        fecha: form.fecha,
+        detalle: form.detalle || "",
+        formalidad: form.formalidad,
+        cuentaOrigen: form.cuentaOrigen,
+        cuentaDestino: form.cuentaDestino,
+        monto: Number(form.monto) || 0,
+      });
     }
   }
+
+  const titulo = {
+    compras_facturas: "Editar gasto / factura",
+    cobros_socios: "Editar cobro",
+    ingresos: "Editar ingreso",
+    movimientos_cuenta: "Editar transferencia entre cuentas",
+  }[editando.origen];
 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
       <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900">{editando.origen === "compras_facturas" ? "Editar gasto / factura" : "Editar cobro"}</h3>
+          <h3 className="text-lg font-bold text-slate-900">{titulo}</h3>
           <button onClick={onClose}><X size={18} /></button>
         </div>
         <form onSubmit={guardar} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {editando.origen === "compras_facturas" ? (
+          {editando.origen === "compras_facturas" && (
             <>
               <Field label="Obra">
                 <select value={form.obraId ?? ""} onChange={(e) => setForm((f) => ({ ...f, obraId: e.target.value ? Number(e.target.value) : null }))} className={inputCls}>
@@ -1090,9 +1088,9 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, obras,
                   {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
                 </select>
               </Field>
-              <div className="text-[11px] text-slate-400 md:col-span-2">La fecha, la forma de pago y la cuenta no se pueden cambiar acá porque afectan el estado de pago — para eso, cargá el gasto de nuevo.</div>
             </>
-          ) : (
+          )}
+          {editando.origen === "cobros_socios" && (
             <>
               <Field label="Socio">
                 <select value={form.socio} onChange={(e) => setForm((f) => ({ ...f, socio: e.target.value }))} className={inputCls}>
@@ -1133,17 +1131,93 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, obras,
               </Field>
             </>
           )}
-          <div className="md:col-span-2">
-            <ArchivoInput
-              label="Factura / comprobante (PDF o foto)"
-              value={form.archivo}
-              nombreArchivo={form.nombreArchivo}
-              onChange={(archivo, nombreArchivo, tipoArchivo) => setForm((f) => ({ ...f, archivo, nombreArchivo, tipoArchivo }))}
-            />
-          </div>
-          <div className="flex gap-2 md:col-span-2">
+          {editando.origen === "ingresos" && (
+            <>
+              <Field label="Obra">
+                <select value={form.obraId ?? ""} onChange={(e) => setForm((f) => ({ ...f, obraId: e.target.value ? Number(e.target.value) : null }))} className={inputCls}>
+                  <option value="">General (sin obra específica)</option>
+                  {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                </select>
+              </Field>
+              <Field label="Concepto">
+                <input value={form.concepto || ""} onChange={(e) => setForm((f) => ({ ...f, concepto: e.target.value }))} required className={inputCls} />
+              </Field>
+              <Field label="Monto ($)">
+                <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+              </Field>
+              <Field label="Cuenta">
+                <select value={form.cuenta} onChange={(e) => setForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+                  {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </Field>
+              {form.cuenta === "Banco" && (
+                <Field label="Medio">
+                  <select value={form.medioBancario || "Transferencia"} onChange={(e) => setForm((f) => ({ ...f, medioBancario: e.target.value }))} className={inputCls}>
+                    <option value="Transferencia">Transferencia</option>
+                    <option value="eCheq">eCheq</option>
+                  </select>
+                </Field>
+              )}
+              <Field label="Formalidad">
+                <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+                  {FORMALIDADES.map((x) => <option key={x}>{x}</option>)}
+                </select>
+              </Field>
+              <Field label="Estado">
+                <select value={form.estado} onChange={(e) => setForm((f) => ({ ...f, estado: e.target.value }))} className={inputCls}>
+                  <option value="Cobrado">Cobrado</option>
+                  <option value="Pendiente">Pendiente</option>
+                </select>
+              </Field>
+              {form.estado === "Pendiente" && (
+                <Field label="Fecha estimada de cobro">
+                  <input type="date" value={form.fechaCobroEstimada || ""} onChange={(e) => setForm((f) => ({ ...f, fechaCobroEstimada: e.target.value }))} className={inputCls} />
+                </Field>
+              )}
+            </>
+          )}
+          {editando.origen === "movimientos_cuenta" && (
+            <>
+              <Field label="Fecha">
+                <input type="date" value={form.fecha} onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+              </Field>
+              <Field label="Detalle">
+                <input value={form.detalle || ""} onChange={(e) => setForm((f) => ({ ...f, detalle: e.target.value }))} placeholder="Ej: Pase de efectivo a banco" className={inputCls} />
+              </Field>
+              <Field label="Formalidad">
+                <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+                  {FORMALIDADES.map((x) => <option key={x}>{x}</option>)}
+                </select>
+              </Field>
+              <Field label="Monto ($)">
+                <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+              </Field>
+              <Field label="Cuenta donde sale">
+                <select value={form.cuentaOrigen} onChange={(e) => setForm((f) => ({ ...f, cuentaOrigen: e.target.value }))} className={inputCls}>
+                  {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </Field>
+              <Field label="Cuenta que recibe">
+                <select value={form.cuentaDestino} onChange={(e) => setForm((f) => ({ ...f, cuentaDestino: e.target.value }))} className={inputCls}>
+                  {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </Field>
+            </>
+          )}
+          {editando.origen !== "movimientos_cuenta" && (
+            <div className="md:col-span-2">
+              <ArchivoInput
+                label="Factura / comprobante (PDF o foto)"
+                value={form.archivo}
+                nombreArchivo={form.nombreArchivo}
+                onChange={(archivo, nombreArchivo, tipoArchivo) => setForm((f) => ({ ...f, archivo, nombreArchivo, tipoArchivo }))}
+              />
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2 md:col-span-2">
             <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
             <button type="button" onClick={onClose} className={btnGhost}>Cancelar</button>
+            <button type="button" onClick={() => onEliminar(editando)} className={`${btnGhostDanger} ml-auto`}>Eliminar</button>
           </div>
         </form>
       </div>
@@ -3214,6 +3288,29 @@ export default function ConcretarApp() {
     updateRecord("cobros_socios", id, patch, setCobrosSocios);
     setEditandoMovimiento(null);
   }
+  function guardarEdicionIngreso(id, patch) {
+    updateRecord("ingresos", id, patch, setIngresos);
+    setEditandoMovimiento(null);
+  }
+  function guardarEdicionManual(id, patch) {
+    updateRecord("movimientos_cuenta", id, patch, setMovimientosManual);
+    setEditandoMovimiento(null);
+  }
+  function eliminarMovimiento(editando) {
+    if (editando.origen === "compras_facturas") {
+      const c = comprasFacturas.find((x) => x.id === editando.origenId);
+      moverAPapelera("compras_facturas", editando.origenId, setComprasFacturas, `${c?.proveedor || "Gasto"} — ${fmtARS(c?.monto)}`);
+    } else if (editando.origen === "cobros_socios") {
+      const c = cobrosSocios.find((x) => x.id === editando.origenId);
+      moverAPapelera("cobros_socios", editando.origenId, setCobrosSocios, `Cobro — ${c?.socio}`);
+    } else if (editando.origen === "ingresos") {
+      const i = ingresos.find((x) => x.id === editando.origenId);
+      moverAPapelera("ingresos", editando.origenId, setIngresos, `${i?.concepto || "Ingreso"} — ${fmtARS(i?.monto)}`);
+    } else {
+      deleteRecord("movimientos_cuenta", editando.origenId, setMovimientosManual);
+    }
+    setEditandoMovimiento(null);
+  }
   const [showMovimientoForm, setShowMovimientoForm] = useState(false);
   // Un movimiento por cada ingreso (+), compra/factura (-) y cada lado de una
   // transferencia manual (- en origen, + en destino); sumados por cuenta y
@@ -3221,14 +3318,15 @@ export default function ConcretarApp() {
   const movimientosCuentas = [
     ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
       id: `ing-${i.id}`, fecha: i.fecha, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
+      origen: "ingresos", origenId: i.id,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
       id: `egr-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
       origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura,
     })),
     ...movimientosManual.flatMap((m) => [
-      { id: `man-${m.id}-sale`, fecha: m.fecha, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, formalidad: m.formalidad, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null },
-      { id: `man-${m.id}-recibe`, fecha: m.fecha, tipo: "Ingreso", obraId: null, detalle: m.detalle || `Pase desde ${m.cuentaOrigen}`, formalidad: m.formalidad, cuenta: m.cuentaDestino, monto: m.monto || 0, estado: null },
+      { id: `man-${m.id}-sale`, fecha: m.fecha, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, formalidad: m.formalidad, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null, origen: "movimientos_cuenta", origenId: m.id },
+      { id: `man-${m.id}-recibe`, fecha: m.fecha, tipo: "Ingreso", obraId: null, detalle: m.detalle || `Pase desde ${m.cuentaOrigen}`, formalidad: m.formalidad, cuenta: m.cuentaDestino, monto: m.monto || 0, estado: null, origen: "movimientos_cuenta", origenId: m.id },
     ]),
     ...prestamos.map((p) => ({
       id: `prestamo-alta-${p.id}`, fecha: p.fecha, tipo: "Ingreso", obraId: null, detalle: `Préstamo recibido — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: p.capital || 0, estado: null,
@@ -9953,10 +10051,15 @@ export default function ConcretarApp() {
           editando={editandoMovimiento}
           comprasFacturas={comprasFacturas}
           cobrosSocios={cobrosSocios}
+          ingresos={ingresos}
+          movimientosManual={movimientosManual}
           obras={obras}
           onClose={() => setEditandoMovimiento(null)}
           onGuardarCompra={guardarEdicionCompra}
           onGuardarCobro={guardarEdicionCobro}
+          onGuardarIngreso={guardarEdicionIngreso}
+          onGuardarManual={guardarEdicionManual}
+          onEliminar={eliminarMovimiento}
         />
       )}
 
