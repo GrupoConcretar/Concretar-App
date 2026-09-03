@@ -1011,7 +1011,11 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                       }
                       const estado = estadoEtapa(etapa, hoy);
                       const left = pct(fechaLocal(etapa.inicio));
-                      const width = Math.max(pct(fechaLocal(etapa.fin)) - left, 0.5);
+                      // Ancho mínimo en píxeles (no en %) para que una etapa de 1 o 2 días
+                      // siga viéndose como una barra nítida y no como un puntito, sea cual
+                      // sea el nivel de zoom.
+                      const anchoPxCrudo = ((pct(fechaLocal(etapa.fin)) - left) / 100) * minWidthPx;
+                      const width = (Math.max(anchoPxCrudo, 14) / minWidthPx) * 100;
                       return (
                         <div key={etapa.id} className="flex items-start gap-3 border-t border-stone-100 py-1">
                           <div className="sticky left-0 z-10 flex w-[240px] shrink-0 items-start justify-between gap-1 bg-white pl-4 pr-2">
@@ -1028,9 +1032,9 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                               <button onClick={() => onEliminarEtapa(etapa)} title="Eliminar etapa" className="rounded p-0.5 hover:bg-stone-100 hover:text-rose-500"><Trash2 size={11} /></button>
                             </div>
                           </div>
-                          <div className="relative mt-0.5 h-3.5 flex-1">
-                            <div className="absolute top-0 h-3.5 rounded" style={{ left: `${left}%`, width: `${width}%`, backgroundColor: ETAPA_COLOR_TRACK[estado] }}>
-                              <div className="h-full rounded" style={{ width: `${Math.min(etapa.avance || 0, 100)}%`, backgroundColor: ETAPA_COLOR_BARRA[estado] }} />
+                          <div className="relative mt-0.5 h-4 flex-1">
+                            <div className="absolute top-0 h-4 rounded border" style={{ left: `${left}%`, width: `${width}%`, backgroundColor: ETAPA_COLOR_TRACK[estado], borderColor: ETAPA_COLOR_BARRA[estado] }}>
+                              <div className="h-full rounded-sm" style={{ width: `${Math.min(etapa.avance || 0, 100)}%`, backgroundColor: ETAPA_COLOR_BARRA[estado] }} />
                             </div>
                           </div>
                         </div>
