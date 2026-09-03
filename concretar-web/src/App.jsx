@@ -896,18 +896,18 @@ function FormEtapa({ inicial, onGuardar, onCancelar }) {
 }
 
 // Vista de Planificación de la pestaña Obras: todas las obras juntas, con sus
-// etapas cargadas a mano en un Gantt semanal (lunes a domingo). Todavía no
-// depende de nada más — cuando conectemos más adelante un botón "Ver
-// planificación" desde el detalle de cada obra, esto ya queda listo.
-// Niveles de zoom horizontal del Gantt, en píxeles por semana — de más
-// alejado (entra más tiempo en pantalla) a más acercado (semanas más anchas
-// y fáciles de tocar). Las barras y encabezados están en % del contenedor,
-// así que cambiar este ancho reescala todo el Gantt automáticamente.
-const ZOOM_NIVELES_GANTT = [14, 20, 26, 34, 46];
+// etapas cargadas a mano en un Gantt día por día. Todavía no depende de nada
+// más — cuando conectemos más adelante un botón "Ver planificación" desde el
+// detalle de cada obra, esto ya queda listo.
+// Ancho de la columna de nombres (obra/etapa) — más angosto en celular para
+// dejarle todo el espacio posible al calendario, que siempre ocupa el 100%
+// del ancho disponible (nunca se corta ni scrollea de costado: en pantallas
+// chicas los días quedan más comprimidos en vez de desbordar).
+const GANTT_LABEL_COL = "w-[92px] sm:w-[170px] md:w-[220px]";
+const GANTT_LABEL_LEFT = "left-[92px] sm:left-[170px] md:left-[220px]";
 
 function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoEtapaObraId, editandoEtapaId, setEditandoEtapaId, onAgregarEtapa, onGuardarEdicionEtapa, onEliminarEtapa, onEliminarGantt, onImportarGantt }) {
   const hoy = fechaLocal(hoyISO());
-  const [zoomIdx, setZoomIdx] = useState(1);
   // Cargar Gantt desde Excel: un solo input de archivo compartido por todas
   // las obras — al hacer click en "Agregar Gantt" de una obra puntual,
   // guardamos su id en una ref (no en estado, para no depender del timing
@@ -915,19 +915,6 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
   const ganttFileInputRef = useRef(null);
   const obraIdParaImportarRef = useRef(null);
   const [importandoObraId, setImportandoObraId] = useState(null);
-  // El calendario (meses/semanas) queda fijo arriba mientras se scrollea la
-  // lista de obras/etapas, en vez de perderse de vista — vive fuera del
-  // contenedor que scrollea horizontalmente (si no, "position: sticky" no
-  // funciona: al tener overflow-x, el navegador también le mete overflow-y
-  // "auto" a ese div, y deja de pegarse a la página) y sincronizamos su
-  // desplazamiento horizontal a mano con el del cuerpo.
-  const cuerpoScrollRef = useRef(null);
-  const headerScrollRef = useRef(null);
-  const sincronizarScrollHeader = () => {
-    if (headerScrollRef.current && cuerpoScrollRef.current) {
-      headerScrollRef.current.scrollLeft = cuerpoScrollRef.current.scrollLeft;
-    }
-  };
   const abrirSelectorGantt = (obraId) => {
     obraIdParaImportarRef.current = obraId;
     ganttFileInputRef.current?.click();
@@ -981,26 +968,23 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
   const weekEnd = domingoODespues(new Date(Math.max(maxFecha.getTime(), hoy.getTime() + 30 * 86400000)));
   const totalMs = weekEnd - weekStart;
   const pct = (d) => ((d - weekStart) / totalMs) * 100;
-  const semanas = [];
-  for (let cur = new Date(weekStart); cur <= weekEnd; cur.setDate(cur.getDate() + 7)) semanas.push(new Date(cur));
-  const anchoSemana = 100 / semanas.length;
-  // Mismo criterio que el número de día que se muestra debajo (el lunes de
-  // cada semana) — si no, una semana podía quedar agrupada bajo el mes
-  // siguiente mientras el número mostrado todavía era del mes anterior.
-  const mesDeSemana = (w) => w.getMonth();
+  // Una columna por día (no por semana): el calendario siempre ocupa el 100%
+  // del ancho disponible, así que en pantallas angostas los días se ven más
+  // comprimidos en vez de desbordar o necesitar scroll horizontal.
+  const dias = [];
+  for (let cur = new Date(weekStart); cur <= weekEnd; cur.setDate(cur.getDate() + 1)) dias.push(new Date(cur));
+  const anchoDia = 100 / dias.length;
   const bandas = [];
   {
     let i = 0;
-    while (i < semanas.length) {
-      const m = mesDeSemana(semanas[i]);
+    while (i < dias.length) {
+      const m = dias[i].getMonth();
       let j = i;
-      while (j < semanas.length && mesDeSemana(semanas[j]) === m) j++;
-      bandas.push({ mes: m, izq: i * anchoSemana, ancho: (j - i) * anchoSemana });
+      while (j < dias.length && dias[j].getMonth() === m) j++;
+      bandas.push({ mes: m, izq: i * anchoDia, ancho: (j - i) * anchoDia });
       i = j;
     }
   }
-  const pxPorSemana = ZOOM_NIVELES_GANTT[zoomIdx];
-  const minWidthPx = Math.max(560, Math.round(semanas.length * pxPorSemana + 240));
 
   const etapasPorObra = new Map();
   etapasActivas.forEach((e) => {
@@ -1083,83 +1067,61 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
               {estado}
             </span>
           ))}
-          <div className="flex items-center gap-1 rounded-full border border-stone-300 bg-white p-0.5">
-            <button
-              onClick={() => setZoomIdx((z) => Math.max(0, z - 1))}
-              disabled={zoomIdx === 0}
-              title="Alejar (ver más tiempo)"
-              className="flex h-7 w-7 items-center justify-center rounded-full text-base font-bold text-slate-600 hover:bg-stone-100 disabled:opacity-30"
-            >
-              −
-            </button>
-            <span className="w-9 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">Zoom</span>
-            <button
-              onClick={() => setZoomIdx((z) => Math.min(ZOOM_NIVELES_GANTT.length - 1, z + 1))}
-              disabled={zoomIdx === ZOOM_NIVELES_GANTT.length - 1}
-              title="Acercar (ver más detalle)"
-              className="flex h-7 w-7 items-center justify-center rounded-full text-base font-bold text-slate-600 hover:bg-stone-100 disabled:opacity-30"
-            >
-              +
-            </button>
-          </div>
         </div>
-        <div className="text-[11px] text-slate-400">Semanas de lunes a domingo — el número es el día del mes en que arranca cada semana.</div>
+        <div className="text-[11px] text-slate-400">Cada columna es un día — los fines de semana se ven sombreados.</div>
       </div>
 
       {obras.length === 0 ? (
         <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-xs text-slate-400">Todavía no hay obras cargadas.</div>
       ) : (
         <>
-          <div className="sticky top-0 z-20 overflow-hidden bg-white pb-1 shadow-[0_2px_2px_-1px_rgba(0,0,0,0.05)]" ref={headerScrollRef}>
-            <div style={{ width: minWidthPx, minWidth: minWidthPx }}>
-              <div className="flex">
-                <div className="w-[240px] shrink-0 bg-white" />
-                <div className="relative h-5 flex-1">
-                  {bandas.map((b, i) => (
+          <div className="sticky top-0 z-20 bg-white pb-1 shadow-[0_2px_2px_-1px_rgba(0,0,0,0.05)]">
+            <div className="flex">
+              <div className={`${GANTT_LABEL_COL} shrink-0 bg-white`} />
+              <div className="relative h-5 flex-1">
+                {bandas.map((b, i) => (
+                  <div
+                    key={i}
+                    className="absolute top-0 bottom-0 overflow-hidden whitespace-nowrap border-l border-stone-200 pl-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400"
+                    style={{ left: `${b.izq}%`, width: `${b.ancho}%` }}
+                  >
+                    {MESES_CORTO[b.mes]}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex">
+              <div className={`${GANTT_LABEL_COL} shrink-0 bg-white`} />
+              <div className="relative h-4 flex-1 border-b border-stone-200">
+                {dias.map((d, i) => {
+                  const esHoy = d.getTime() === hoy.getTime();
+                  const esFinde = d.getDay() === 0 || d.getDay() === 6;
+                  return (
                     <div
                       key={i}
-                      className="absolute top-0 bottom-0 border-l border-stone-200 pl-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"
-                      style={{ left: `${b.izq}%`, width: `${b.ancho}%` }}
+                      className={`absolute top-0 bottom-0 flex items-center justify-center overflow-hidden border-l border-stone-100 text-[7px] font-medium sm:text-[8px] ${esHoy ? "bg-rose-50 font-bold text-rose-600" : esFinde ? "bg-stone-50 text-slate-300" : "text-slate-400"}`}
+                      style={{ left: `${i * anchoDia}%`, width: `${anchoDia}%` }}
                     >
-                      {MESES_CORTO[b.mes]}
+                      {String(d.getDate()).padStart(2, "0")}
                     </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex">
-                <div className="w-[240px] shrink-0 bg-white" />
-                <div className="relative h-5 flex-1 border-b border-stone-200">
-                  {semanas.map((s, i) => {
-                    const esHoy = hoy >= s && hoy < new Date(s.getTime() + 7 * 86400000);
-                    return (
-                      <div
-                        key={i}
-                        className={`absolute top-0 bottom-0 flex items-center justify-center border-l border-stone-100 text-[10px] font-medium ${esHoy ? "bg-rose-50 font-bold text-rose-600" : "text-slate-400"}`}
-                        style={{ left: `${i * anchoSemana}%`, width: `${anchoSemana}%` }}
-                      >
-                        {String(s.getDate()).padStart(2, "0")}
-                      </div>
-                    );
-                  })}
-                </div>
+                  );
+                })}
               </div>
             </div>
           </div>
 
-        <div className="overflow-x-auto" ref={cuerpoScrollRef} onScroll={sincronizarScrollHeader}>
-          <div style={{ width: minWidthPx, minWidth: minWidthPx }}>
-            <div className="relative mt-2">
-              <div className="pointer-events-none absolute inset-y-0" style={{ left: 240, right: 0 }}>
-                <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-500" style={{ left: `${pct(hoy)}%` }} />
-                <span
-                  className="absolute -top-4 -translate-x-1/2 whitespace-nowrap rounded bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold text-white"
-                  style={{ left: `${pct(hoy)}%` }}
-                >
-                  Hoy {String(hoy.getDate()).padStart(2, "0")}/{String(hoy.getMonth() + 1).padStart(2, "0")}
-                </span>
-              </div>
+          <div className="relative mt-2">
+            <div className={`pointer-events-none absolute inset-y-0 right-0 ${GANTT_LABEL_LEFT}`}>
+              <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-500" style={{ left: `${pct(hoy)}%` }} />
+              <span
+                className="absolute -top-4 -translate-x-1/2 whitespace-nowrap rounded bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold text-white"
+                style={{ left: `${pct(hoy)}%` }}
+              >
+                Hoy {String(hoy.getDate()).padStart(2, "0")}/{String(hoy.getMonth() + 1).padStart(2, "0")}
+              </span>
+            </div>
 
-              {obras.map((obra) => {
+            {obras.map((obra) => {
                 const etapasDeObra = etapasPorObra.get(obra.id) || [];
                 const abierta = obrasAbiertas.has(obra.id);
                 return (
@@ -1169,7 +1131,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                       className="flex cursor-pointer items-center gap-3 py-1"
                       style={{ backgroundColor: `${colorDeObra(obra)}2e` }}
                     >
-                      <div className="sticky left-0 z-10 flex w-[240px] shrink-0 items-center gap-2 pl-2 pr-2">
+                      <div className={`flex ${GANTT_LABEL_COL} shrink-0 items-center gap-2 pl-2 pr-2`}>
                         <span className="h-full min-h-[1.5rem] w-1 self-stretch rounded" style={{ backgroundColor: colorDeObra(obra) }} />
                         <ChevronRight size={13} className={`shrink-0 text-slate-400 transition-transform ${abierta ? "rotate-90" : ""}`} />
                         <div className="min-w-0">
@@ -1215,14 +1177,12 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                       }
                       const estado = estadoEtapa(etapa, hoy);
                       const left = pct(fechaLocal(etapa.inicio));
-                      // Ancho mínimo en píxeles (no en %) para que una etapa de 1 o 2 días
-                      // siga viéndose como una barra nítida y no como un puntito, sea cual
-                      // sea el nivel de zoom.
-                      const anchoPxCrudo = ((pct(fechaLocal(etapa.fin)) - left) / 100) * minWidthPx;
-                      const width = (Math.max(anchoPxCrudo, 14) / minWidthPx) * 100;
+                      // Piso chico en % (no en píxeles) para que una etapa de un solo día
+                      // no desaparezca del todo aunque la columna de ese día sea angosta.
+                      const width = Math.max(pct(fechaLocal(etapa.fin)) - left, 0.6);
                       return (
                         <div key={etapa.id} className="flex items-start gap-3 border-t border-stone-100 py-1">
-                          <div className="sticky left-0 z-10 flex w-[240px] shrink-0 items-start justify-between gap-1 bg-white pl-4 pr-2">
+                          <div className={`flex ${GANTT_LABEL_COL} shrink-0 items-start justify-between gap-1 bg-white pl-4 pr-2`}>
                             <div className="min-w-0">
                               <div className="flex items-start gap-1 text-[11px] font-semibold leading-tight text-slate-800">
                                 {estado === "Atrasada" && <AlertTriangle size={10} className="mt-0.5 shrink-0 text-rose-500" />}
@@ -1254,8 +1214,6 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                 );
               })}
             </div>
-          </div>
-        </div>
         </>
       )}
       </>
