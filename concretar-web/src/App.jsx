@@ -565,6 +565,67 @@ function TablaMovimientos({ items, obras, onEditar }) {
   );
 }
 
+// Historial de gastos de una obra puntual (pestaña Obras → detalle): junta Gastos y
+// Facturas con la mano de obra (tanteros, personal en negro pagado y personal en blanco
+// ya liquidado), ordenado de más reciente a más antiguo — mismo criterio de "gasto" que
+// usa el Balance por obra de Cuentas.
+function HistorialGastosObra({ items }) {
+  if (items.length === 0) {
+    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay gastos cargados para esta obra.</div>;
+  }
+  const colorTipo = {
+    "Gastos y Facturas": "border-sky-300 bg-sky-50 text-sky-700",
+    Tantero: "border-amber-300 bg-amber-50 text-amber-700",
+    Personal: "border-slate-300 bg-slate-50 text-slate-700",
+    "Personal (blanco)": "border-emerald-300 bg-emerald-50 text-emerald-700",
+  };
+  return (
+    <>
+      {/* Celular: tarjetas apiladas. */}
+      <div className="space-y-1.5 sm:hidden">
+        {items.map((g) => (
+          <div key={g.id} className="rounded-lg border border-stone-200 bg-white p-2.5 text-xs shadow-sm">
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-medium text-slate-900">{g.detalle}</span>
+              <span className="whitespace-nowrap font-mono font-semibold text-rose-600">{fmtARS(g.monto)}</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-500">
+              <span>{fmtFecha(g.fecha)}</span>
+              <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${colorTipo[g.tipo] || "border-slate-300 bg-slate-50 text-slate-700"}`}>{g.tipo}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tablet/PC: tabla completa. */}
+      <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:block">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-2 py-1.5">Fecha</th>
+              <th className="px-2 py-1.5">Tipo</th>
+              <th className="px-2 py-1.5">Detalle</th>
+              <th className="px-2 py-1.5 text-right">Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((g) => (
+              <tr key={g.id} className="border-t border-stone-100">
+                <td className="px-2 py-1 text-slate-600">{fmtFecha(g.fecha)}</td>
+                <td className="px-2 py-1">
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${colorTipo[g.tipo] || "border-slate-300 bg-slate-50 text-slate-700"}`}>{g.tipo}</span>
+                </td>
+                <td className="px-2 py-1 font-medium text-slate-900">{g.detalle}</td>
+                <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(g.monto)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 // Resumen de balance por obra en Cuentas: una fila por obra en curso, con lo
 // presupuestado (si se importó el Excel de presupuesto), lo cobrado/gastado
 // real y la ganancia estimada. Las filas salen solas de "obras" — no hay nada
@@ -4934,7 +4995,11 @@ export default function ConcretarApp() {
                   );
                 }
                 return (
-                  <div key={o.id} className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+                  <div
+                    key={o.id}
+                    onClick={editandoObraId === o.id ? undefined : () => abrirObra(o)}
+                    className={`rounded-lg border border-stone-200 bg-white p-5 shadow-sm ${editandoObraId === o.id ? "" : "cursor-pointer hover:border-amber-300 hover:shadow-md"}`}
+                  >
                     {editandoObraId === o.id ? (
                       <form onSubmit={(e) => guardarEdicionObra(e, o)} className="space-y-3">
                         <div className="text-sm font-semibold text-slate-900">Editar {o.nombre}</div>
@@ -5008,7 +5073,7 @@ export default function ConcretarApp() {
                             <button onClick={() => abrirObra(o)} className="text-left font-bold text-slate-900 underline decoration-dotted hover:text-amber-600">{o.nombre}</button>
                             <div className="text-sm text-slate-500">{o.cliente}{!o.clienteId && <span className="ml-1 text-amber-600">(sin conectar)</span>}</div>
                           </div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                             <select
                               value={o.estado}
                               onChange={(e) => cambiarEstadoObra(o, e.target.value)}
@@ -5065,6 +5130,56 @@ export default function ConcretarApp() {
               const ocAprobacionObra = ocPendientesAprobacion.filter((o) => o.obraId === obraSel.id);
               const asistEditadasObra = asistenciasEditadas.filter((a) => a.obraId === obraSel.id);
               const totalAlertasObra = herrAtencionObra.length + cierreObra.length + aperturaObra.length + matVencidosObra.length + matProximosObra.length + pedidosAprobarObra.length + ocAprobacionObra.length + asistEditadasObra.length + (hayDesvioAlerta ? 1 : 0);
+
+              // Historial de gastos de esta obra — mismo criterio que el "Gastado" del
+              // Balance por obra (Gastos y Facturas + mano de obra), pero acá se ve cada
+              // movimiento individual, del más reciente al más antiguo.
+              const historialGastosObra = [];
+              gastosObra.forEach((g) => {
+                historialGastosObra.push({
+                  id: `gasto-${g.id}`,
+                  fecha: g.fecha,
+                  tipo: "Gastos y Facturas",
+                  detalle: [g.categoria, g.proveedor, g.descripcion].filter(Boolean).join(" — "),
+                  monto: g.monto || 0,
+                });
+              });
+              const tanterosDeObraSel = tanteros.filter((t) => t.obraId === obraSel.id);
+              avancesTanteros
+                .filter((av) => tanterosDeObraSel.some((t) => t.id === av.tanteroId))
+                .forEach((av) => {
+                  const t = tanterosDeObraSel.find((x) => x.id === av.tanteroId);
+                  historialGastosObra.push({
+                    id: `tantero-${av.id}`,
+                    fecha: av.fecha,
+                    tipo: "Tantero",
+                    detalle: [t?.nombreGrupo, av.descripcion].filter(Boolean).join(" — "),
+                    monto: av.monto || 0,
+                  });
+                });
+              const pagosNegroObraSel = {}; // "fechaPago|nombre" -> monto abonado
+              asistencia
+                .filter((a) => a.obraId === obraSel.id && a.estadoPago === "Pagado" && tipoTrabajadorDe(a.nombre) !== "En blanco")
+                .forEach((a) => {
+                  const key = `${a.fechaPago}|${a.nombre}`;
+                  if (!pagosNegroObraSel[key]) pagosNegroObraSel[key] = { fecha: a.fechaPago, nombre: a.nombre, monto: 0 };
+                  pagosNegroObraSel[key].monto += a.montoAbonado || 0;
+                });
+              Object.values(pagosNegroObraSel).forEach((p) => {
+                historialGastosObra.push({ id: `negro-${p.fecha}-${p.nombre}`, fecha: p.fecha, tipo: "Personal", detalle: p.nombre, monto: p.monto });
+              });
+              liquidacionesFormales
+                .filter((l) => l.obraId === obraSel.id && l.costoRealBlanco != null)
+                .forEach((l) => {
+                  historialGastosObra.push({
+                    id: `blanco-${l.id}`,
+                    fecha: l.fechaConfirmacion || rangoQuincena(l.mes, l.quincena).hasta,
+                    tipo: "Personal (blanco)",
+                    detalle: `${l.nombre} — ${etiquetaQuincena(l.mes, l.quincena)}`,
+                    monto: l.costoRealBlanco,
+                  });
+                });
+              historialGastosObra.sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
 
               return (
                 <>
@@ -5210,6 +5325,10 @@ export default function ConcretarApp() {
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
+                  </Panel>
+
+                  <Panel title="Historial de gastos">
+                    <HistorialGastosObra items={historialGastosObra} />
                   </Panel>
 
                   <div className="flex flex-wrap gap-2">
