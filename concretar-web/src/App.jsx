@@ -9236,9 +9236,9 @@ export default function ConcretarApp() {
                             <div><div className="text-[9px] uppercase tracking-wide text-slate-400">Egreso</div><div className="font-mono text-rose-600">{fmtARS(m.egresos)}</div></div>
                             <div><div className="text-[9px] uppercase tracking-wide text-slate-400">Total mes</div><div className={`font-mono font-semibold ${totalMes < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalMes)}</div></div>
                           </div>
-                          <div className="mt-1.5 flex items-center justify-between border-t border-stone-200 pt-1.5">
-                            <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">Acumulado</span>
-                            <span className={`font-mono text-sm font-bold ${m.acumulado === null ? "text-slate-400" : m.acumulado < 0 ? "text-rose-600" : "text-emerald-700"}`}>
+                          <div className="mt-1.5 flex items-center justify-between rounded-md border-2 border-stone-300 bg-stone-50 px-2 py-1.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-600">Acumulado</span>
+                            <span className={`font-mono text-base font-bold ${m.acumulado === null ? "text-slate-400" : m.acumulado < 0 ? "text-rose-600" : "text-emerald-700"}`}>
                               {m.acumulado === null ? "—" : fmtARS(m.acumulado)}
                             </span>
                           </div>
@@ -9256,7 +9256,7 @@ export default function ConcretarApp() {
                           <th className="px-4 py-2 text-right">Ingreso</th>
                           <th className="px-4 py-2 text-right">Egreso</th>
                           <th className="px-4 py-2 text-right">Total del mes</th>
-                          <th className="border-l-2 border-stone-300 px-4 py-2 text-right">Acumulado</th>
+                          <th className="border-l-2 border-stone-300 bg-stone-100 px-4 py-2 text-right font-bold text-slate-700">Acumulado</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -9265,7 +9265,7 @@ export default function ConcretarApp() {
                           <td className="px-4 py-2 text-right text-slate-400">—</td>
                           <td className="px-4 py-2 text-right text-slate-400">—</td>
                           <td className="px-4 py-2 text-right text-slate-400">—</td>
-                          <td className="border-l-2 border-stone-300 px-4 py-2 text-right font-mono font-bold text-slate-900">{fmtARS(saldoActualTotal)}</td>
+                          <td className="border-l-2 border-stone-300 bg-stone-100 px-4 py-2 text-right font-mono text-base font-bold text-slate-900">{fmtARS(saldoActualTotal)}</td>
                         </tr>
                         {gruposMesesProximosConAcumulado.map((m) => {
                           const totalMes = m.ingresos - m.egresos;
@@ -9280,7 +9280,7 @@ export default function ConcretarApp() {
                               <td className="px-4 py-2 text-right font-mono text-emerald-700">{fmtARS(m.ingresos)}</td>
                               <td className="px-4 py-2 text-right font-mono text-rose-600">{fmtARS(m.egresos)}</td>
                               <td className={`px-4 py-2 text-right font-mono font-semibold ${totalMes < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalMes)}</td>
-                              <td className={`border-l-2 border-stone-300 px-4 py-2 text-right font-mono font-bold ${m.acumulado === null ? "text-slate-400" : m.acumulado < 0 ? "text-rose-600" : "text-slate-900"}`}>
+                              <td className={`border-l-2 border-stone-300 bg-stone-100/60 px-4 py-2 text-right font-mono text-base font-bold ${m.acumulado === null ? "text-slate-400" : m.acumulado < 0 ? "text-rose-600" : "text-emerald-700"}`}>
                                 {m.acumulado === null ? "—" : fmtARS(m.acumulado)}
                               </td>
                             </tr>
