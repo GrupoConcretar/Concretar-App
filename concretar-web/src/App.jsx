@@ -1619,8 +1619,8 @@ export default function ConcretarApp() {
     { id: 1, nombreGrupo: "Mario Electricista", obraId: 1, integrantes: [7, 8], precioTotal: 12000000 },
   ];
   const DEMO_AVANCES_TANTEROS = [
-    { id: 1, tanteroId: 1, fecha: "2026-06-01", monto: 4000000, descripcion: "1er avance — cableado planta baja" },
-    { id: 2, tanteroId: 1, fecha: "2026-07-10", monto: 3000000, descripcion: "2do avance — tablero principal" },
+    { id: 1, tanteroId: 1, fecha: "2026-06-01", monto: 4000000, descripcion: "1er avance — cableado planta baja", cuenta: "Banco", formalidad: "Blanco" },
+    { id: 2, tanteroId: 1, fecha: "2026-07-10", monto: 3000000, descripcion: "2do avance — tablero principal", cuenta: "Banco", formalidad: "Blanco" },
   ];
 
   const [obras, setObras] = useState(isSupabaseConfigured ? [] : DEMO_OBRAS);
@@ -3003,7 +3003,9 @@ export default function ConcretarApp() {
   const emptyTanteroForm = { nombreGrupo: "", obraId: obras[0]?.id ?? "", precioTotal: "", integrantes: [] };
   const [tanteroForm, setTanteroForm] = useState(emptyTanteroForm);
   const [avanceAbiertoId, setAvanceAbiertoId] = useState(null);
-  const [avanceForm, setAvanceForm] = useState({ fecha: hoyISO(), monto: "", descripcion: "" });
+  const [editandoAvanceId, setEditandoAvanceId] = useState(null);
+  const emptyAvanceForm = { fecha: hoyISO(), monto: "", descripcion: "", cuenta: CUENTAS[0], formalidad: FORMALIDADES[0] };
+  const [avanceForm, setAvanceForm] = useState(emptyAvanceForm);
 
   const tanterosDisponibles = personal.filter((p) => p.tipoTrabajador === "Tantero");
 
@@ -3036,14 +3038,32 @@ export default function ConcretarApp() {
 
   function submitAvanceForm(e, tanteroId) {
     e.preventDefault();
-    addRecord("avances_tanteros", {
-      tanteroId,
+    const patch = {
       fecha: avanceForm.fecha,
       monto: Number(avanceForm.monto) || 0,
       descripcion: avanceForm.descripcion,
-    }, setAvancesTanteros);
-    setAvanceForm({ fecha: hoyISO(), monto: "", descripcion: "" });
+      cuenta: avanceForm.cuenta,
+      formalidad: avanceForm.formalidad,
+    };
+    if (editandoAvanceId) {
+      updateRecord("avances_tanteros", editandoAvanceId, patch, setAvancesTanteros);
+    } else {
+      addRecord("avances_tanteros", { tanteroId, ...patch }, setAvancesTanteros);
+    }
+    setAvanceForm(emptyAvanceForm);
     setAvanceAbiertoId(null);
+    setEditandoAvanceId(null);
+  }
+  function iniciarEdicionAvance(avance) {
+    setAvanceForm({
+      fecha: avance.fecha,
+      monto: avance.monto || "",
+      descripcion: avance.descripcion || "",
+      cuenta: avance.cuenta || CUENTAS[0],
+      formalidad: avance.formalidad || FORMALIDADES[0],
+    });
+    setEditandoAvanceId(avance.id);
+    setAvanceAbiertoId(avance.tanteroId);
   }
 
   // ---------- Resumen de Cuentas (blanco/negro x efectivo/banco/MP) ----------
@@ -3077,7 +3097,11 @@ export default function ConcretarApp() {
     const totalCobrosSocios = cobrosSocios
       .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad)
       .reduce((s, c) => s + (c.monto || 0), 0);
-    return totalIngresos - totalEgresos + totalManual + totalPrestamos - totalPagosPrestamos - totalCobrosSocios;
+    // Un avance pagado a un tantero es plata real que sale de la cuenta elegida.
+    const totalAvancesTanteros = avancesTanteros
+      .filter((a) => a.cuenta === cuenta && a.formalidad === formalidad)
+      .reduce((s, a) => s + (a.monto || 0), 0);
+    return totalIngresos - totalEgresos + totalManual + totalPrestamos - totalPagosPrestamos - totalCobrosSocios - totalAvancesTanteros;
   }
 
   const totalBlanco = FORMALIDADES[0] && CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Blanco"), 0);
@@ -3221,6 +3245,13 @@ export default function ConcretarApp() {
       id: `cobro-socio-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: null, detalle: `Cobro — ${c.socio}`, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: "Pagada",
       origen: "cobros_socios", origenId: c.id, tipoFactura: c.tipoFactura,
     })),
+    ...avancesTanteros.flatMap((a) => {
+      const t = tanteros.find((x) => x.id === a.tanteroId);
+      if (!t || obraIdsPapelera.has(t.obraId)) return [];
+      return [{
+        id: `avance-tantero-${a.id}`, fecha: a.fecha, tipo: "Egreso", obraId: t.obraId, detalle: `Avance tantero — ${t.nombreGrupo}`, formalidad: a.formalidad, cuenta: a.cuenta, monto: -(a.monto || 0), estado: "Pagada",
+      }];
+    }),
   ].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
 
   // Agrupados por mes — el mes actual siempre a la vista, los anteriores quedan
@@ -6259,7 +6290,20 @@ export default function ConcretarApp() {
                               <div className="font-bold text-slate-900">{t.nombreGrupo}</div>
                               <div className="text-sm text-slate-500">{obra?.nombre} · {integrantesNombres.length} integrante(s): {integrantesNombres.join(", ")}</div>
                             </div>
-                            <button onClick={() => setAvanceAbiertoId(avanceAbiertoId === t.id ? null : t.id)} className={btnGhost}>
+                            <button
+                              onClick={() => {
+                                if (avanceAbiertoId === t.id) {
+                                  setAvanceAbiertoId(null);
+                                  setEditandoAvanceId(null);
+                                  setAvanceForm(emptyAvanceForm);
+                                } else {
+                                  setAvanceAbiertoId(t.id);
+                                  setEditandoAvanceId(null);
+                                  setAvanceForm(emptyAvanceForm);
+                                }
+                              }}
+                              className={btnGhost}
+                            >
                               {avanceAbiertoId === t.id ? "Cancelar" : "Cargar avance"}
                             </button>
                           </div>
@@ -6288,15 +6332,36 @@ export default function ConcretarApp() {
                                 <input type="date" required value={avanceForm.fecha} onChange={(e) => setAvanceForm((f) => ({ ...f, fecha: e.target.value }))} className={inputCls} />
                               </Field>
                               <Field label="Monto (ARS)">
-                                <MoneyInput value={avanceForm.monto} onChange={(v) => setAvanceForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+                                <MoneyInput key={editandoAvanceId || "nuevo"} value={avanceForm.monto} onChange={(v) => setAvanceForm((f) => ({ ...f, monto: v }))} className={inputCls} />
                               </Field>
-                              <div className="md:col-span-2">
+                              <Field label="Cuenta">
+                                <select value={avanceForm.cuenta} onChange={(e) => setAvanceForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+                                  {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                                </select>
+                              </Field>
+                              <Field label="Formalidad">
+                                <select value={avanceForm.formalidad} onChange={(e) => setAvanceForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+                                  {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
+                                </select>
+                              </Field>
+                              <div className="md:col-span-4">
                                 <Field label="Descripción">
                                   <input value={avanceForm.descripcion} onChange={(e) => setAvanceForm((f) => ({ ...f, descripcion: e.target.value }))} placeholder="Ej: 3er avance" className={inputCls} />
                                 </Field>
                               </div>
-                              <div className="md:col-span-4">
-                                <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar avance</button>
+                              <div className="flex items-center gap-2 md:col-span-4">
+                                <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+                                  {editandoAvanceId ? "Guardar cambios" : "Guardar avance"}
+                                </button>
+                                {editandoAvanceId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setEditandoAvanceId(null); setAvanceForm(emptyAvanceForm); }}
+                                    className={btnGhost}
+                                  >
+                                    Cancelar edición
+                                  </button>
+                                )}
                               </div>
                             </form>
                           )}
@@ -6304,9 +6369,13 @@ export default function ConcretarApp() {
                           {avancesGrupo.length > 0 && (
                             <div className="mt-4 space-y-1 border-t border-stone-100 pt-3">
                               {avancesGrupo.map((a) => (
-                                <div key={a.id} className="flex items-center justify-between text-xs text-slate-500">
+                                <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                                   <span>{fmtFecha(a.fecha)} — {a.descripcion || "Avance"}</span>
-                                  <span className="font-mono text-slate-700">{fmtARS(a.monto)}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-slate-700">{fmtARS(a.monto)}</span>
+                                    <button onClick={() => iniciarEdicionAvance(a)} title="Editar avance" className="text-slate-400 hover:text-slate-700"><Pencil size={13} /></button>
+                                    <button onClick={() => deleteRecord("avances_tanteros", a.id, setAvancesTanteros)} title="Eliminar avance" className="text-slate-400 hover:text-rose-600"><Trash2 size={13} /></button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
