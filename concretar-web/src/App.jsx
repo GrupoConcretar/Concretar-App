@@ -938,7 +938,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
         <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-xs text-slate-400">Todavía no hay obras cargadas.</div>
       ) : (
         <div className="overflow-x-auto">
-          <div style={{ minWidth: minWidthPx }}>
+          <div style={{ width: minWidthPx, minWidth: minWidthPx }}>
             <div className="flex">
               <div className="sticky left-0 z-10 w-[240px] shrink-0 bg-white" />
               <div className="relative h-5 flex-1">
