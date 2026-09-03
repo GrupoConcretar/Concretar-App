@@ -497,7 +497,7 @@ function TablaMovimientos({ items, obras, onEditar }) {
                 {m.estado && <Badge estado={m.estado} />}
                 {tieneFactura(m.origen) && (
                   <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "border-amber-300 bg-amber-50 text-amber-700" : "border-emerald-300 bg-emerald-50 text-emerald-700"}`}>
-                    {(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "Sin factura" : `Factura ${m.tipoFactura}`}
+                    {(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "S/F" : m.tipoFactura}
                   </span>
                 )}
               </div>
@@ -543,9 +543,9 @@ function TablaMovimientos({ items, obras, onEditar }) {
                   <td className="px-2 py-1">
                     {tieneFactura(m.origen) && (
                       (!m.tipoFactura || m.tipoFactura === "Sin factura") ? (
-                        <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Sin factura</span>
+                        <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
                       ) : (
-                        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Factura {m.tipoFactura}</span>
+                        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{m.tipoFactura}</span>
                       )
                     )}
                   </td>
@@ -8784,9 +8784,9 @@ export default function ConcretarApp() {
                         </td>
                         <td className="px-2 py-1">
                           {(!c.tipoFactura || c.tipoFactura === "Sin factura") ? (
-                            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Sin factura</span>
+                            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
                           ) : (
-                            <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Factura {c.tipoFactura}</span>
+                            <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{c.tipoFactura}</span>
                           )}
                         </td>
                         <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</td>
@@ -9635,9 +9635,9 @@ export default function ConcretarApp() {
                         <span className="text-xs text-slate-500">{fmtFecha(c.fecha)}</span>
                         <Badge estado={c.formalidad || "Blanco"} />
                         {(!c.tipoFactura || c.tipoFactura === "Sin factura") ? (
-                          <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Sin factura</span>
+                          <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
                         ) : (
-                          <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Factura {c.tipoFactura}</span>
+                          <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{c.tipoFactura}</span>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
