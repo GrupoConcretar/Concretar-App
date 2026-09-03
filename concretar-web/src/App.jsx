@@ -495,7 +495,7 @@ function TablaMovimientos({ items, obras, onEditar }) {
         {items.map((m) => {
           const obra = obras.find((o) => o.id === m.obraId);
           return (
-            <div key={m.id} className="rounded-lg border border-stone-200 p-2.5 text-xs shadow-sm" style={{ backgroundColor: `${colorDeObra(obra)}0d` }}>
+            <div key={m.id} className="rounded-lg border border-stone-200 p-2.5 text-xs shadow-sm" style={{ backgroundColor: `${colorDeObra(obra)}1a` }}>
               <div className="flex items-start justify-between gap-2">
                 <span className="font-medium text-slate-900">{m.detalle}</span>
                 <span className={`whitespace-nowrap font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</span>
@@ -541,7 +541,7 @@ function TablaMovimientos({ items, obras, onEditar }) {
             {items.map((m) => {
               const obra = obras.find((o) => o.id === m.obraId);
               return (
-                <tr key={m.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}0d` }}>
+                <tr key={m.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}1a` }}>
                   <td className="px-2 py-1 text-slate-600">{fmtFecha(m.fecha)}</td>
                   <td className="px-2 py-1">
                     <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
@@ -658,7 +658,7 @@ function ResumenObrasCuentas({ items }) {
       {/* Celular: una tarjeta por obra, mismo formato que "Balance de la obra" en Obras. */}
       <div className="space-y-2 sm:hidden">
         {items.map((r) => (
-          <div key={r.obra.id} className="rounded-lg border border-stone-200 bg-white p-3 text-xs shadow-sm" style={{ backgroundColor: `${colorDeObra(r.obra)}0d` }}>
+          <div key={r.obra.id} className="rounded-lg border border-stone-200 bg-white p-3 text-xs shadow-sm" style={{ backgroundColor: `${colorDeObra(r.obra)}1a` }}>
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 font-semibold text-slate-900"><ObraDot obra={r.obra} />{r.obra.nombre}</span>
               <Badge estado={r.obra.estado} />
@@ -700,7 +700,7 @@ function ResumenObrasCuentas({ items }) {
           </thead>
           <tbody>
             {items.map((r) => (
-              <tr key={r.obra.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(r.obra)}0d` }}>
+              <tr key={r.obra.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(r.obra)}1a` }}>
                 <td className="px-2 py-1 font-medium text-slate-900"><span className="flex items-center gap-1.5"><ObraDot obra={r.obra} />{r.obra.nombre}</span></td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.precioObra)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.faltaCobrar)}</td>
@@ -990,7 +990,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                     <div
                       onClick={() => toggleObraAbierta(obra.id)}
                       className="flex cursor-pointer items-center gap-3 py-1"
-                      style={{ backgroundColor: `${colorDeObra(obra)}17` }}
+                      style={{ backgroundColor: `${colorDeObra(obra)}2e` }}
                     >
                       <div className="sticky left-0 z-10 flex w-[240px] shrink-0 items-center gap-2 pl-2 pr-2">
                         <span className="h-full min-h-[1.5rem] w-1 self-stretch rounded" style={{ backgroundColor: colorDeObra(obra) }} />
@@ -5664,7 +5664,7 @@ export default function ConcretarApp() {
                     key={o.id}
                     onClick={editandoObraId === o.id ? undefined : () => abrirObra(o)}
                     className={`relative overflow-hidden rounded-lg border border-stone-200 p-5 pl-6 shadow-sm ${editandoObraId === o.id ? "" : "cursor-pointer hover:border-amber-300 hover:shadow-md"}`}
-                    style={{ backgroundColor: `${colorDeObra(o)}0d` }}
+                    style={{ backgroundColor: `${colorDeObra(o)}1a` }}
                   >
                     <div className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: colorDeObra(o) }} />
                     {editandoObraId === o.id ? (
@@ -9211,7 +9211,7 @@ export default function ConcretarApp() {
                   {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
                     const obra = obras.find((o) => o.id === c.obraId);
                     return (
-                      <tr key={c.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}0d` }}>
+                      <tr key={c.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}1a` }}>
                         <td className="px-2 py-1 text-slate-600">{fmtFecha(c.fecha)}</td>
                         <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1.5"><ObraDot obra={obra} />{obra?.nombre || "General"}</span></td>
                         <td className="px-2 py-1 font-medium text-slate-900">{c.proveedor}</td>
