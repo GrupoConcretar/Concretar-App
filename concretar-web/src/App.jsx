@@ -3345,6 +3345,7 @@ export default function ConcretarApp() {
 
   // ---------- Próximos pagos/ingresos ----------
   const [showProximos, setShowProximos] = useState(false);
+  const [mesProximosSeleccionado, setMesProximosSeleccionado] = useState(null);
   const prestamosPorDevolver = prestamos
     .filter((p) => p.estado !== "Pagado")
     .sort((a, b) => fechaLocal(a.fechaEstimadaDevolucion || a.fecha) - fechaLocal(b.fechaEstimadaDevolucion || b.fecha));
@@ -3409,6 +3410,25 @@ export default function ConcretarApp() {
   function marcarIngresoCobrado(ingreso) {
     updateRecord("ingresos", ingreso.id, { estado: "Cobrado" }, setIngresos);
   }
+
+  // Agrupa todo lo de arriba (préstamos, cheques, cuentas corrientes de obras/proveedores
+  // e ingresos) mes a mes, para la pantalla completa de "Próximos pagos e ingresos" — lo
+  // que no tiene fecha estimada cargada queda en un grupo aparte al final.
+  const perteneceAMesProximos = (fecha, clave) => (clave === "sin-fecha" ? !fecha : !!fecha && claveMesCuentas(fecha) === clave);
+  const gruposMesesProximos = (() => {
+    const grupos = {};
+    const agregar = (fecha, monto, flujo) => {
+      const clave = fecha ? claveMesCuentas(fecha) : "sin-fecha";
+      if (!grupos[clave]) grupos[clave] = { clave, ingresos: 0, egresos: 0 };
+      grupos[clave][flujo === "ingreso" ? "ingresos" : "egresos"] += monto || 0;
+    };
+    prestamosPorDevolver.forEach((p) => agregar(p.fechaEstimadaDevolucion, calcularEstadoPrestamo(p, prestamosPagos).totalADevolver, "egreso"));
+    echeqsSalida.forEach((c) => agregar(c.fechaPagoEcheq, c.monto, "egreso"));
+    echeqsEntrada.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
+    cuentasCorrientesPorProveedor.forEach((g) => agregar(g.fechaVencimiento, g.monto, "egreso"));
+    ingresosPendientes.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
+    return Object.values(grupos).sort((a, b) => (a.clave === "sin-fecha" ? 1 : b.clave === "sin-fecha" ? -1 : a.clave.localeCompare(b.clave)));
+  })();
 
   // ---------- Dinero real (arqueo de caja) ----------
   // La plata física no distingue blanco de negro, por eso "Dinero real" se compara
@@ -8744,13 +8764,13 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "cuentas" && canVerFinanzas && (
+        {tab === "cuentas" && canVerFinanzas && !showProximos && (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
               <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={() => setShowProximos((v) => !v)}
+                  onClick={() => setShowProximos(true)}
                   className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
                 >
                   <CalendarClock size={16} /> Próximos pagos/ingresos
@@ -8944,148 +8964,6 @@ export default function ConcretarApp() {
               Cada columna = Ingresos − Gastos/Facturas de esa cuenta y formalidad. Total = Blanco + Negro (una puede compensar momentáneamente a la otra si alguna está en negativo). "Dinero real" es lo que contás a mano (caja física o resumen bancario) — si no coincide con el Total, "Arreglo de caja" carga la diferencia como "Error de cálculo".
             </div>
 
-            {showProximos && (
-              <Panel title="Próximos pagos/ingresos" action={<button onClick={() => setShowProximos(false)}><X size={16} /></button>}>
-                <div className="space-y-3">
-                  <div>
-                    <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Préstamos por devolver</div>
-                    {prestamosPorDevolver.length === 0 ? (
-                      <div className="text-xs text-slate-400">No hay préstamos vigentes.</div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {prestamosPorDevolver.map((p) => {
-                          const dias = p.fechaEstimadaDevolucion ? diasHasta(p.fechaEstimadaDevolucion) : null;
-                          const total = calcularEstadoPrestamo(p, prestamosPagos).totalADevolver;
-                          return (
-                            <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
-                              <span className="font-medium text-slate-800">{p.acreedor}</span>
-                              <span className={`text-xs ${dias === null ? "text-slate-400" : dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
-                                {p.fechaEstimadaDevolucion ? `${fmtFecha(p.fechaEstimadaDevolucion)}${dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}` : "Sin fecha estimada"}
-                              </span>
-                              <span className="font-mono font-semibold text-rose-600">{fmtARS(total)}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">eCheqs pendientes</div>
-                    <div className="space-y-2.5">
-                      <div>
-                        <div className="mb-1 text-[11px] text-slate-400">De salida (a pagar)</div>
-                        {echeqsSalida.length === 0 ? (
-                          <div className="text-xs text-slate-400">No hay eCheqs pendientes de pagar.</div>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {echeqsSalida.map((c) => {
-                              const dias = diasHasta(c.fechaPagoEcheq);
-                              return (
-                                <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
-                                  <span className="font-medium text-slate-800">{c.proveedor}</span>
-                                  <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
-                                    {fmtFecha(c.fechaPagoEcheq)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
-                                  </span>
-                                  <span className="font-mono font-semibold text-rose-600">{fmtARS(c.monto)}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <div className="mb-1 text-[11px] text-slate-400">De entrada (a cobrar)</div>
-                        {echeqsEntrada.length === 0 ? (
-                          <div className="text-xs text-slate-400">No hay eCheqs pendientes de cobrar.</div>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {echeqsEntrada.map((i) => {
-                              const fechaEstimada = i.fechaCobroEstimada || i.fecha;
-                              const dias = diasHasta(fechaEstimada);
-                              return (
-                                <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
-                                  <span className="font-medium text-slate-800">{i.concepto}</span>
-                                  <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
-                                    {fmtFecha(fechaEstimada)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
-                                  </span>
-                                  <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
-                                  <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Cuentas corrientes por proveedor</div>
-                    {cuentasCorrientesPorProveedor.length === 0 ? (
-                      <div className="text-xs text-slate-400">No hay saldo pendiente en cuenta corriente con proveedores.</div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {cuentasCorrientesPorProveedor.map((g) => {
-                          const dias = g.fechaVencimiento ? diasHasta(g.fechaVencimiento) : null;
-                          return (
-                            <div key={g.proveedor} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
-                              <span className="font-medium text-slate-800">{g.proveedor} <span className="font-normal text-slate-400">({g.cantidad} compra{g.cantidad > 1 ? "s" : ""})</span></span>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-slate-500">Día de pago (de cada mes):</span>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="31"
-                                  value={g.diaPago || ""}
-                                  onChange={(e) => actualizarDiaPago(g.proveedorId, e.target.value)}
-                                  disabled={!g.proveedorId}
-                                  className="w-16 rounded-md border border-stone-300 px-2 py-1 text-xs"
-                                />
-                                {g.fechaVencimiento && (
-                                  <span className="text-xs text-slate-500">({fmtFecha(g.fechaVencimiento)})</span>
-                                )}
-                                {dias !== null && (
-                                  <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
-                                    {dias < 0 ? `vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? "hoy" : `en ${dias} día(s)`}
-                                  </span>
-                                )}
-                              </div>
-                              <span className="font-mono font-semibold text-rose-600">{fmtARS(g.monto)}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Ingresos pendientes de cobro</div>
-                    {ingresosPendientes.length === 0 ? (
-                      <div className="text-xs text-slate-400">No hay ingresos pendientes de cobro.</div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {ingresosPendientes.map((i) => {
-                          const fechaEstimada = i.fechaCobroEstimada || i.fecha;
-                          const dias = diasHasta(fechaEstimada);
-                          return (
-                            <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
-                              <span className="font-medium text-slate-800">{i.concepto}</span>
-                              <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
-                                {fmtFecha(fechaEstimada)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
-                              </span>
-                              <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
-                              <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Panel>
-            )}
-
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Balance por obra</h3>
               <ResumenObrasCuentas items={resumenPorObra} />
@@ -9123,6 +9001,197 @@ export default function ConcretarApp() {
                 El capital ya está sumado al saldo de la cuenta donde entró. El interés se calcula día a día a la tasa anual cargada y no afecta el saldo hasta que marcás el préstamo como devuelto — ahí se registra la salida de capital + interés acumulado.
               </div>
             </div>
+          </div>
+        )}
+
+        {tab === "cuentas" && canVerFinanzas && showProximos && (
+          <div className="space-y-4">
+            <button
+              onClick={() => { setShowProximos(false); setMesProximosSeleccionado(null); }}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-800"
+            >
+              ← Volver a Cuentas
+            </button>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Próximos pagos e ingresos</h2>
+
+            {mesProximosSeleccionado === null ? (
+              gruposMesesProximos.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-sm text-slate-400">
+                  No hay pagos ni ingresos pendientes proyectados.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {gruposMesesProximos.map((m) => (
+                    <button
+                      key={m.clave}
+                      onClick={() => setMesProximosSeleccionado(m.clave)}
+                      className="flex w-full items-center justify-between gap-3 rounded-lg border border-stone-200 bg-white p-3.5 text-left shadow-sm hover:border-amber-300 hover:shadow-md"
+                    >
+                      <span className="text-sm font-semibold text-slate-900">{m.clave === "sin-fecha" ? "Sin fecha estimada" : nombreMesCuentas(m.clave)}</span>
+                      <div className="flex items-center gap-3 font-mono text-xs">
+                        {m.ingresos > 0 && <span className="font-semibold text-emerald-700">+{fmtARS(m.ingresos)}</span>}
+                        {m.egresos > 0 && <span className="font-semibold text-rose-600">-{fmtARS(m.egresos)}</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )
+            ) : (
+              (() => {
+                const claveMes = mesProximosSeleccionado;
+                const prestamosDelMes = prestamosPorDevolver.filter((p) => perteneceAMesProximos(p.fechaEstimadaDevolucion, claveMes));
+                const echeqsSalidaDelMes = echeqsSalida.filter((c) => perteneceAMesProximos(c.fechaPagoEcheq, claveMes));
+                const echeqsEntradaDelMes = echeqsEntrada.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
+                const cuentasCorrientesDelMes = cuentasCorrientesPorProveedor.filter((g) => perteneceAMesProximos(g.fechaVencimiento, claveMes));
+                const ingresosDelMes = ingresosPendientes.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
+                return (
+                  <>
+                    <button onClick={() => setMesProximosSeleccionado(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
+                      ← Volver a los meses
+                    </button>
+                    <h3 className="text-lg font-bold text-slate-900">{claveMes === "sin-fecha" ? "Sin fecha estimada" : nombreMesCuentas(claveMes)}</h3>
+
+                    <div className="space-y-3">
+                      <div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Devoluciones de préstamos</div>
+                        {prestamosDelMes.length === 0 ? (
+                          <div className="text-xs text-slate-400">No hay préstamos por devolver este mes.</div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {prestamosDelMes.map((p) => {
+                              const dias = p.fechaEstimadaDevolucion ? diasHasta(p.fechaEstimadaDevolucion) : null;
+                              const total = calcularEstadoPrestamo(p, prestamosPagos).totalADevolver;
+                              return (
+                                <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                  <span className="font-medium text-slate-800">{p.acreedor}</span>
+                                  <span className={`text-xs ${dias === null ? "text-slate-400" : dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                    {p.fechaEstimadaDevolucion ? `${fmtFecha(p.fechaEstimadaDevolucion)}${dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}` : "Sin fecha estimada"}
+                                  </span>
+                                  <span className="font-mono font-semibold text-rose-600">{fmtARS(total)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Cheques (eCheqs)</div>
+                        <div className="space-y-2.5">
+                          <div>
+                            <div className="mb-1 text-[11px] text-slate-400">De salida (a pagar)</div>
+                            {echeqsSalidaDelMes.length === 0 ? (
+                              <div className="text-xs text-slate-400">No hay eCheqs por pagar este mes.</div>
+                            ) : (
+                              <div className="space-y-1.5">
+                                {echeqsSalidaDelMes.map((c) => {
+                                  const dias = diasHasta(c.fechaPagoEcheq);
+                                  return (
+                                    <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                      <span className="font-medium text-slate-800">{c.proveedor}</span>
+                                      <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                        {fmtFecha(c.fechaPagoEcheq)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
+                                      </span>
+                                      <span className="font-mono font-semibold text-rose-600">{fmtARS(c.monto)}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="mb-1 text-[11px] text-slate-400">De entrada (a cobrar)</div>
+                            {echeqsEntradaDelMes.length === 0 ? (
+                              <div className="text-xs text-slate-400">No hay eCheqs por cobrar este mes.</div>
+                            ) : (
+                              <div className="space-y-1.5">
+                                {echeqsEntradaDelMes.map((i) => {
+                                  const fechaEstimada = i.fechaCobroEstimada || i.fecha;
+                                  const dias = diasHasta(fechaEstimada);
+                                  return (
+                                    <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                      <span className="font-medium text-slate-800">{i.concepto}</span>
+                                      <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                        {fmtFecha(fechaEstimada)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
+                                      </span>
+                                      <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
+                                      <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Obras (cuenta corriente con proveedores)</div>
+                        {cuentasCorrientesDelMes.length === 0 ? (
+                          <div className="text-xs text-slate-400">No hay saldo de cuenta corriente venciendo este mes.</div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {cuentasCorrientesDelMes.map((g) => {
+                              const dias = g.fechaVencimiento ? diasHasta(g.fechaVencimiento) : null;
+                              return (
+                                <div key={g.proveedor} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                  <span className="font-medium text-slate-800">{g.proveedor} <span className="font-normal text-slate-400">({g.cantidad} compra{g.cantidad > 1 ? "s" : ""})</span></span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-500">Día de pago (de cada mes):</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="31"
+                                      value={g.diaPago || ""}
+                                      onChange={(e) => actualizarDiaPago(g.proveedorId, e.target.value)}
+                                      disabled={!g.proveedorId}
+                                      className="w-16 rounded-md border border-stone-300 px-2 py-1 text-xs"
+                                    />
+                                    {g.fechaVencimiento && (
+                                      <span className="text-xs text-slate-500">({fmtFecha(g.fechaVencimiento)})</span>
+                                    )}
+                                    {dias !== null && (
+                                      <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                        {dias < 0 ? `vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? "hoy" : `en ${dias} día(s)`}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="font-mono font-semibold text-rose-600">{fmtARS(g.monto)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Ingresos pendientes de cobro</div>
+                        {ingresosDelMes.length === 0 ? (
+                          <div className="text-xs text-slate-400">No hay ingresos pendientes de cobro este mes.</div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {ingresosDelMes.map((i) => {
+                              const fechaEstimada = i.fechaCobroEstimada || i.fecha;
+                              const dias = diasHasta(fechaEstimada);
+                              return (
+                                <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                  <span className="font-medium text-slate-800">{i.concepto}</span>
+                                  <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                    {fmtFecha(fechaEstimada)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
+                                  </span>
+                                  <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
+                                  <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()
+            )}
           </div>
         )}
 
