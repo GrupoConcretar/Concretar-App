@@ -635,7 +635,7 @@ function ResumenObrasCuentas({ items }) {
   const celda = (v) => (v === null || v === undefined ? "—" : fmtARS(v));
   return (
     <>
-      {/* Celular: una tarjeta por obra. */}
+      {/* Celular: una tarjeta por obra, mismo formato que "Balance de la obra" en Obras. */}
       <div className="space-y-2 sm:hidden">
         {items.map((r) => (
           <div key={r.obra.id} className="rounded-lg border border-stone-200 bg-white p-3 text-xs shadow-sm">
@@ -647,19 +647,19 @@ function ResumenObrasCuentas({ items }) {
               <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Precio de obra</div><div className="font-mono font-semibold text-slate-800">{celda(r.precioObra)}</div></div>
               <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Falta cobrar</div><div className="font-mono font-semibold text-slate-800">{celda(r.faltaCobrar)}</div></div>
               <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Presup. M.O.</div><div className="font-mono text-slate-700">{celda(r.presupuestadoManoObra)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Pagado M.O.</div><div className="font-mono text-slate-700">{celda(r.gastadoManoObra)}</div></div>
               <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Presup. Eq. y Mat.</div><div className="font-mono text-slate-700">{celda(r.presupuestadoEqYMat)}</div></div>
-              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Gastado</div><div className="font-mono text-slate-700">{celda(r.gastado)}</div></div>
-              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Disponible Eq. y Mat.</div><div className={`font-mono font-semibold ${r.disponibleEqYMat !== null && r.disponibleEqYMat < 0 ? "text-rose-600" : "text-slate-800"}`}>{celda(r.disponibleEqYMat)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Gastado Eq. y Mat.</div><div className="font-mono text-slate-700">{celda(r.gastadoEqYMat)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Gastado total</div><div className="font-mono text-slate-700">{celda(r.gastado)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Dinero en caja</div><div className={`font-mono font-semibold ${r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.dineroEnCaja)}</div></div>
               <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Ganancia estimada</div><div className={`font-mono font-semibold ${r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.gananciaEstimada)}</div></div>
               <div><div className="text-[10px] uppercase tracking-wide text-slate-400">% Ganancia</div><div className="font-mono text-slate-700">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</div></div>
-              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Dinero en caja</div><div className={`font-mono font-semibold ${r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.dineroEnCaja)}</div></div>
-              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Inicio / Final est.</div><div className="text-slate-700">{fmtFecha(r.inicio)} — {fmtFecha(r.finEstimado)}</div></div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Tablet/PC: tabla completa. */}
+      {/* Tablet/PC: tabla completa, mismos campos que la tarjeta de celular. */}
       <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:block">
         <table className="w-full text-left text-xs">
           <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -668,14 +668,13 @@ function ResumenObrasCuentas({ items }) {
               <th className="px-2 py-1.5 text-right">Precio de obra</th>
               <th className="px-2 py-1.5 text-right">Falta cobrar</th>
               <th className="px-2 py-1.5 text-right">Presup. M.O.</th>
+              <th className="px-2 py-1.5 text-right">Pagado M.O.</th>
               <th className="px-2 py-1.5 text-right">Presup. Eq. y Mat.</th>
-              <th className="px-2 py-1.5 text-right">Gastado</th>
-              <th className="px-2 py-1.5 text-right">Disponible Eq. y Mat.</th>
+              <th className="px-2 py-1.5 text-right">Gastado Eq. y Mat.</th>
+              <th className="px-2 py-1.5 text-right">Gastado total</th>
+              <th className="px-2 py-1.5 text-right">Dinero en caja</th>
               <th className="px-2 py-1.5 text-right">Ganancia estimada</th>
               <th className="px-2 py-1.5 text-right">% Ganancia</th>
-              <th className="px-2 py-1.5 text-right">Dinero en caja</th>
-              <th className="px-2 py-1.5">Inicio</th>
-              <th className="px-2 py-1.5">Final estimado</th>
               <th className="px-2 py-1.5">Estado</th>
             </tr>
           </thead>
@@ -686,14 +685,13 @@ function ResumenObrasCuentas({ items }) {
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.precioObra)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.faltaCobrar)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.presupuestadoManoObra)}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.gastadoManoObra)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.presupuestadoEqYMat)}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.gastadoEqYMat)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.gastado)}</td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${r.disponibleEqYMat !== null && r.disponibleEqYMat < 0 ? "text-rose-600" : "text-slate-800"}`}>{celda(r.disponibleEqYMat)}</td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.dineroEnCaja)}</td>
                 <td className={`px-2 py-1 text-right font-mono font-semibold ${r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.gananciaEstimada)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.dineroEnCaja)}</td>
-                <td className="px-2 py-1 text-slate-600">{fmtFecha(r.inicio)}</td>
-                <td className="px-2 py-1 text-slate-600">{fmtFecha(r.finEstimado)}</td>
                 <td className="px-2 py-1"><Badge estado={r.obra.estado} /></td>
               </tr>
             ))}
