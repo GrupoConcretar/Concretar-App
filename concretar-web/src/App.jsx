@@ -787,6 +787,14 @@ const ZOOM_NIVELES_GANTT = [14, 20, 26, 34, 46];
 function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoEtapaObraId, editandoEtapaId, setEditandoEtapaId, onAgregarEtapa, onGuardarEdicionEtapa, onEliminarEtapa }) {
   const hoy = fechaLocal(hoyISO());
   const [zoomIdx, setZoomIdx] = useState(1);
+  // Todas las obras arrancan colapsadas — un click en el encabezado despliega
+  // sus etapas. Evita tener que scrollear una lista larga para ver otra obra.
+  const [obrasAbiertas, setObrasAbiertas] = useState(() => new Set());
+  const toggleObraAbierta = (id) => setObrasAbiertas((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
   // El Gantt solo muestra las etapas activas (avance < 100) — las terminadas
   // se van a la pestaña "Tareas finalizadas" para poder ir corroborándolas
   // sin que seteo el timeline principal.
@@ -856,29 +864,38 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
         etapasFinalizadas.length === 0 ? (
           <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-xs text-slate-400">Todavía no hay etapas terminadas.</div>
         ) : (
-          <div className="space-y-4">
-            {obras.filter((o) => (finalizadasPorObra.get(o.id) || []).length > 0).map((obra) => (
-              <div key={obra.id}>
-                <div className="mb-1 flex items-center gap-2 border-b border-stone-100 pb-1">
-                  <ObraDot obra={obra} size={9} />
-                  <span className="text-sm font-bold text-slate-900">{obra.nombre}</span>
-                </div>
-                {finalizadasPorObra.get(obra.id).map((etapa) => (
-                  <div key={etapa.id} className="flex items-center justify-between gap-2 border-t border-stone-50 py-1.5 first:border-t-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <CheckCircle2 size={15} className="shrink-0 text-emerald-500" />
-                      <div className="min-w-0">
-                        <div className="truncate text-xs font-semibold text-slate-700">{etapa.nombre}</div>
-                        <div className="text-[10px] text-slate-400">{fmtFecha(etapa.inicio)} → {fmtFecha(etapa.fin)}</div>
-                      </div>
-                    </div>
-                    <button onClick={() => reabrirEtapa(etapa)} title="Reabrir — vuelve al Gantt" className={btnGhost}>
-                      <span className="flex items-center gap-1"><RefreshCw size={11} /> Reabrir</span>
-                    </button>
+          <div className="space-y-2">
+            {obras.filter((o) => (finalizadasPorObra.get(o.id) || []).length > 0).map((obra) => {
+              const items = finalizadasPorObra.get(obra.id);
+              const abierta = obrasAbiertas.has(obra.id);
+              return (
+                <div key={obra.id}>
+                  <div
+                    onClick={() => toggleObraAbierta(obra.id)}
+                    className="flex cursor-pointer items-center gap-2 border-b border-stone-100 pb-1"
+                  >
+                    <ChevronRight size={13} className={`shrink-0 text-slate-400 transition-transform ${abierta ? "rotate-90" : ""}`} />
+                    <ObraDot obra={obra} size={9} />
+                    <span className="text-sm font-bold text-slate-900">{obra.nombre}</span>
+                    <span className="text-[11px] font-normal text-slate-400">— {items.length} terminada{items.length === 1 ? "" : "s"}</span>
                   </div>
-                ))}
-              </div>
-            ))}
+                  {abierta && items.map((etapa) => (
+                    <div key={etapa.id} className="flex items-center justify-between gap-2 border-t border-stone-50 py-1.5 first:border-t-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <CheckCircle2 size={15} className="shrink-0 text-emerald-500" />
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-slate-700">{etapa.nombre}</div>
+                          <div className="text-[10px] text-slate-400">{fmtFecha(etapa.inicio)} → {fmtFecha(etapa.fin)}</div>
+                        </div>
+                      </div>
+                      <button onClick={() => reabrirEtapa(etapa)} title="Reabrir — vuelve al Gantt" className={btnGhost}>
+                        <span className="flex items-center gap-1"><RefreshCw size={11} /> Reabrir</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )
       ) : (
@@ -920,7 +937,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
         <div className="overflow-x-auto">
           <div style={{ minWidth: minWidthPx }}>
             <div className="flex">
-              <div className="w-[220px] shrink-0" />
+              <div className="w-[240px] shrink-0" />
               <div className="relative h-5 flex-1">
                 {bandas.map((b, i) => (
                   <div
@@ -934,7 +951,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
               </div>
             </div>
             <div className="flex">
-              <div className="w-[220px] shrink-0" />
+              <div className="w-[240px] shrink-0" />
               <div className="relative h-5 flex-1 border-b border-stone-200">
                 {semanas.map((s, i) => {
                   const esHoy = hoy >= s && hoy < new Date(s.getTime() + 7 * 86400000);
@@ -952,17 +969,23 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
             </div>
 
             <div className="relative mt-1">
-              <div className="pointer-events-none absolute inset-y-0" style={{ left: 220, right: 0 }}>
+              <div className="pointer-events-none absolute inset-y-0" style={{ left: 240, right: 0 }}>
                 <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-500" style={{ left: `${pct(hoy)}%` }} />
               </div>
 
               {obras.map((obra) => {
                 const etapasDeObra = etapasPorObra.get(obra.id) || [];
+                const abierta = obrasAbiertas.has(obra.id);
                 return (
                   <div key={obra.id}>
-                    <div className="flex items-center gap-3 py-1" style={{ backgroundColor: `${colorDeObra(obra)}17` }}>
-                      <div className="flex w-[220px] shrink-0 items-center gap-2 pl-2 pr-2">
+                    <div
+                      onClick={() => toggleObraAbierta(obra.id)}
+                      className="flex cursor-pointer items-center gap-3 py-1"
+                      style={{ backgroundColor: `${colorDeObra(obra)}17` }}
+                    >
+                      <div className="flex w-[240px] shrink-0 items-center gap-2 pl-2 pr-2">
                         <span className="h-full min-h-[1.5rem] w-1 self-stretch rounded" style={{ backgroundColor: colorDeObra(obra) }} />
+                        <ChevronRight size={13} className={`shrink-0 text-slate-400 transition-transform ${abierta ? "rotate-90" : ""}`} />
                         <div className="min-w-0">
                           <div className="truncate text-sm font-bold text-slate-900">{obra.nombre}</div>
                           <div className="text-[11px] text-slate-400">{etapasDeObra.length} etapa{etapasDeObra.length === 1 ? "" : "s"}</div>
@@ -970,7 +993,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                       </div>
                       <div className="flex-1 pr-2 text-right">
                         <button
-                          onClick={() => setAgregandoEtapaObraId(agregandoEtapaObraId === obra.id ? null : obra.id)}
+                          onClick={(e) => { e.stopPropagation(); setAgregandoEtapaObraId(agregandoEtapaObraId === obra.id ? null : obra.id); if (!abierta) toggleObraAbierta(obra.id); }}
                           className={btnGhost}
                         >
                           <span className="flex items-center gap-1"><Plus size={12} /> Agregar etapa</span>
@@ -978,7 +1001,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                       </div>
                     </div>
 
-                    {etapasDeObra.map((etapa) => {
+                    {abierta && etapasDeObra.map((etapa) => {
                       if (editandoEtapaId === etapa.id) {
                         return (
                           <div key={etapa.id} className="py-2 pl-2 pr-2">
@@ -990,12 +1013,12 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                       const left = pct(fechaLocal(etapa.inicio));
                       const width = Math.max(pct(fechaLocal(etapa.fin)) - left, 0.5);
                       return (
-                        <div key={etapa.id} className="flex items-center gap-3 border-t border-stone-100 py-0.5">
-                          <div className="flex w-[220px] shrink-0 items-center justify-between gap-1 pl-4 pr-2">
+                        <div key={etapa.id} className="flex items-start gap-3 border-t border-stone-100 py-1">
+                          <div className="flex w-[240px] shrink-0 items-start justify-between gap-1 pl-4 pr-2">
                             <div className="min-w-0">
-                              <div className="flex items-center gap-1 text-[11px] font-semibold leading-tight text-slate-800">
-                                {estado === "Atrasada" && <AlertTriangle size={10} className="shrink-0 text-rose-500" />}
-                                <span className="truncate">{etapa.nombre}</span>
+                              <div className="flex items-start gap-1 text-[11px] font-semibold leading-tight text-slate-800">
+                                {estado === "Atrasada" && <AlertTriangle size={10} className="mt-0.5 shrink-0 text-rose-500" />}
+                                <span>{etapa.nombre}</span>
                               </div>
                               <div className="text-[9px] leading-tight text-slate-400">{fmtFecha(etapa.inicio)} → {fmtFecha(etapa.fin)} · {etapa.avance || 0}%</div>
                             </div>
@@ -1005,7 +1028,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                               <button onClick={() => onEliminarEtapa(etapa)} title="Eliminar etapa" className="rounded p-0.5 hover:bg-stone-100 hover:text-rose-500"><Trash2 size={11} /></button>
                             </div>
                           </div>
-                          <div className="relative h-3.5 flex-1">
+                          <div className="relative mt-0.5 h-3.5 flex-1">
                             <div className="absolute top-0 h-3.5 rounded" style={{ left: `${left}%`, width: `${width}%`, backgroundColor: ETAPA_COLOR_TRACK[estado] }}>
                               <div className="h-full rounded" style={{ width: `${Math.min(etapa.avance || 0, 100)}%`, backgroundColor: ETAPA_COLOR_BARRA[estado] }} />
                             </div>
@@ -1014,7 +1037,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                       );
                     })}
 
-                    {agregandoEtapaObraId === obra.id && (
+                    {abierta && agregandoEtapaObraId === obra.id && (
                       <div className="py-2 pl-2 pr-2">
                         <FormEtapa onGuardar={(datos) => onAgregarEtapa(obra.id, datos)} onCancelar={() => setAgregandoEtapaObraId(null)} />
                       </div>
