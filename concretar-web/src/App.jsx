@@ -785,12 +785,12 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
                   </div>
                 </div>
               )}
-              <div className="mt-2 flex flex-wrap justify-end gap-1.5 border-t border-stone-100 pt-2">
+              <div className="mt-2 flex flex-wrap items-center justify-end gap-1 border-t border-stone-100 pt-2">
                 {p.estado !== "Pagado" && (
                   <button onClick={() => onRegistrarPago(p)} className={btnGhost}>Registrar pago</button>
                 )}
-                <button onClick={() => onEditar(p)} className={btnGhost}>
-                  <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                <button type="button" onClick={() => onEditar(p)} title="Editar préstamo" className="rounded-md border border-transparent p-1 text-slate-400 hover:border-stone-300 hover:bg-stone-100 hover:text-slate-700">
+                  <Pencil size={14} />
                 </button>
                 <BotonEliminar onClick={() => onEliminar(p)} title="Eliminar préstamo" />
               </div>
@@ -841,12 +841,12 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
                   <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800">{proyeccion !== null ? fmtARS(proyeccion) : "—"}</td>
                   <td className="px-2 py-1"><Badge estado={p.estado} /></td>
                   <td className="px-2 py-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-nowrap items-center justify-end gap-1">
                       {p.estado !== "Pagado" && (
-                        <button onClick={() => onRegistrarPago(p)} className={btnGhost}>Registrar pago</button>
+                        <button onClick={() => onRegistrarPago(p)} className={`${btnGhost} whitespace-nowrap`}>Registrar pago</button>
                       )}
-                      <button onClick={() => onEditar(p)} className={btnGhost}>
-                        <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                      <button type="button" onClick={() => onEditar(p)} title="Editar préstamo" className="rounded-md border border-transparent p-1 text-slate-400 hover:border-stone-300 hover:bg-stone-100 hover:text-slate-700">
+                        <Pencil size={14} />
                       </button>
                       <BotonEliminar onClick={() => onEliminar(p)} title="Eliminar préstamo" />
                     </div>
