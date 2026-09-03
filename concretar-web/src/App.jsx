@@ -787,7 +787,15 @@ const ZOOM_NIVELES_GANTT = [14, 20, 26, 34, 46];
 function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoEtapaObraId, editandoEtapaId, setEditandoEtapaId, onAgregarEtapa, onGuardarEdicionEtapa, onEliminarEtapa }) {
   const hoy = fechaLocal(hoyISO());
   const [zoomIdx, setZoomIdx] = useState(1);
-  const fechas = etapas.flatMap((e) => [fechaLocal(e.inicio), fechaLocal(e.fin)]).filter(Boolean);
+  // El Gantt solo muestra las etapas activas (avance < 100) — las terminadas
+  // se van a la pestaña "Tareas finalizadas" para poder ir corroborándolas
+  // sin que seteo el timeline principal.
+  const [vistaEtapas, setVistaEtapas] = useState("gantt");
+  const marcarTerminada = (etapa) => onGuardarEdicionEtapa(etapa, { nombre: etapa.nombre, inicio: etapa.inicio, fin: etapa.fin, avance: 100 });
+  const reabrirEtapa = (etapa) => onGuardarEdicionEtapa(etapa, { nombre: etapa.nombre, inicio: etapa.inicio, fin: etapa.fin, avance: 90 });
+  const etapasActivas = etapas.filter((e) => (e.avance || 0) < 100);
+  const etapasFinalizadas = etapas.filter((e) => (e.avance || 0) >= 100);
+  const fechas = etapasActivas.flatMap((e) => [fechaLocal(e.inicio), fechaLocal(e.fin)]).filter(Boolean);
   const minFecha = fechas.length ? new Date(Math.min(...fechas)) : hoy;
   const maxFecha = fechas.length ? new Date(Math.max(...fechas)) : hoy;
   const weekStart = lunesOAntes(new Date(Math.min(minFecha.getTime(), hoy.getTime() - 14 * 86400000)));
@@ -813,13 +821,68 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
   const minWidthPx = Math.max(560, Math.round(semanas.length * pxPorSemana + 220));
 
   const etapasPorObra = new Map();
-  etapas.forEach((e) => {
+  etapasActivas.forEach((e) => {
     if (!etapasPorObra.has(e.obraId)) etapasPorObra.set(e.obraId, []);
     etapasPorObra.get(e.obraId).push(e);
   });
+  const finalizadasPorObra = new Map();
+  etapasFinalizadas.forEach((e) => {
+    if (!finalizadasPorObra.has(e.obraId)) finalizadasPorObra.set(e.obraId, []);
+    finalizadasPorObra.get(e.obraId).push(e);
+  });
 
   return (
-    <Panel title="Planificación — todas las obras">
+    <Panel
+      title="Planificación — todas las obras"
+      action={
+        <div className="flex rounded-full border border-stone-300 bg-white p-0.5">
+          <button
+            onClick={() => setVistaEtapas("gantt")}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${vistaEtapas === "gantt" ? "bg-amber-500 text-slate-900" : "text-slate-500 hover:bg-stone-50"}`}
+          >
+            Gantt
+          </button>
+          <button
+            onClick={() => setVistaEtapas("finalizadas")}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${vistaEtapas === "finalizadas" ? "bg-amber-500 text-slate-900" : "text-slate-500 hover:bg-stone-50"}`}
+          >
+            Tareas finalizadas
+            <span className={`flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] ${vistaEtapas === "finalizadas" ? "bg-white/30" : "bg-stone-100"}`}>{etapasFinalizadas.length}</span>
+          </button>
+        </div>
+      }
+    >
+      {vistaEtapas === "finalizadas" ? (
+        etapasFinalizadas.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-xs text-slate-400">Todavía no hay etapas terminadas.</div>
+        ) : (
+          <div className="space-y-4">
+            {obras.filter((o) => (finalizadasPorObra.get(o.id) || []).length > 0).map((obra) => (
+              <div key={obra.id}>
+                <div className="mb-1 flex items-center gap-2 border-b border-stone-100 pb-1">
+                  <ObraDot obra={obra} size={9} />
+                  <span className="text-sm font-bold text-slate-900">{obra.nombre}</span>
+                </div>
+                {finalizadasPorObra.get(obra.id).map((etapa) => (
+                  <div key={etapa.id} className="flex items-center justify-between gap-2 border-t border-stone-50 py-1.5 first:border-t-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <CheckCircle2 size={15} className="shrink-0 text-emerald-500" />
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-semibold text-slate-700">{etapa.nombre}</div>
+                        <div className="text-[10px] text-slate-400">{fmtFecha(etapa.inicio)} → {fmtFecha(etapa.fin)}</div>
+                      </div>
+                    </div>
+                    <button onClick={() => reabrirEtapa(etapa)} title="Reabrir — vuelve al Gantt" className={btnGhost}>
+                      <span className="flex items-center gap-1"><RefreshCw size={11} /> Reabrir</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+      <>
       <div className="mb-2.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
           {["Finalizada", "En curso", "Atrasada", "Pendiente"].map((estado) => (
@@ -937,6 +1000,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
                               <div className="text-[9px] leading-tight text-slate-400">{fmtFecha(etapa.inicio)} → {fmtFecha(etapa.fin)} · {etapa.avance || 0}%</div>
                             </div>
                             <div className="flex shrink-0 items-center gap-0.5 text-slate-400">
+                              <button onClick={() => marcarTerminada(etapa)} title="Marcar como terminada" className="rounded p-0.5 hover:bg-emerald-50 hover:text-emerald-600"><CheckCircle2 size={12} /></button>
                               <button onClick={() => setEditandoEtapaId(etapa.id)} title="Editar etapa" className="rounded p-0.5 hover:bg-stone-100 hover:text-slate-600"><Pencil size={11} /></button>
                               <button onClick={() => onEliminarEtapa(etapa)} title="Eliminar etapa" className="rounded p-0.5 hover:bg-stone-100 hover:text-rose-500"><Trash2 size={11} /></button>
                             </div>
@@ -961,6 +1025,8 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </Panel>
   );
