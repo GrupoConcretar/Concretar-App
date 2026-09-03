@@ -22,6 +22,20 @@ const BRAND = {
 const fmtARS = (n) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
 
+// Color propio de cada obra: se asigna una vez (al crearla) rotando esta
+// paleta, y de ahí en más viaja con la obra — se usa en la tarjeta de Obras,
+// en Planificación, y para identificarla de un vistazo en Gastos y Facturas
+// y en Cuentas. Elegidos para no pisar los colores de estado (ámbar/verde/
+// rojo/gris) que ya se usan en toda la app.
+const PALETA_OBRA = ["#8b5cf6", "#14b8a6", "#d946ef", "#f97316", "#84cc16", "#ec4899", "#06b6d4", "#a855f7"];
+// Lo que no tiene obra asignada ("General") usa este gris fijo, para que se
+// lea como "sin obra" y no se confunda con una obra más.
+const COLOR_GENERAL = "#78716c";
+function colorDeObra(obra) {
+  if (!obra) return COLOR_GENERAL;
+  return obra.color || PALETA_OBRA[obra.id % PALETA_OBRA.length];
+}
+
 // Las fechas se guardan como texto "YYYY-MM-DD". Si se arman con
 // `new Date("YYYY-MM-DD")` a secas, JS las interpreta como medianoche
 // UTC — y en Argentina (UTC-3) eso "cae" al día anterior. Estas dos
@@ -481,7 +495,7 @@ function TablaMovimientos({ items, obras, onEditar }) {
         {items.map((m) => {
           const obra = obras.find((o) => o.id === m.obraId);
           return (
-            <div key={m.id} className="rounded-lg border border-stone-200 bg-white p-2.5 text-xs shadow-sm">
+            <div key={m.id} className="rounded-lg border border-stone-200 p-2.5 text-xs shadow-sm" style={{ backgroundColor: `${colorDeObra(obra)}0d` }}>
               <div className="flex items-start justify-between gap-2">
                 <span className="font-medium text-slate-900">{m.detalle}</span>
                 <span className={`whitespace-nowrap font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</span>
@@ -493,7 +507,7 @@ function TablaMovimientos({ items, obras, onEditar }) {
                 </span>
                 <Badge estado={m.formalidad || "Blanco"} />
                 <span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span>
-                <span>{obra?.nombre || "General"}</span>
+                <span className="flex items-center gap-1"><ObraDot obra={obra} />{obra?.nombre || "General"}</span>
                 {m.estado && <Badge estado={m.estado} />}
                 {tieneFactura(m.origen) && (
                   <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "border-amber-300 bg-amber-50 text-amber-700" : "border-emerald-300 bg-emerald-50 text-emerald-700"}`}>
@@ -527,14 +541,14 @@ function TablaMovimientos({ items, obras, onEditar }) {
             {items.map((m) => {
               const obra = obras.find((o) => o.id === m.obraId);
               return (
-                <tr key={m.id} className="border-t border-stone-100">
+                <tr key={m.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}0d` }}>
                   <td className="px-2 py-1 text-slate-600">{fmtFecha(m.fecha)}</td>
                   <td className="px-2 py-1">
                     <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
                       {m.tipo}
                     </span>
                   </td>
-                  <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
+                  <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1.5"><ObraDot obra={obra} />{obra?.nombre || "General"}</span></td>
                   <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
                   <td className="px-2 py-1"><Badge estado={m.formalidad || "Blanco"} /></td>
                   <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
@@ -631,6 +645,9 @@ function HistorialGastosObra({ items }) {
 // presupuestado (si se importó el Excel de presupuesto), lo cobrado/gastado
 // real y la ganancia estimada. Las filas salen solas de "obras" — no hay nada
 // hardcodeado, así que a medida que se cargan obras esto se va completando.
+function ObraDot({ obra, size = 8 }) {
+  return <span className="inline-block shrink-0 rounded-full" style={{ width: size, height: size, backgroundColor: colorDeObra(obra) }} />;
+}
 function ResumenObrasCuentas({ items }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay obras cargadas.</div>;
@@ -641,9 +658,9 @@ function ResumenObrasCuentas({ items }) {
       {/* Celular: una tarjeta por obra, mismo formato que "Balance de la obra" en Obras. */}
       <div className="space-y-2 sm:hidden">
         {items.map((r) => (
-          <div key={r.obra.id} className="rounded-lg border border-stone-200 bg-white p-3 text-xs shadow-sm">
+          <div key={r.obra.id} className="rounded-lg border border-stone-200 bg-white p-3 text-xs shadow-sm" style={{ backgroundColor: `${colorDeObra(r.obra)}0d` }}>
             <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold text-slate-900">{r.obra.nombre}</span>
+              <span className="flex items-center gap-1.5 font-semibold text-slate-900"><ObraDot obra={r.obra} />{r.obra.nombre}</span>
               <Badge estado={r.obra.estado} />
             </div>
             <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
@@ -683,8 +700,8 @@ function ResumenObrasCuentas({ items }) {
           </thead>
           <tbody>
             {items.map((r) => (
-              <tr key={r.obra.id} className="border-t border-stone-100">
-                <td className="px-2 py-1 font-medium text-slate-900">{r.obra.nombre}</td>
+              <tr key={r.obra.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(r.obra)}0d` }}>
+                <td className="px-2 py-1 font-medium text-slate-900"><span className="flex items-center gap-1.5"><ObraDot obra={r.obra} />{r.obra.nombre}</span></td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.precioObra)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.faltaCobrar)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.presupuestadoManoObra)}</td>
@@ -702,6 +719,223 @@ function ResumenObrasCuentas({ items }) {
         </table>
       </div>
     </>
+  );
+}
+
+// ---------- Planificación (Gantt de etapas por obra) en la pestaña Obras ----------
+function estadoEtapa(etapa, hoy) {
+  const avance = etapa.avance || 0;
+  const fin = fechaLocal(etapa.fin);
+  const inicio = fechaLocal(etapa.inicio);
+  if (avance >= 100) return "Finalizada";
+  if (fin && fin < hoy) return "Atrasada";
+  if (inicio && inicio <= hoy) return "En curso";
+  return "Pendiente";
+}
+const ETAPA_COLOR_BARRA = { Finalizada: "#10b981", "En curso": "#f59e0b", Atrasada: "#f43f5e", Pendiente: "#d6d3d1" };
+const ETAPA_COLOR_TRACK = { Finalizada: "#d1fae5", "En curso": "#fef3c7", Atrasada: "#fecdd3", Pendiente: "#f5f5f4" };
+const MESES_CORTO = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+function lunesOAntes(d) {
+  const dia = d.getDay();
+  const r = new Date(d);
+  r.setDate(r.getDate() - (dia === 0 ? 6 : dia - 1));
+  r.setHours(0, 0, 0, 0);
+  return r;
+}
+function domingoODespues(d) {
+  const dia = d.getDay();
+  const r = new Date(d);
+  r.setDate(r.getDate() + (dia === 0 ? 0 : 7 - dia));
+  r.setHours(23, 59, 59, 999);
+  return r;
+}
+
+function FormEtapa({ inicial, onGuardar, onCancelar }) {
+  const [nombre, setNombre] = useState(inicial?.nombre || "");
+  const [inicio, setInicio] = useState(inicial?.inicio || hoyISO());
+  const [fin, setFin] = useState(inicial?.fin || hoyISO());
+  const [avance, setAvance] = useState(inicial?.avance ?? 0);
+  return (
+    <form
+      onSubmit={(e) => { e.preventDefault(); if (!nombre.trim()) return; onGuardar({ nombre: nombre.trim(), inicio, fin, avance }); }}
+      className="grid grid-cols-1 gap-3 rounded-md border border-dashed border-stone-300 bg-stone-50 p-3 sm:grid-cols-5"
+    >
+      <div className="sm:col-span-2">
+        <Field label="Nombre de la etapa"><input value={nombre} onChange={(e) => setNombre(e.target.value)} required className={inputCls} /></Field>
+      </div>
+      <Field label="Inicio"><input type="date" value={inicio} onChange={(e) => setInicio(e.target.value)} required className={inputCls} /></Field>
+      <Field label="Fin"><input type="date" value={fin} onChange={(e) => setFin(e.target.value)} required className={inputCls} /></Field>
+      <Field label="Avance (%)"><input type="number" min="0" max="100" value={avance} onChange={(e) => setAvance(e.target.value)} className={inputCls} /></Field>
+      <div className="flex items-end gap-2 sm:col-span-5">
+        <button className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Guardar</button>
+        <button type="button" onClick={onCancelar} className={btnGhost}>Cancelar</button>
+      </div>
+    </form>
+  );
+}
+
+// Vista de Planificación de la pestaña Obras: todas las obras juntas, con sus
+// etapas cargadas a mano en un Gantt semanal (lunes a domingo). Todavía no
+// depende de nada más — cuando conectemos más adelante un botón "Ver
+// planificación" desde el detalle de cada obra, esto ya queda listo.
+function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoEtapaObraId, editandoEtapaId, setEditandoEtapaId, onAgregarEtapa, onGuardarEdicionEtapa, onEliminarEtapa }) {
+  const hoy = fechaLocal(hoyISO());
+  const fechas = etapas.flatMap((e) => [fechaLocal(e.inicio), fechaLocal(e.fin)]).filter(Boolean);
+  const minFecha = fechas.length ? new Date(Math.min(...fechas)) : hoy;
+  const maxFecha = fechas.length ? new Date(Math.max(...fechas)) : hoy;
+  const weekStart = lunesOAntes(new Date(Math.min(minFecha.getTime(), hoy.getTime() - 14 * 86400000)));
+  const weekEnd = domingoODespues(new Date(Math.max(maxFecha.getTime(), hoy.getTime() + 30 * 86400000)));
+  const totalMs = weekEnd - weekStart;
+  const pct = (d) => ((d - weekStart) / totalMs) * 100;
+  const semanas = [];
+  for (let cur = new Date(weekStart); cur <= weekEnd; cur.setDate(cur.getDate() + 7)) semanas.push(new Date(cur));
+  const anchoSemana = 100 / semanas.length;
+  const mesDeSemana = (w) => new Date(w.getTime() + 3 * 86400000).getMonth();
+  const bandas = [];
+  {
+    let i = 0;
+    while (i < semanas.length) {
+      const m = mesDeSemana(semanas[i]);
+      let j = i;
+      while (j < semanas.length && mesDeSemana(semanas[j]) === m) j++;
+      bandas.push({ mes: m, izq: i * anchoSemana, ancho: (j - i) * anchoSemana });
+      i = j;
+    }
+  }
+  const minWidthPx = Math.max(720, Math.round(semanas.length * 34 + 220));
+
+  const etapasPorObra = new Map();
+  etapas.forEach((e) => {
+    if (!etapasPorObra.has(e.obraId)) etapasPorObra.set(e.obraId, []);
+    etapasPorObra.get(e.obraId).push(e);
+  });
+
+  return (
+    <Panel title="Planificación — todas las obras">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-4 text-xs text-slate-600">
+          {["Finalizada", "En curso", "Atrasada", "Pendiente"].map((estado) => (
+            <span key={estado} className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: ETAPA_COLOR_BARRA[estado] }} />
+              {estado}
+            </span>
+          ))}
+        </div>
+        <div className="text-[11px] text-slate-400">Semanas de lunes a domingo — el número es el día del mes en que arranca cada semana.</div>
+      </div>
+
+      {obras.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-xs text-slate-400">Todavía no hay obras cargadas.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <div style={{ minWidth: minWidthPx }}>
+            <div className="flex">
+              <div className="w-[220px] shrink-0" />
+              <div className="relative h-6 flex-1">
+                {bandas.map((b, i) => (
+                  <div
+                    key={i}
+                    className="absolute top-0 bottom-0 border-l border-stone-200 pl-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400"
+                    style={{ left: `${b.izq}%`, width: `${b.ancho}%` }}
+                  >
+                    {MESES_CORTO[b.mes]}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex">
+              <div className="w-[220px] shrink-0" />
+              <div className="relative h-6 flex-1 border-b border-stone-200">
+                {semanas.map((s, i) => {
+                  const esHoy = hoy >= s && hoy < new Date(s.getTime() + 7 * 86400000);
+                  return (
+                    <div
+                      key={i}
+                      className={`absolute top-0 bottom-0 flex items-center justify-center border-l border-stone-100 text-[10px] font-medium ${esHoy ? "bg-rose-50 font-bold text-rose-600" : "text-slate-400"}`}
+                      style={{ left: `${i * anchoSemana}%`, width: `${anchoSemana}%` }}
+                    >
+                      {String(s.getDate()).padStart(2, "0")}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="relative mt-1">
+              <div className="pointer-events-none absolute inset-y-0" style={{ left: 220, right: 0 }}>
+                <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-rose-500" style={{ left: `${pct(hoy)}%` }} />
+              </div>
+
+              {obras.map((obra) => {
+                const etapasDeObra = etapasPorObra.get(obra.id) || [];
+                return (
+                  <div key={obra.id}>
+                    <div className="flex items-center gap-3 py-2" style={{ backgroundColor: `${colorDeObra(obra)}17` }}>
+                      <div className="flex w-[220px] shrink-0 items-center gap-2 pl-2 pr-2">
+                        <span className="h-full min-h-[1.5rem] w-1 self-stretch rounded" style={{ backgroundColor: colorDeObra(obra) }} />
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-bold text-slate-900">{obra.nombre}</div>
+                          <div className="text-[11px] text-slate-400">{etapasDeObra.length} etapa{etapasDeObra.length === 1 ? "" : "s"}</div>
+                        </div>
+                      </div>
+                      <div className="flex-1 pr-2 text-right">
+                        <button
+                          onClick={() => setAgregandoEtapaObraId(agregandoEtapaObraId === obra.id ? null : obra.id)}
+                          className={btnGhost}
+                        >
+                          <span className="flex items-center gap-1"><Plus size={12} /> Agregar etapa</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {etapasDeObra.map((etapa) => {
+                      if (editandoEtapaId === etapa.id) {
+                        return (
+                          <div key={etapa.id} className="py-2 pl-2 pr-2">
+                            <FormEtapa inicial={etapa} onGuardar={(datos) => onGuardarEdicionEtapa(etapa, datos)} onCancelar={() => setEditandoEtapaId(null)} />
+                          </div>
+                        );
+                      }
+                      const estado = estadoEtapa(etapa, hoy);
+                      const left = pct(fechaLocal(etapa.inicio));
+                      const width = Math.max(pct(fechaLocal(etapa.fin)) - left, 0.5);
+                      return (
+                        <div key={etapa.id} className="flex items-center gap-3 border-t border-stone-100 py-2">
+                          <div className="flex w-[220px] shrink-0 items-start justify-between gap-1 pl-4 pr-2">
+                            <div className="min-w-0">
+                              <div className="flex items-start gap-1 text-xs font-semibold text-slate-800">
+                                {estado === "Atrasada" && <AlertTriangle size={11} className="mt-0.5 shrink-0 text-rose-500" />}
+                                <span>{etapa.nombre}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400">{fmtFecha(etapa.inicio)} → {fmtFecha(etapa.fin)} · {etapa.avance || 0}%</div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-0.5 text-slate-400">
+                              <button onClick={() => setEditandoEtapaId(etapa.id)} title="Editar etapa" className="rounded p-1 hover:bg-stone-100 hover:text-slate-600"><Pencil size={12} /></button>
+                              <button onClick={() => onEliminarEtapa(etapa)} title="Eliminar etapa" className="rounded p-1 hover:bg-stone-100 hover:text-rose-500"><Trash2 size={12} /></button>
+                            </div>
+                          </div>
+                          <div className="relative h-5 flex-1">
+                            <div className="absolute top-0 h-5 rounded" style={{ left: `${left}%`, width: `${width}%`, backgroundColor: ETAPA_COLOR_TRACK[estado] }}>
+                              <div className="h-full rounded" style={{ width: `${Math.min(etapa.avance || 0, 100)}%`, backgroundColor: ETAPA_COLOR_BARRA[estado] }} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {agregandoEtapaObraId === obra.id && (
+                      <div className="py-2 pl-2 pr-2">
+                        <FormEtapa onGuardar={(datos) => onAgregarEtapa(obra.id, datos)} onCancelar={() => setAgregandoEtapaObraId(null)} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -1508,8 +1742,13 @@ export default function ConcretarApp() {
   }
 
   const DEMO_OBRAS = [
-    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", clienteId: 1, presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], horaApertura: "08:00", diaCierre: "Viernes", horaCierre: "18:00" },
-    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", clienteId: 2, presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"], horaApertura: "07:30", diaCierre: "Viernes", horaCierre: "17:30" },
+    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", clienteId: 1, presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], horaApertura: "08:00", diaCierre: "Viernes", horaCierre: "18:00", color: PALETA_OBRA[0] },
+    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", clienteId: 2, presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"], horaApertura: "07:30", diaCierre: "Viernes", horaCierre: "17:30", color: PALETA_OBRA[1] },
+  ];
+  const DEMO_ETAPAS_OBRA = [
+    { id: 1, obraId: 1, nombre: "Movimiento de suelos", inicio: "2026-02-01", fin: "2026-02-20", avance: 100 },
+    { id: 2, obraId: 1, nombre: "Fundaciones", inicio: "2026-02-15", fin: "2026-03-30", avance: 60 },
+    { id: 3, obraId: 2, nombre: "Cimientos", inicio: "2026-05-01", fin: "2026-05-20", avance: 100 },
   ];
   const DEMO_PERSONAL = [
     { id: 1, nombre: "Facundo", apellido: "C", dni: "", telefono: "", categoria: "Ayudante", costoHora: null, direccion: "", fechaNacimiento: "", estado: "Activo", fotoPersona: null, dniFrente: null, dniDorso: null, manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "", especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "", tipoTrabajador: "En negro", aseguradoPor: "ART" },
@@ -1779,6 +2018,8 @@ export default function ConcretarApp() {
   const [cobrosSociosRaw, setCobrosSocios] = useState(isSupabaseConfigured ? [] : DEMO_COBROS_SOCIOS);
   const [tanteros, setTanteros] = useState(isSupabaseConfigured ? [] : DEMO_TANTEROS);
   const [avancesTanteros, setAvancesTanteros] = useState(isSupabaseConfigured ? [] : DEMO_AVANCES_TANTEROS);
+  // Etapas de la Planificación (Gantt) de cada obra.
+  const [etapasObraRaw, setEtapasObra] = useState(isSupabaseConfigured ? [] : DEMO_ETAPAS_OBRA);
 
   // Papelera general: un registro "eliminado" (con fecha en eliminadoEn) deja de
   // contar en toda la app —listados, selectores y balances— hasta que se
@@ -1795,6 +2036,7 @@ export default function ConcretarApp() {
   const ingresos = ingresosRaw.filter((i) => !i.eliminadoEn);
   const prestamos = prestamosRaw.filter((p) => !p.eliminadoEn);
   const cobrosSocios = cobrosSociosRaw.filter((c) => !c.eliminadoEn);
+  const etapasObra = etapasObraRaw.filter((e) => !e.eliminadoEn);
 
   // Lo que está en la Papelera ahora mismo, para la pestaña "Papelera".
   const personalPapelera = personalRaw.filter((p) => p.eliminadoEn);
@@ -1807,6 +2049,7 @@ export default function ConcretarApp() {
   const ingresosPapelera = ingresosRaw.filter((i) => i.eliminadoEn);
   const prestamosPapelera = prestamosRaw.filter((p) => p.eliminadoEn);
   const cobrosSociosPapelera = cobrosSociosRaw.filter((c) => c.eliminadoEn);
+  const etapasObraPapelera = etapasObraRaw.filter((e) => e.eliminadoEn);
 
   const [dbLoading, setDbLoading] = useState(isSupabaseConfigured);
   const [dbError, setDbError] = useState(null);
@@ -1821,7 +2064,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -1831,7 +2074,7 @@ export default function ConcretarApp() {
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
           sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"), sbSelect("cobros_socios"),
-          sbSelect("prestamos_pagos"),
+          sbSelect("prestamos_pagos"), sbSelect("etapas_obra"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -1868,6 +2111,7 @@ export default function ConcretarApp() {
         setPrestamos(pr);
         setCobrosSocios(cs);
         setPrestamosPagos(pp);
+        setEtapasObra(eo);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -2452,6 +2696,10 @@ export default function ConcretarApp() {
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
   const [filtroObrasEstado, setFiltroObrasEstado] = useState("En curso");
+  // Obras: alterna entre la lista de tarjetas y la Planificación (Gantt) de todas las obras.
+  const [vistaObras, setVistaObras] = useState("lista");
+  const [agregandoEtapaObraId, setAgregandoEtapaObraId] = useState(null);
+  const [editandoEtapaId, setEditandoEtapaId] = useState(null);
   const [resumenObraImportado, setResumenObraImportado] = useState(null);
   const [itemsObraImportados, setItemsObraImportados] = useState([]);
   const [archivoObraNombre, setArchivoObraNombre] = useState("");
@@ -2519,6 +2767,7 @@ export default function ConcretarApp() {
       encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
       diaCierre: f.get("diaCierre"),
       horaCierre: f.get("horaCierre"),
+      color: PALETA_OBRA[obras.length % PALETA_OBRA.length],
     }, setObras);
     if (nuevaObra) await importarPresupuestoAObra(nuevaObra.id);
     e.target.reset();
@@ -2547,6 +2796,30 @@ export default function ConcretarApp() {
   function restaurarObra(obra) {
     if (!window.confirm(`¿Restaurar "${obra.nombre}"? Vuelve a quedar "En curso" y sus gastos/ingresos vuelven a contar en los balances.`)) return;
     updateRecord("obras", obra.id, { estado: "En curso", fechaCancelacion: null }, setObras);
+  }
+
+  // ---------- Planificación (etapas de obra / Gantt) ----------
+  async function agregarEtapa(obraId, datos) {
+    const nueva = await addRecord("etapas_obra", {
+      obraId,
+      nombre: datos.nombre,
+      inicio: datos.inicio,
+      fin: datos.fin,
+      avance: Number(datos.avance) || 0,
+    }, setEtapasObra);
+    if (nueva) setAgregandoEtapaObraId(null);
+  }
+  function guardarEdicionEtapa(etapa, datos) {
+    updateRecord("etapas_obra", etapa.id, {
+      nombre: datos.nombre,
+      inicio: datos.inicio,
+      fin: datos.fin,
+      avance: Number(datos.avance) || 0,
+    }, setEtapasObra);
+    setEditandoEtapaId(null);
+  }
+  function eliminarEtapa(etapa) {
+    moverAPapelera("etapas_obra", etapa.id, setEtapasObra, etapa.nombre);
   }
   // Horas que le quedan a una obra en Papelera antes del borrado automático.
   function horasRestantesPapelera(obra) {
@@ -5082,11 +5355,41 @@ export default function ConcretarApp() {
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Obras</h2>
-              <button onClick={() => setShowObraForm((v) => !v)} className={btnPrimary}>
-                <Plus size={16} /> Nueva obra
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex rounded-full border border-stone-300 bg-white p-0.5">
+                  <button
+                    onClick={() => setVistaObras("lista")}
+                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${vistaObras === "lista" ? "bg-amber-500 text-slate-900" : "text-slate-500 hover:bg-stone-50"}`}
+                  >
+                    <LayoutDashboard size={13} /> Lista
+                  </button>
+                  <button
+                    onClick={() => setVistaObras("planificacion")}
+                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${vistaObras === "planificacion" ? "bg-amber-500 text-slate-900" : "text-slate-500 hover:bg-stone-50"}`}
+                  >
+                    <CalendarClock size={13} /> Planificación
+                  </button>
+                </div>
+                <button onClick={() => setShowObraForm((v) => !v)} className={btnPrimary}>
+                  <Plus size={16} /> Nueva obra
+                </button>
+              </div>
             </div>
 
+            {vistaObras === "planificacion" ? (
+              <PlanificacionObras
+                obras={obras.filter((o) => o.estado !== "Papelera")}
+                etapas={etapasObra}
+                agregandoEtapaObraId={agregandoEtapaObraId}
+                setAgregandoEtapaObraId={setAgregandoEtapaObraId}
+                editandoEtapaId={editandoEtapaId}
+                setEditandoEtapaId={setEditandoEtapaId}
+                onAgregarEtapa={agregarEtapa}
+                onGuardarEdicionEtapa={guardarEdicionEtapa}
+                onEliminarEtapa={eliminarEtapa}
+              />
+            ) : (
+              <>
             <div className="flex flex-wrap gap-2">
               {[
                 { estado: "En curso", label: "Activas", activeCls: "border-amber-500 bg-amber-500 text-slate-900", idleCls: "border-amber-300 text-amber-700 hover:bg-amber-50" },
@@ -5227,8 +5530,10 @@ export default function ConcretarApp() {
                   <div
                     key={o.id}
                     onClick={editandoObraId === o.id ? undefined : () => abrirObra(o)}
-                    className={`rounded-lg border border-stone-200 bg-white p-5 shadow-sm ${editandoObraId === o.id ? "" : "cursor-pointer hover:border-amber-300 hover:shadow-md"}`}
+                    className={`relative overflow-hidden rounded-lg border border-stone-200 p-5 pl-6 shadow-sm ${editandoObraId === o.id ? "" : "cursor-pointer hover:border-amber-300 hover:shadow-md"}`}
+                    style={{ backgroundColor: `${colorDeObra(o)}0d` }}
                   >
+                    <div className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: colorDeObra(o) }} />
                     {editandoObraId === o.id ? (
                       <form onSubmit={(e) => guardarEdicionObra(e, o)} className="space-y-3">
                         <div className="text-sm font-semibold text-slate-900">Editar {o.nombre}</div>
@@ -5299,7 +5604,9 @@ export default function ConcretarApp() {
                       <>
                         <div className="flex items-start justify-between">
                           <div>
-                            <button onClick={() => abrirObra(o)} className="text-left font-bold text-slate-900 underline decoration-dotted hover:text-amber-600">{o.nombre}</button>
+                            <button onClick={() => abrirObra(o)} className="flex items-center gap-1.5 text-left font-bold text-slate-900 underline decoration-dotted hover:text-amber-600">
+                              <ObraDot obra={o} size={9} />{o.nombre}
+                            </button>
                             <div className="text-sm text-slate-500">{o.cliente}{!o.clienteId && <span className="ml-1 text-amber-600">(sin conectar)</span>}</div>
                           </div>
                           <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -5339,6 +5646,8 @@ export default function ConcretarApp() {
                 );
               })}
             </div>
+              </>
+            )}
           </div>
         )}
 
@@ -8769,9 +9078,9 @@ export default function ConcretarApp() {
                   {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
                     const obra = obras.find((o) => o.id === c.obraId);
                     return (
-                      <tr key={c.id} className="border-t border-stone-100">
+                      <tr key={c.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}0d` }}>
                         <td className="px-2 py-1 text-slate-600">{fmtFecha(c.fecha)}</td>
-                        <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
+                        <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1.5"><ObraDot obra={obra} />{obra?.nombre || "General"}</span></td>
                         <td className="px-2 py-1 font-medium text-slate-900">{c.proveedor}</td>
                         <td className="px-2 py-1 text-slate-600">{c.categoria}</td>
                         <td className="px-2 py-1 text-slate-500">{c.descripcion || "—"}</td>
@@ -10013,7 +10322,7 @@ export default function ConcretarApp() {
           <div className="space-y-6">
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">Papelera</h2>
             {(herramientasPapelera.length + personalPapelera.length + proveedoresPapelera.length + clientesPapelera.length
-              + ordenesCompraPapelera.length + pedidosMaterialesPapelera.length
+              + ordenesCompraPapelera.length + pedidosMaterialesPapelera.length + etapasObraPapelera.length
               + (canVerFinanzas ? comprasFacturasPapelera.length + ingresosPapelera.length + prestamosPapelera.length + cobrosSociosPapelera.length : 0)
             ) === 0 ? (
               <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">La Papelera está vacía.</div>
@@ -10092,6 +10401,13 @@ export default function ConcretarApp() {
                   nombreDe={(p) => `Pedido #${p.id}`}
                   detalleDe={(p) => `${fmtFecha(p.fecha)} · ${p.items?.length || 0} ítem(s)`}
                   onRestaurar={(p) => restaurarDePapelera("pedidos_materiales", p.id, setPedidosMateriales)}
+                />
+                <SeccionPapelera
+                  titulo="Etapas de Planificación"
+                  items={etapasObraPapelera}
+                  nombreDe={(e) => e.nombre}
+                  detalleDe={(e) => `${obras.find((o) => o.id === e.obraId)?.nombre || "—"} · ${fmtFecha(e.inicio)} → ${fmtFecha(e.fin)}`}
+                  onRestaurar={(e) => restaurarDePapelera("etapas_obra", e.id, setEtapasObra)}
                 />
               </div>
             )}
