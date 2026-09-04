@@ -1078,8 +1078,12 @@ function ObraGanttBlock({
 
             {etapasDeObra.map((etapa) => {
               if (editandoEtapaId === etapa.id) {
+                // Esta fila vive dentro del contenedor ancho que scrollea de
+                // costado (el de la grilla de días) — sin fijarle un ancho
+                // propio, el formulario se estira a lo ancho de esa grilla
+                // entera y los campos terminan lejísimos unos de otros.
                 return (
-                  <div key={etapa.id} className="py-2 pl-2 pr-2">
+                  <div key={etapa.id} className="sticky left-0 z-10 w-[90vw] max-w-[560px] bg-white py-2 pl-2 pr-2">
                     <FormEtapa inicial={etapa} onGuardar={(datos) => onGuardarEdicionEtapa(etapa, datos)} onCancelar={() => setEditandoEtapaId(null)} />
                   </div>
                 );
