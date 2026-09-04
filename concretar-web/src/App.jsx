@@ -1860,6 +1860,91 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
 }
 const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50";
 
+// Modal "Asignar personal": reasigna a mano en qué obra está cada persona,
+// pisando lo que se hubiera calculado automáticamente por asistencia o grupo
+// de tanteros (ver obraActualDe). Se abre igual desde Personal/Cuadrillas
+// (sin filtro) que desde el detalle de una obra puntual (con esa obra
+// preseleccionada en el filtro, para reasignar rápido a su gente).
+function ModalAsignarPersonal({ personal, obras, obraContextoId, asignacionManualDe, nombreCompletoDe, onGuardar, onClose }) {
+  const [filtro, setFiltro] = useState(obraContextoId != null ? String(obraContextoId) : "todos");
+  const [busqueda, setBusqueda] = useState("");
+  const obrasEnCurso = obras.filter((o) => o.estado === "En curso");
+
+  const coincideFiltro = (p) => {
+    if (filtro === "todos") return true;
+    const asign = asignacionManualDe(p);
+    if (filtro === "general") return asign.tipo === "general";
+    if (filtro === "sinobra") return asign.tipo === "ninguna";
+    return asign.tipo === "obra" && String(asign.obraId) === filtro;
+  };
+  const lista = personal
+    .filter((p) => p.estado === "Activo")
+    .filter((p) => nombreCompletoDe(p).toLowerCase().includes(busqueda.trim().toLowerCase()))
+    .filter(coincideFiltro)
+    .sort((a, b) => nombreCompletoDe(a).localeCompare(nombreCompletoDe(b)));
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Asignar personal</h3>
+            <p className="text-xs text-slate-400">Elegí en qué obra está cada persona — "General" para Gerencia/RRHH/Logística/HyS, "Sin obra" si todavía no está afectada a ninguna.</p>
+          </div>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div className="mb-3 flex flex-wrap gap-2">
+          <input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por nombre..."
+            className={`${inputCls} flex-1`}
+          />
+          <select value={filtro} onChange={(e) => setFiltro(e.target.value)} className={inputCls}>
+            <option value="todos">Mostrar: todos</option>
+            <option value="sinobra">Mostrar: sin obra</option>
+            <option value="general">Mostrar: general</option>
+            {obrasEnCurso.map((o) => <option key={o.id} value={o.id}>Mostrar: {o.nombre}</option>)}
+          </select>
+        </div>
+
+        <div className="max-h-[60vh] space-y-1 overflow-y-auto">
+          {lista.length === 0 ? (
+            <div className="rounded-md border border-dashed border-stone-300 px-3 py-6 text-center text-xs text-slate-400">Nadie coincide con ese filtro.</div>
+          ) : (
+            lista.map((p) => {
+              const asign = asignacionManualDe(p);
+              const valorSelect = asign.tipo === "obra" ? String(asign.obraId) : asign.tipo === "general" ? "general" : "";
+              return (
+                <div key={p.id} className="flex items-center justify-between gap-2 rounded-md border border-stone-100 px-2 py-1.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-slate-800">{nombreCompletoDe(p)}</div>
+                    <div className="text-[10px] text-slate-400">{p.categoria}{p.tipoTrabajador ? ` · ${p.tipoTrabajador}` : ""}</div>
+                  </div>
+                  <select
+                    value={valorSelect}
+                    onChange={(e) => onGuardar(p, e.target.value)}
+                    className="w-40 shrink-0 rounded-md border border-stone-300 px-2 py-1 text-xs"
+                  >
+                    <option value="">Sin obra</option>
+                    <option value="general">General</option>
+                    {obrasEnCurso.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                  </select>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <button onClick={onClose} className={btnGhost}>Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Icono de tacho de basura para mandar un registro a la Papelera — se repite al
 // costado de cada fila/tarjeta en las secciones que soportan Papelera.
 function BotonEliminar({ onClick, title = "Eliminar" }) {
@@ -2656,9 +2741,16 @@ export default function ConcretarApp() {
   const CATEGORIAS_CENTRO_GENERAL = ["Gerente", "Recursos Humanos", "Logística", "HyS"];
 
   // En qué obra está trabajando esta persona ahora mismo:
+  // - Si se la asignó a mano desde "Asignar personal" (a una obra puntual o a
+  //   "General"), eso manda por sobre cualquier otra cosa.
   // - Tantero: la obra del grupo al que pertenece.
   // - En blanco / en negro: la obra de su registro de asistencia más reciente.
   function obraActualDe(p) {
+    if (p.obraAsignadaId != null) {
+      const obraAsignada = obras.find((o) => o.id === p.obraAsignadaId);
+      return obraAsignada?.estado === "En curso" ? obraAsignada : null;
+    }
+    if (p.asignacionGeneral) return null;
     if (p.tipoTrabajador === "Tantero") {
       const grupo = tanteros.find((t) => (t.integrantes || []).includes(p.id));
       if (!grupo) return null;
@@ -2671,6 +2763,25 @@ export default function ConcretarApp() {
     if (registros.length === 0) return null;
     const obraReciente = obras.find((o) => o.id === registros[0].obraId);
     return obraReciente?.estado === "En curso" ? obraReciente : null;
+  }
+  // Para "Asignar personal": a diferencia de obraActualDe (que sólo importa
+  // para calcular costos/agrupar y por eso ignora asignaciones a obras que ya
+  // no están en curso), acá necesitamos reflejar fielmente lo que se guardó,
+  // para que el desplegable siempre muestre la selección real de cada persona.
+  function asignacionManualDe(p) {
+    if (p.obraAsignadaId != null) return { tipo: "obra", obraId: p.obraAsignadaId };
+    if (p.asignacionGeneral) return { tipo: "general" };
+    return { tipo: "ninguna" };
+  }
+  function guardarAsignacionPersonal(p, valor) {
+    // valor: "" (sin obra), "general", o el id de una obra (string desde el <select>).
+    if (valor === "general") {
+      updateRecord("personal", p.id, { obraAsignadaId: null, asignacionGeneral: true }, setPersonal);
+    } else if (valor === "") {
+      updateRecord("personal", p.id, { obraAsignadaId: null, asignacionGeneral: false }, setPersonal);
+    } else {
+      updateRecord("personal", p.id, { obraAsignadaId: Number(valor), asignacionGeneral: false }, setPersonal);
+    }
   }
   function ultimaFechaActividad(p) {
     const registros = asistencia.filter((a) => a.nombre === nombreCompletoDe(p)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
@@ -3331,6 +3442,10 @@ export default function ConcretarApp() {
   const [ingresoNombreArchivo, setIngresoNombreArchivo] = useState(null);
   const [ingresoTipoArchivo, setIngresoTipoArchivo] = useState(null);
   const [showPersonalForm, setShowPersonalForm] = useState(false);
+  // "Asignar personal": null = cerrado; "todos" = abierto sin filtro (desde
+  // Personal/Cuadrillas); un id de obra = abierto con esa obra preseleccionada
+  // en el filtro (desde el detalle de esa obra).
+  const [asignarPersonalContexto, setAsignarPersonalContexto] = useState(null);
   const [showAsistenciaForm, setShowAsistenciaForm] = useState(false);
   const emptyAsistenciaForm = { fecha: hoyISO(), nombre: "", obraId: obras[0]?.id ?? "", horas: 8, estado: "Presente" };
   const [asistenciaForm, setAsistenciaForm] = useState(emptyAsistenciaForm);
@@ -6115,6 +6230,11 @@ export default function ConcretarApp() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge estado={obraSel.estado} />
+                      {canEditarPersonal && (
+                        <button onClick={() => setAsignarPersonalContexto(obraSel.id)} className={btnGhost}>
+                          <span className="flex items-center gap-1"><ArrowRightLeft size={13} /> Asignar personal</span>
+                        </button>
+                      )}
                       <button onClick={() => iniciarEdicionObra(obraSel)} className={btnGhost}>
                         <span className="flex items-center gap-1"><Pencil size={13} /> Editar</span>
                       </button>
@@ -6294,6 +6414,11 @@ export default function ConcretarApp() {
                     }`}
                   >
                     <ShieldCheck size={16} /> {modoSeleccionPdf ? "Cancelar selección" : "Reportes de personal"}
+                  </button>
+                )}
+                {canEditarPersonal && (
+                  <button onClick={() => setAsignarPersonalContexto("todos")} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
+                    <ArrowRightLeft size={16} /> Asignar personal
                   </button>
                 )}
                 {canCrearPersonal && (
@@ -10836,6 +10961,18 @@ export default function ConcretarApp() {
           pagos={prestamosPagos}
           onClose={() => setPagandoPrestamoId(null)}
           onGuardar={guardarPagoPrestamo}
+        />
+      )}
+
+      {asignarPersonalContexto !== null && (
+        <ModalAsignarPersonal
+          personal={personal}
+          obras={obras}
+          obraContextoId={asignarPersonalContexto === "todos" ? null : asignarPersonalContexto}
+          asignacionManualDe={asignacionManualDe}
+          nombreCompletoDe={nombreCompletoDe}
+          onGuardar={guardarAsignacionPersonal}
+          onClose={() => setAsignarPersonalContexto(null)}
         />
       )}
     </div>
