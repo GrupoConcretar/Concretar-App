@@ -810,7 +810,6 @@ function parseEtapasDesdeExcelGantt(workbook) {
   const ws = workbook.Sheets[sheetName];
   if (!ws["!ref"]) throw new Error('La hoja "Gant" está vacía.');
   const range = XLSX.utils.decode_range(ws["!ref"]);
-  const colSector = range.s.c;
   const colDesc = range.s.c + 2;
   const colDiasInicio = range.s.c + 3;
 
@@ -850,11 +849,14 @@ function parseEtapasDesdeExcelGantt(workbook) {
   }
   if (columnas.length === 0) throw new Error("No se pudieron leer las fechas del encabezado del Gantt.");
 
+  // Una etapa por cada fila con Descripción, ni una más ni una menos — el
+  // nombre es el texto de esa celda tal cual está en el Excel, sin agregarle
+  // nada (antes le sumábamos el sector de la fila, "SECTOR X — ..."). Si una
+  // fila todavía no tiene ningún día pintado (tarea sin programar todavía),
+  // igual se crea con fecha de hoy para no perderla — se puede ajustar la
+  // fecha después a mano.
   const tareas = [];
-  let sectorActual = "";
   for (let r = filaDia + 1; r <= range.e.r; r++) {
-    const sector = ws[XLSX.utils.encode_cell({ r, c: colSector })]?.v;
-    if (sector) sectorActual = String(sector).trim();
     const desc = ws[XLSX.utils.encode_cell({ r, c: colDesc })]?.v;
     if (!desc || !String(desc).trim()) continue;
     let inicio = null, fin = null;
@@ -864,9 +866,11 @@ function parseEtapasDesdeExcelGantt(workbook) {
         if (!fin || col.fecha > fin) fin = col.fecha;
       }
     }
-    if (!inicio || !fin) continue;
-    const nombre = sectorActual ? `${sectorActual} — ${String(desc).trim()}` : String(desc).trim();
-    tareas.push({ nombre, inicio: fechaAISO(inicio), fin: fechaAISO(fin) });
+    tareas.push({
+      nombre: String(desc).trim(),
+      inicio: inicio ? fechaAISO(inicio) : hoyISO(),
+      fin: fin ? fechaAISO(fin) : hoyISO(),
+    });
   }
   return tareas;
 }
