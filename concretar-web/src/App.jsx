@@ -2524,9 +2524,10 @@ export default function ConcretarApp() {
   // aparecer salvo que cambie lo que las generó (ver alertaDescartada más abajo).
   const [alertasDescartadas, setAlertasDescartadas] = useState([]);
   // Plata extra que se le da a alguien junto con su pago (ej: combustible) —
-  // es solo una anotación (quién, cuánto, en qué formalidad/medio) para
-  // llevar el registro; no es un gasto de la empresa ni resta de ninguna
-  // cuenta, así que no pasa por compras_facturas ni por saldoCuenta.
+  // queda anotada acá (quién, cuánto, en qué formalidad/medio, para verla
+  // junto al pago en Pendientes/Historial) y además genera un gasto real en
+  // Gastos y Facturas (categoría "Varios"), así sí impacta en la cuenta y en
+  // los reportes como cualquier otro gasto.
   const [extrasPago, setExtrasPago] = useState([]);
 
   // Papelera general: un registro "eliminado" (con fecha en eliminadoEn) deja de
@@ -3783,7 +3784,8 @@ export default function ConcretarApp() {
     const [semanaKey, obraId, nombre] = key.split("|");
     const g = gruposSemana[semanaKey]?.[obraId]?.[nombre];
     if (g) {
-      totalSeleccionado += g.monto;
+      const totalExtrasFila = extrasDe(semanaKey, obraId, nombre).reduce((s, ex) => s + (ex.monto || 0), 0);
+      totalSeleccionado += g.monto + totalExtrasFila;
       personasSeleccionadas.add(nombre);
     }
   });
@@ -3841,30 +3843,66 @@ export default function ConcretarApp() {
   }
 
   // "+" en Pendientes de pago: anota plata extra que se le da a alguien junto
-  // con su pago (ej: combustible), con su propia formalidad y medio — es solo
-  // un registro de quién se llevó cuánto y por qué, no un gasto de la empresa
-  // (no toca ninguna cuenta ni aparece en Gastos y Facturas).
+  // con su pago (ej: combustible), con su propia formalidad y medio, y de paso
+  // genera el gasto real correspondiente en Gastos y Facturas (categoría
+  // "Varios") para que impacte en la cuenta como cualquier otro gasto. El id
+  // de ese gasto se guarda en la anotación para poder borrar los dos juntos.
   const [agregandoExtraContexto, setAgregandoExtraContexto] = useState(null); // { semanaKey, obraId, nombre } | null
   function extrasDe(semanaKey, obraId, nombre) {
     return extrasPago.filter((e) => e.semana === semanaKey && String(e.obraId ?? "") === String(obraId ?? "") && e.nombre === nombre);
   }
-  function agregarExtraPago(datos) {
+  async function agregarExtraPago(datos) {
     if (!agregandoExtraContexto) return;
-    addRecord("extras_pago", {
+    const { semanaKey, obraId, nombre } = agregandoExtraContexto;
+    const monto = Number(datos.monto) || 0;
+    const obraIdNum = obraId != null ? Number(obraId) : null;
+    const gasto = await addRecord("compras_facturas", {
       fecha: hoyISO(),
-      semana: agregandoExtraContexto.semanaKey,
-      obraId: agregandoExtraContexto.obraId != null ? Number(agregandoExtraContexto.obraId) : null,
-      nombre: agregandoExtraContexto.nombre,
+      obraId: obraIdNum,
+      ordenCompraId: null,
+      proveedor: nombre,
+      categoria: "Varios",
+      descripcion: `Extra de personal — ${datos.descripcion}`,
+      monto,
+      comprobante: "",
+      tipoFactura: "Sin factura",
+      formalidad: datos.formalidad,
+      formaPago: datos.medio,
+      medioBancario: datos.medio === "Banco" ? "Débito/Transferencia" : null,
+      fechaPagoEcheq: null,
+      cuenta: datos.medio,
+      estado: "Pagada",
+      archivo: null,
+      nombreArchivo: null,
+      tipoArchivo: null,
+    }, setComprasFacturas);
+    await addRecord("extras_pago", {
+      fecha: hoyISO(),
+      semana: semanaKey,
+      obraId: obraIdNum,
+      nombre,
       descripcion: datos.descripcion,
-      monto: Number(datos.monto) || 0,
+      monto,
       formalidad: datos.formalidad,
       medio: datos.medio,
       creadoPor: currentRole,
+      compraFacturaId: gasto?.id ?? null,
     }, setExtrasPago);
     setAgregandoExtraContexto(null);
   }
-  function eliminarExtraPago(id) {
-    deleteRecord("extras_pago", id, setExtrasPago);
+  async function eliminarExtraPago(extra) {
+    if (!window.confirm(`¿Eliminar el extra "${extra.descripcion}" de ${extra.nombre} (${fmtARS(extra.monto)})? También se borra el gasto que generó en Gastos y Facturas.`)) return;
+    if (isSupabaseConfigured) {
+      try {
+        await sbDelete("extras_pago", extra.id);
+        if (extra.compraFacturaId) await sbDelete("compras_facturas", extra.compraFacturaId);
+      } catch (err) {
+        alert("No se pudo eliminar: " + err.message);
+        return;
+      }
+    }
+    setExtrasPago((prev) => prev.filter((e) => e.id !== extra.id));
+    if (extra.compraFacturaId) setComprasFacturas((prev) => prev.filter((c) => c.id !== extra.compraFacturaId));
   }
 
   // ---------- Liquidación formal (UOCRA CCT 76/75 Zona A — San Juan, Ley 22.250) ----------
@@ -7416,7 +7454,10 @@ export default function ConcretarApp() {
                         filasSemana.push({ obraId, obraNombre: obra?.nombre || "Obra", nombre, ...trabajadores[nombre] });
                       });
                     });
-                    const totalSemana = filasSemana.reduce((s, f) => s + f.monto, 0);
+                    const totalSemana = filasSemana.reduce(
+                      (s, f) => s + f.monto + extrasDe(semanaKey, f.obraId, f.nombre).reduce((s2, ex) => s2 + (ex.monto || 0), 0),
+                      0
+                    );
                     return (
                       <Panel
                         key={semanaKey}
@@ -7450,18 +7491,6 @@ export default function ConcretarApp() {
                                     </td>
                                     <td className="px-2 py-1 font-medium text-slate-900">
                                       <div>{f.nombre}</div>
-                                      {extras.map((ex) => (
-                                        <div key={ex.id} className="mt-0.5 flex items-center gap-1 text-[10px] font-normal text-slate-500">
-                                          <span>+ {ex.descripcion}: {fmtARS(ex.monto)} ({ex.formalidad} · {ex.medio})</span>
-                                          <button
-                                            onClick={(e) => { e.stopPropagation(); eliminarExtraPago(ex.id); }}
-                                            className="text-rose-400 hover:text-rose-600"
-                                            title="Eliminar extra"
-                                          >
-                                            <X size={10} />
-                                          </button>
-                                        </div>
-                                      ))}
                                       <button
                                         onClick={(e) => { e.stopPropagation(); setAgregandoExtraContexto({ semanaKey, obraId: f.obraId, nombre: f.nombre }); }}
                                         className="mt-0.5 block text-[10px] font-semibold text-sky-600 hover:underline"
@@ -7471,7 +7500,36 @@ export default function ConcretarApp() {
                                     </td>
                                     <td className="px-2 py-1 text-slate-600">{f.obraNombre}</td>
                                     <td className="px-2 py-1 text-right font-mono text-slate-500">{f.horas}</td>
-                                    <td className="px-2 py-1 text-right font-mono text-slate-800">{fmtARS(f.monto)}</td>
+                                    <td className="px-2 py-1 text-right font-mono text-slate-800">
+                                      {extras.length === 0 ? (
+                                        fmtARS(f.monto)
+                                      ) : (
+                                        <div className="space-y-0.5">
+                                          <div className="flex items-center justify-between gap-3 text-[10px] font-normal text-slate-500">
+                                            <span>Jornal</span><span>{fmtARS(f.monto)}</span>
+                                          </div>
+                                          {extras.map((ex) => (
+                                            <div key={ex.id} className="flex items-center justify-between gap-3 text-[10px] font-normal text-slate-500">
+                                              <span className="flex items-center gap-1">
+                                                + {ex.descripcion}
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); eliminarExtraPago(ex); }}
+                                                  className="text-rose-400 hover:text-rose-600"
+                                                  title="Eliminar extra"
+                                                >
+                                                  <X size={9} />
+                                                </button>
+                                              </span>
+                                              <span>{fmtARS(ex.monto)}</span>
+                                            </div>
+                                          ))}
+                                          <div className="flex items-center justify-between gap-3 border-t border-stone-200 pt-0.5 font-bold text-slate-900">
+                                            <span>Total</span>
+                                            <span>{fmtARS(f.monto + extras.reduce((s, ex) => s + (ex.monto || 0), 0))}</span>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </td>
                                   </tr>
                                 );
                               })}
