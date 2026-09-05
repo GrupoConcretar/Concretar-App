@@ -6624,15 +6624,12 @@ export default function ConcretarApp() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Personal</h2>
               <div className="flex flex-wrap gap-2">
-                <button onClick={abrirCargaAsistencia} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
+                <button onClick={abrirCargaAsistencia} className="flex items-center gap-1 rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100">
                   <ClipboardCheck size={16} /> Cargar asistencia
-                </button>
-                <button onClick={() => setShowAsistenciasHistorial(true)} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
-                  <ClipboardCheck size={16} /> Ver asistencias
                 </button>
                 {canVerLiquidacion && (
                   <button onClick={() => setShowLiquidacionModal(true)} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
-                    <Wallet size={16} /> Salario Personal
+                    <Wallet size={16} /> Pagos
                   </button>
                 )}
                 <button
@@ -6677,6 +6674,9 @@ export default function ConcretarApp() {
                     <Plus size={16} /> Añadir personal
                   </button>
                 )}
+                <button onClick={() => setShowAsistenciasHistorial(true)} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
+                  <ClipboardCheck size={16} /> Ver asistencias
+                </button>
               </div>
             </div>
 
@@ -7252,7 +7252,7 @@ export default function ConcretarApp() {
           <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-2 sm:p-6" onClick={() => setShowLiquidacionModal(false)}>
             <div className="max-h-full w-full max-w-6xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-2xl font-bold tracking-tight text-slate-900">Salario Personal</h2>
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900">Pagos</h2>
                 <button onClick={() => setShowLiquidacionModal(false)}><X size={20} /></button>
               </div>
               <div className="space-y-6">
