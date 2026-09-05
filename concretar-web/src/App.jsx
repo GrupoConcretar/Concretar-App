@@ -7541,7 +7541,13 @@ export default function ConcretarApp() {
                                     className={`cursor-pointer border-t border-stone-100 ${seleccionado ? "bg-amber-50" : "hover:bg-stone-50"}`}
                                   >
                                     <td className="px-2 py-1">
-                                      <input type="checkbox" checked={seleccionado} onChange={() => toggleSeleccionLiquidacion(key)} className="h-3.5 w-3.5" />
+                                      <input
+                                        type="checkbox"
+                                        checked={seleccionado}
+                                        onChange={() => toggleSeleccionLiquidacion(key)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="h-3.5 w-3.5"
+                                      />
                                     </td>
                                     <td className="px-2 py-1 font-medium text-slate-900">
                                       <div>{f.nombre}</div>
