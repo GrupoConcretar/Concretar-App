@@ -2817,8 +2817,13 @@ export default function ConcretarApp() {
       })()
     : [];
 
+  // Recorta espacios de más en nombre/apellido — varias pantallas (asistencia,
+  // pagos, tanteros) enlazan registros comparando este nombre como texto, así
+  // que un espacio de más cargado sin querer en el alta de la persona rompe
+  // esa comparación y esa persona deja de cruzar con lo que ya tiene cargado
+  // (por ejemplo, le queda el sueldo en $0 aunque tenga horas trabajadas).
   function nombreCompletoDe(p) {
-    return [p.nombre, p.apellido].filter(Boolean).join(" ") || "—";
+    return [(p.nombre || "").trim(), (p.apellido || "").trim()].filter(Boolean).join(" ") || "—";
   }
 
   function nombreCorto(p) {
