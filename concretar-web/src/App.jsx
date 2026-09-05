@@ -3650,6 +3650,9 @@ export default function ConcretarApp() {
     }, setAsistencia);
     cancelEditAsistencia();
   }
+  function eliminarAsistencia(id) {
+    deleteRecord("asistencia", id, setAsistencia);
+  }
 
   // ---------- Liquidación (pago de jornales) ----------
   const canVerLiquidacion = ROLES_LIQUIDACION.includes(currentRole);
@@ -7308,7 +7311,7 @@ export default function ConcretarApp() {
                     <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Nombre</th><th className="px-2 py-1.5">Centro de costo</th><th className="px-2 py-1.5">Hs</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Cargado por</th><th className="px-2 py-1.5"></th></tr>
                   </thead>
                   <tbody>
-                    {[...asistencia].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((a) => {
+                    {[...asistencia].filter((a) => (a.horas || 0) > 0).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((a) => {
                       const obra = obras.find((o) => o.id === a.obraId);
                       return (
                         <tr key={a.id} className="border-t border-stone-100">
@@ -7323,7 +7326,12 @@ export default function ConcretarApp() {
                           <td className="px-2 py-1 font-mono text-slate-700">{a.horas}</td>
                           <td className="px-2 py-1"><Badge estado={a.estado} /></td>
                           <td className="px-2 py-1 text-slate-500">{a.cargadoPor}</td>
-                          <td className="px-2 py-1"><button onClick={() => startEditAsistencia(a)} className={btnGhost}>Editar</button></td>
+                          <td className="px-2 py-1">
+                            <div className="flex items-center gap-1.5">
+                              <button onClick={() => startEditAsistencia(a)} className={btnGhost}>Editar</button>
+                              <BotonEliminar onClick={() => eliminarAsistencia(a.id)} title="Eliminar asistencia" />
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}
