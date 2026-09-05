@@ -112,7 +112,7 @@ const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sáb
 const DIAS_SEMANA_JS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
 const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
-const CATEGORIAS_GASTO = ["Materiales", "Equipos y Herramientas", "Epps", "Consumibles", "Combustible", "Varios"];
+const CATEGORIAS_GASTO = ["Materiales", "Equipos y Herramientas", "Epps", "Consumibles", "Combustible", "Mano de obra", "Varios"];
 // Gastos fijos que se repiten todos los meses (contador, impuestos, cuenta
 // bancaria) — el botón "+ Gasto mensual" de Cargar gasto los deja elegir de
 // esta lista en vez de tener que escribirlos de cero cada vez.
@@ -3831,16 +3831,49 @@ export default function ConcretarApp() {
     if (!window.confirm(`¿Confirmar el pago de ${fmtARS(totalSeleccionado)} para ${personasSeleccionadas.size} trabajador(es)?`)) return;
     const hoy = hoyISO();
     const idsAPagar = [];
+    // Un gasto real por obra (categoría "Mano de obra") con el total de jornales
+    // pagados en esta tanda, para que quede en Gastos y Facturas / Movimientos
+    // igual que cualquier otro gasto — antes esto quedaba invisible ahí, solo
+    // se veía en Pagos → Historial de la obra.
+    const porObra = {};
     seleccionLiquidacion.forEach((key) => {
       const [semanaKey, obraId, nombre] = key.split("|");
-      const registros = gruposSemana[semanaKey]?.[obraId]?.[nombre]?.registros || [];
-      idsAPagar.push(...registros);
+      const g = gruposSemana[semanaKey]?.[obraId]?.[nombre];
+      if (!g) return;
+      idsAPagar.push(...g.registros);
+      if (!porObra[obraId]) porObra[obraId] = { monto: 0, nombres: new Set() };
+      porObra[obraId].monto += g.monto;
+      porObra[obraId].nombres.add(nombre);
     });
     await Promise.all(
       idsAPagar.map((id) => {
         const a = asistencia.find((x) => x.id === id);
         return updateRecord("asistencia", id, { estadoPago: "Pagado", fechaPago: hoy, montoAbonado: montoDe(a) }, setAsistencia);
       })
+    );
+    await Promise.all(
+      Object.entries(porObra).map(([obraId, info]) =>
+        addRecord("compras_facturas", {
+          fecha: hoy,
+          obraId: Number(obraId),
+          ordenCompraId: null,
+          proveedor: "Jornales de la semana",
+          categoria: "Mano de obra",
+          descripcion: [...info.nombres].join(", "),
+          monto: info.monto,
+          comprobante: "",
+          tipoFactura: "Sin factura",
+          formalidad: "Negro",
+          formaPago: "Efectivo",
+          medioBancario: null,
+          fechaPagoEcheq: null,
+          cuenta: "Efectivo",
+          estado: "Pagada",
+          archivo: null,
+          nombreArchivo: null,
+          tipoArchivo: null,
+        }, setComprasFacturas)
+      )
     );
     setSeleccionLiquidacion([]);
   }
