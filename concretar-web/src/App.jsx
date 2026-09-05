@@ -49,6 +49,19 @@ function fmtFecha(fechaStr) {
   const d = fechaLocal(fechaStr);
   return d ? d.toLocaleDateString("es-AR") : "—";
 }
+// Orden por lo último cargado (no por la fecha que se le puso al registro):
+// así los listados de gastos/ingresos/movimientos siempre muestran arriba lo
+// que se acaba de hacer, sea cual sea la fecha real del gasto — usa el
+// timestamp de creación cuando existe (creadoEn) y si no cae al id (más alto
+// = cargado después, porque son correlativos por alta).
+function porCargado(a, b) {
+  if (a.creadoEn || b.creadoEn) {
+    const ta = a.creadoEn ? new Date(a.creadoEn).getTime() : 0;
+    const tb = b.creadoEn ? new Date(b.creadoEn).getTime() : 0;
+    if (ta !== tb) return tb - ta;
+  }
+  return Number(b.id) - Number(a.id);
+}
 function hoyISO() {
   const d = new Date();
   const y = d.getFullYear();
@@ -4295,7 +4308,7 @@ export default function ConcretarApp() {
   }
   const cobrosSociosFiltrados = cobrosSocios
     .filter((c) => filtroSocio === "Todos" || c.socio === filtroSocio)
-    .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+    .sort(porCargado);
 
   // "Registrar juntos": carga un solo total y lo parte a la mitad para cada socio,
   // pero queda guardado como dos cobros separados (uno por socio) en el historial —
@@ -4392,42 +4405,42 @@ export default function ConcretarApp() {
   }
   const movimientosCuentas = [
     ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
-      id: `ing-${i.id}`, fecha: i.fecha, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
+      id: `ing-${i.id}`, fecha: i.fecha, creadoEn: i.creadoEn, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
       origen: "ingresos", origenId: i.id,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
-      id: `egr-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
+      id: `egr-${c.id}`, fecha: c.fecha, creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
       origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura,
     })),
     ...movimientosManualNormales.flatMap((m) => [
-      { id: `man-${m.id}-sale`, fecha: m.fecha, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, formalidad: m.formalidad, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null, origen: "movimientos_cuenta", origenId: m.id },
-      { id: `man-${m.id}-recibe`, fecha: m.fecha, tipo: "Ingreso", obraId: null, detalle: m.detalle || `Pase desde ${m.cuentaOrigen}`, formalidad: m.formalidad, cuenta: m.cuentaDestino, monto: m.monto || 0, estado: null, origen: "movimientos_cuenta", origenId: m.id },
+      { id: `man-${m.id}-sale`, fecha: m.fecha, creadoEn: m.creadoEn, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, formalidad: m.formalidad, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null, origen: "movimientos_cuenta", origenId: m.id },
+      { id: `man-${m.id}-recibe`, fecha: m.fecha, creadoEn: m.creadoEn, tipo: "Ingreso", obraId: null, detalle: m.detalle || `Pase desde ${m.cuentaOrigen}`, formalidad: m.formalidad, cuenta: m.cuentaDestino, monto: m.monto || 0, estado: null, origen: "movimientos_cuenta", origenId: m.id },
     ]),
     ...Object.entries(arreglosPorRun).map(([runId, filas]) => ({
-      id: `arreglo-${runId}`, fecha: filas[0].fecha, tipo: "Ajuste", obraId: null, detalle: "Arreglo de caja", formalidad: null, cuenta: null,
+      id: `arreglo-${runId}`, fecha: filas[0].fecha, creadoEn: filas[0].creadoEn, tipo: "Ajuste", obraId: null, detalle: "Arreglo de caja", formalidad: null, cuenta: null,
       monto: filas.reduce((s, f) => s + (f.monto || 0), 0), estado: null, origen: "arreglo_caja", origenId: runId,
     })),
     ...prestamos.map((p) => ({
-      id: `prestamo-alta-${p.id}`, fecha: p.fecha, tipo: "Ingreso", obraId: null, detalle: `Préstamo recibido — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: p.capital || 0, estado: null,
+      id: `prestamo-alta-${p.id}`, fecha: p.fecha, creadoEn: p.creadoEn, tipo: "Ingreso", obraId: null, detalle: `Préstamo recibido — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: p.capital || 0, estado: null,
     })),
     ...prestamosPagos.map((pg) => {
       const p = prestamos.find((x) => x.id === pg.prestamoId);
       return {
-        id: `prestamo-pago-${pg.id}`, fecha: pg.fecha, tipo: "Egreso", obraId: null, detalle: `Devolución préstamo — ${p?.acreedor || "?"}`, formalidad: p?.formalidad, cuenta: pg.cuenta, monto: -(pg.monto || 0), estado: "Pagada",
+        id: `prestamo-pago-${pg.id}`, fecha: pg.fecha, creadoEn: pg.creadoEn, tipo: "Egreso", obraId: null, detalle: `Devolución préstamo — ${p?.acreedor || "?"}`, formalidad: p?.formalidad, cuenta: pg.cuenta, monto: -(pg.monto || 0), estado: "Pagada",
       };
     }),
     ...cobrosSocios.map((c) => ({
-      id: `cobro-socio-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: null, detalle: `Cobro — ${c.socio}`, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: "Pagada",
+      id: `cobro-socio-${c.id}`, fecha: c.fecha, creadoEn: c.creadoEn, tipo: "Egreso", obraId: null, detalle: `Cobro — ${c.socio}`, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: "Pagada",
       origen: "cobros_socios", origenId: c.id, tipoFactura: c.tipoFactura,
     })),
     ...avancesTanteros.flatMap((a) => {
       const t = tanteros.find((x) => x.id === a.tanteroId);
       if (!t || obraIdsPapelera.has(t.obraId)) return [];
       return [{
-        id: `avance-tantero-${a.id}`, fecha: a.fecha, tipo: "Egreso", obraId: t.obraId, detalle: `Avance tantero — ${t.nombreGrupo}`, formalidad: a.formalidad, cuenta: a.cuenta, monto: -(a.monto || 0), estado: "Pagada",
+        id: `avance-tantero-${a.id}`, fecha: a.fecha, creadoEn: a.creadoEn, tipo: "Egreso", obraId: t.obraId, detalle: `Avance tantero — ${t.nombreGrupo}`, formalidad: a.formalidad, cuenta: a.cuenta, monto: -(a.monto || 0), estado: "Pagada",
       }];
     }),
-  ].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+  ].sort(porCargado);
 
   // Agrupados por mes — el mes actual siempre a la vista, los anteriores quedan
   // colapsados en pestañas desplegables para no alargar la pantalla.
@@ -7344,7 +7357,7 @@ export default function ConcretarApp() {
                     <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Nombre</th><th className="px-2 py-1.5">Centro de costo</th><th className="px-2 py-1.5">Hs</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Cargado por</th><th className="px-2 py-1.5"></th></tr>
                   </thead>
                   <tbody>
-                    {[...asistencia].filter((a) => (a.horas || 0) > 0).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((a) => {
+                    {[...asistencia].filter((a) => (a.horas || 0) > 0).sort(porCargado).map((a) => {
                       const obra = obras.find((o) => o.id === a.obraId);
                       return (
                         <tr key={a.id} className="border-t border-stone-100">
@@ -10143,7 +10156,7 @@ export default function ConcretarApp() {
                   <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Proveedor</th><th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5">Descripción</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Forma de pago</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
                 </thead>
                 <tbody>
-                  {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
+                  {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort(porCargado).map((c) => {
                     const obra = obras.find((o) => o.id === c.obraId);
                     return (
                       <tr key={c.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}2e`, borderLeft: `3px solid ${colorDeObra(obra)}` }}>
@@ -10289,7 +10302,7 @@ export default function ConcretarApp() {
                   <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Concepto</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
                 </thead>
                 <tbody>
-                  {ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((i) => {
+                  {ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).sort(porCargado).map((i) => {
                     const obra = obras.find((o) => o.id === i.obraId);
                     return (
                       <tr key={i.id} className="border-t border-stone-100">
