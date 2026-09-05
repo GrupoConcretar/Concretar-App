@@ -3808,7 +3808,7 @@ export default function ConcretarApp() {
 
   const historialPagos = asistencia
     .filter((a) => a.obraId === Number(obraHistorialId) && a.estadoPago === "Pagado")
-    .sort((a, b) => fechaLocal(b.fechaPago) - fechaLocal(a.fechaPago));
+    .sort(porCargado);
   const totalHistorico = historialPagos.reduce((s, a) => s + (a.montoAbonado || 0), 0);
 
   // Historial agrupado por semana, combinando pagos a Personal y avances a Tanteros
@@ -6071,7 +6071,7 @@ export default function ConcretarApp() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Panel title="Últimos movimientos de herramientas">
                 {(() => {
-                  const ultimos = [...remitos].filter((r) => r.herramientaIds?.length > 0).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).slice(0, 6);
+                  const ultimos = [...remitos].filter((r) => r.herramientaIds?.length > 0).sort(porCargado).slice(0, 6);
                   return ultimos.length === 0 ? (
                     <div className="text-xs text-slate-400">Sin movimientos todavía.</div>
                   ) : (
@@ -6089,7 +6089,7 @@ export default function ConcretarApp() {
 
               <Panel title="Compras de materiales recientes">
                 {(() => {
-                  const ultimos = pedidosMateriales.filter((p) => !obraIdsPapelera.has(p.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).slice(0, 6);
+                  const ultimos = pedidosMateriales.filter((p) => !obraIdsPapelera.has(p.obraId)).sort(porCargado).slice(0, 6);
                   return ultimos.length === 0 ? (
                     <div className="text-xs text-slate-400">Sin pedidos todavía.</div>
                   ) : (
@@ -7685,7 +7685,7 @@ export default function ConcretarApp() {
                         const p = personal.find((x) => x.id === id);
                         return p ? nombreCompletoDe(p) : null;
                       }).filter(Boolean);
-                      const avancesGrupo = avancesTanteros.filter((a) => a.tanteroId === t.id).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+                      const avancesGrupo = avancesTanteros.filter((a) => a.tanteroId === t.id).sort(porCargado);
                       return (
                         <div key={t.id} className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
                           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -8425,7 +8425,7 @@ export default function ConcretarApp() {
                   {(() => {
                     const historial = remitos
                       .filter((r) => r.herramientaIds.includes(viewingHerramienta.id))
-                      .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+                      .sort(porCargado);
                     return (
                       <div className="mt-5 border-t border-stone-100 pt-4">
                         <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -8703,7 +8703,7 @@ export default function ConcretarApp() {
                   <div>
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Historial de remitos recibidos</div>
                     <div className="space-y-2">
-                      {[...remitosCompletados].sort((a, b) => fechaLocal(b.fechaRecepcion) - fechaLocal(a.fechaRecepcion)).map((r) => (
+                      {[...remitosCompletados].sort(porCargado).map((r) => (
                         <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm">
                           <span className="flex items-center gap-2 text-slate-700">
                             {r.origen} <ArrowRightLeft size={13} className="text-slate-400" /> {r.destino}
@@ -8795,7 +8795,7 @@ export default function ConcretarApp() {
                   <div>
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Historial de controles</div>
                     <div className="space-y-2">
-                      {[...auditorias].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).slice(0, 15).map((a) => {
+                      {[...auditorias].sort(porCargado).slice(0, 15).map((a) => {
                         const obra = obras.find((o) => o.id === a.obraId);
                         return (
                           <div key={a.id} className="rounded-lg border border-stone-200 bg-white px-4 py-2.5 text-sm">
@@ -9315,7 +9315,7 @@ export default function ConcretarApp() {
                         <div>
                           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pedidos de esta obra</div>
                           <div className="space-y-3">
-                            {[...pedidosObra].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((p) => {
+                            {[...pedidosObra].sort(porCargado).map((p) => {
                               const dias = p.fechaNecesaria ? diasHasta(p.fechaNecesaria) : null;
                               const urgencia = !pedidoEnCurso(p) || dias === null ? "text-slate-400" : dias < 0 ? "font-semibold text-rose-600" : dias <= 2 ? "font-semibold text-amber-700" : "text-slate-500";
                               return (
@@ -9725,7 +9725,7 @@ export default function ConcretarApp() {
                   <div>
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Historial de remitos de materiales recibidos</div>
                     <div className="space-y-2">
-                      {[...remitosMaterialesCompletados].sort((a, b) => fechaLocal(b.fechaRecepcion) - fechaLocal(a.fechaRecepcion)).map((r) => (
+                      {[...remitosMaterialesCompletados].sort(porCargado).map((r) => (
                         <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm">
                           <span className="flex items-center gap-2 text-slate-700">
                             {r.origen} <ArrowRightLeft size={13} className="text-slate-400" /> {r.destino}
