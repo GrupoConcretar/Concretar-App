@@ -112,7 +112,11 @@ const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sáb
 const DIAS_SEMANA_JS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
 const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
-const CATEGORIAS_GASTO = ["Materiales", "Equipos y Herramientas", "Epps", "Consumibles", "Combustible"];
+const CATEGORIAS_GASTO = ["Materiales", "Equipos y Herramientas", "Epps", "Consumibles", "Combustible", "Varios"];
+// Gastos fijos que se repiten todos los meses (contador, impuestos, cuenta
+// bancaria) — el botón "+ Gasto mensual" de Cargar gasto los deja elegir de
+// esta lista en vez de tener que escribirlos de cero cada vez.
+const GASTOS_MENSUALES_FIJOS = ["Contador", "IVA", "Ingresos Brutos", "Gastos y mantenimiento de cuenta bancaria", "Otro"];
 const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Epps", "Consumibles", "Otros"];
 // La pestaña "Pedidos de Obra" arma el pedido en pasos (rubros). Cada uno filtra
 // las líneas del presupuesto importado (o el catálogo propio, en el caso de Epps
@@ -502,10 +506,10 @@ function TablaMovimientos({ items, obras, onEditar }) {
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-500">
                 <span>{fmtFecha(m.fecha)}</span>
-                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
+                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : m.tipo === "Ajuste" ? "border-slate-300 bg-slate-50 text-slate-600" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
                   {m.tipo}
                 </span>
-                <Badge estado={m.formalidad || "Blanco"} />
+                {m.origen !== "arreglo_caja" && <Badge estado={m.formalidad || "Blanco"} />}
                 <span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span>
                 <span className="flex items-center gap-1"><ObraDot obra={obra} />{obra?.nombre || "General"}</span>
                 {m.estado && <Badge estado={m.estado} />}
@@ -518,7 +522,7 @@ function TablaMovimientos({ items, obras, onEditar }) {
               {m.origen && onEditar && (
                 <div className="mt-1.5 border-t border-stone-100 pt-1.5 text-right">
                   <button onClick={() => onEditar(m)} className={btnGhost}>
-                    <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                    <span className="flex items-center gap-1"><Pencil size={12} /> {m.origen === "arreglo_caja" ? "Ver detalle" : "Editar"}</span>
                   </button>
                 </div>
               )}
@@ -544,13 +548,13 @@ function TablaMovimientos({ items, obras, onEditar }) {
                 <tr key={m.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}1a` }}>
                   <td className="px-2 py-1 text-slate-600">{fmtFecha(m.fecha)}</td>
                   <td className="px-2 py-1">
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : m.tipo === "Ajuste" ? "border-slate-300 bg-slate-50 text-slate-600" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
                       {m.tipo}
                     </span>
                   </td>
                   <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1.5"><ObraDot obra={obra} />{obra?.nombre || "General"}</span></td>
                   <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
-                  <td className="px-2 py-1"><Badge estado={m.formalidad || "Blanco"} /></td>
+                  <td className="px-2 py-1">{m.origen !== "arreglo_caja" && <Badge estado={m.formalidad || "Blanco"} />}</td>
                   <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
                   <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
                   <td className="px-2 py-1">{m.estado && <Badge estado={m.estado} />}</td>
@@ -566,7 +570,7 @@ function TablaMovimientos({ items, obras, onEditar }) {
                   <td className="px-2 py-1">
                     {m.origen && onEditar && (
                       <button onClick={() => onEditar(m)} className={btnGhost}>
-                        <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                        <span className="flex items-center gap-1"><Pencil size={12} /> {m.origen === "arreglo_caja" ? "Ver detalle" : "Editar"}</span>
                       </button>
                     )}
                   </td>
@@ -917,15 +921,19 @@ const GANTT_LABEL_PX = 260;
 // una ventana chica alrededor de hoy para poder empezar a cargar.
 function calendarioGantt(etapasDeObra, hoy) {
   const fechas = etapasDeObra.flatMap((e) => [fechaLocal(e.inicio), fechaLocal(e.fin)]).filter(Boolean);
-  const minFecha = fechas.length ? new Date(Math.min(...fechas)) : hoy;
   const maxFecha = fechas.length ? new Date(Math.max(...fechas)) : hoy;
-  const inicio = lunesOAntes(new Date(Math.min(minFecha.getTime(), hoy.getTime() - 14 * 86400000)));
+  // El calendario siempre arranca hoy (nunca antes) para que no se vuelva
+  // interminable: una etapa vieja que quedó sin terminar se clampea al
+  // día 1 y se ve en rojo ahí (estadoEtapa ya la marca "Atrasada"), en vez
+  // de estirar el Gantt hacia atrás para mostrar su fecha real de inicio.
+  const inicio = new Date(hoy);
   const fin = domingoODespues(new Date(Math.max(maxFecha.getTime(), hoy.getTime() + 30 * 86400000)));
   const dias = [];
   for (let cur = new Date(inicio); cur <= fin; cur.setDate(cur.getDate() + 1)) dias.push(new Date(cur));
-  // Posición de una fecha en índice de día (puede ser fraccionario si cae a
-  // mitad de un día, aunque en la práctica siempre trabajamos a medianoche).
-  const indice = (d) => (d - inicio) / 86400000;
+  // Posición de una fecha en índice de día — clampeada a 0 como mínimo para
+  // que una etapa que empezó antes de hoy se dibuje pegada al borde
+  // izquierdo en vez de quedar con índice negativo (fuera del grid).
+  const indice = (d) => Math.max((d - inicio) / 86400000, 0);
   // Bandas de mes, en cantidad de días (no en %) — se convierten a píxeles
   // multiplicando por el ancho fijo de columna.
   const bandas = [];
@@ -1606,12 +1614,20 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
     editando.origen === "compras_facturas" ? comprasFacturas.find((c) => c.id === editando.origenId)
     : editando.origen === "cobros_socios" ? cobrosSocios.find((c) => c.id === editando.origenId)
     : editando.origen === "ingresos" ? ingresos.find((i) => i.id === editando.origenId)
+    : editando.origen === "arreglo_caja" ? { id: editando.origenId }
     : movimientosManual.find((m) => m.id === editando.origenId);
   const [form, setForm] = useState(registroInicial || {});
   if (!registroInicial) return null;
+  // Las filas reales que generó ese "Arreglo de caja" (una por cuenta corregida),
+  // identificadas por compartir el mismo run-id en el detalle — así se pueden
+  // mostrar agrupadas en un solo renglón de Movimientos y desglosarlas acá.
+  const filasArreglo = editando.origen === "arreglo_caja"
+    ? movimientosManual.filter((m) => m.detalle === `Arreglo de caja #${editando.origenId}`)
+    : [];
 
   function guardar(e) {
     e.preventDefault();
+    if (editando.origen === "arreglo_caja") return;
     if (editando.origen === "compras_facturas") {
       onGuardarCompra(editando.origenId, {
         obraId: form.obraId,
@@ -1670,6 +1686,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
     cobros_socios: "Editar cobro",
     ingresos: "Editar ingreso",
     movimientos_cuenta: "Editar transferencia entre cuentas",
+    arreglo_caja: "Arreglo de caja",
   }[editando.origen];
 
   return (
@@ -1838,7 +1855,29 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               </Field>
             </>
           )}
-          {editando.origen !== "movimientos_cuenta" && (
+          {editando.origen === "arreglo_caja" && (
+            <div className="md:col-span-2 space-y-2">
+              <p className="text-xs text-slate-500">
+                Se ajustaron estas cuentas para que coincidan con el dinero real contado a mano
+                ({fmtFecha(filasArreglo[0]?.fecha)}):
+              </p>
+              <div className="divide-y divide-stone-100 rounded-md border border-stone-200">
+                {filasArreglo.map((m) => {
+                  const cuenta = m.cuentaOrigen === "Ajuste" ? m.cuentaDestino : m.cuentaOrigen;
+                  const suma = m.cuentaOrigen === "Ajuste";
+                  return (
+                    <div key={m.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span className="flex items-center gap-1.5 text-slate-700"><CuentaIcon cuenta={cuenta} />{cuenta}</span>
+                      <span className={`font-mono font-semibold ${suma ? "text-emerald-700" : "text-rose-600"}`}>
+                        {suma ? "+" : "-"}{fmtARS(m.monto)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {editando.origen !== "movimientos_cuenta" && editando.origen !== "arreglo_caja" && (
             <div className="md:col-span-2">
               <ArchivoInput
                 label="Factura / comprobante (PDF o foto)"
@@ -1849,9 +1888,11 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2 md:col-span-2">
-            <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
-            <button type="button" onClick={onClose} className={btnGhost}>Cancelar</button>
-            <button type="button" onClick={() => onEliminar(editando)} className={`${btnGhostDanger} ml-auto`}>Eliminar</button>
+            {editando.origen !== "arreglo_caja" && (
+              <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
+            )}
+            <button type="button" onClick={onClose} className={btnGhost}>{editando.origen === "arreglo_caja" ? "Cerrar" : "Cancelar"}</button>
+            <button type="button" onClick={() => onEliminar(editando)} className={`${btnGhostDanger} ml-auto`}>{editando.origen === "arreglo_caja" ? "Deshacer arreglo" : "Eliminar"}</button>
           </div>
         </form>
       </div>
@@ -2590,11 +2631,12 @@ export default function ConcretarApp() {
   const nextIdRef = useRef(200);
   const genId = () => nextIdRef.current++;
 
-  async function addRecord(table, obj, setter) {
+  async function addRecord(table, obj, setter, opts = {}) {
     if (isSupabaseConfigured) {
       try {
         const row = await sbInsert(table, obj);
         setter((prev) => [...prev, row]);
+        if (!opts.sinImpuestoBancario) registrarImpuestoBancario(table, row);
         return row;
       } catch (err) {
         alert("No se pudo guardar: " + err.message);
@@ -2603,8 +2645,50 @@ export default function ConcretarApp() {
     } else {
       const row = { ...obj, id: genId() };
       setter((prev) => [...prev, row]);
+      if (!opts.sinImpuestoBancario) registrarImpuestoBancario(table, row);
       return row;
     }
+  }
+  // Impuesto a los Créditos y Débitos Bancarios (Ley 25.413): 0,6% sobre todo
+  // movimiento real de dinero que entra o sale de la cuenta "Banco". Se
+  // detecta acá, en el único punto por el que pasan todas las altas (gasto,
+  // ingreso, cobro de socio, transferencia), para no depender de sumarlo a
+  // mano en cada formulario. Un "Arreglo de caja" no es plata que entra o
+  // sale de verdad (es un ajuste contra la cuenta puente "Ajuste"), así que
+  // se excluye por su detalle.
+  const IMPUESTO_DEBITO_CREDITO_PCT = 0.006;
+  function registrarImpuestoBancario(table, row) {
+    if (!row) return;
+    let monto = 0;
+    if ((table === "ingresos" || table === "compras_facturas" || table === "cobros_socios") && row.cuenta === "Banco") {
+      monto = row.monto || 0;
+    } else if (table === "movimientos_cuenta" && !/^Arreglo de caja #/.test(row.detalle || "")) {
+      if (row.cuentaOrigen === "Banco") monto += row.monto || 0;
+      if (row.cuentaDestino === "Banco") monto += row.monto || 0;
+    }
+    if (!monto) return;
+    const impuesto = Math.round(monto * IMPUESTO_DEBITO_CREDITO_PCT * 100) / 100;
+    if (impuesto <= 0) return;
+    addRecord("compras_facturas", {
+      fecha: row.fecha || hoyISO(),
+      obraId: row.obraId ?? null,
+      ordenCompraId: null,
+      proveedor: "Impuesto Débito/Crédito",
+      categoria: "Varios",
+      descripcion: `Impuesto a los Créditos y Débitos Bancarios (0,6% s/ ${fmtARS(monto)})`,
+      monto: impuesto,
+      comprobante: "",
+      tipoFactura: "Sin factura",
+      formalidad: "Blanco",
+      formaPago: "Banco",
+      medioBancario: "Débito/Transferencia",
+      fechaPagoEcheq: null,
+      cuenta: "Banco",
+      estado: "Pagada",
+      archivo: null,
+      nombreArchivo: null,
+      tipoArchivo: null,
+    }, setComprasFacturas, { sinImpuestoBancario: true });
   }
 
   async function updateRecord(table, id, patch, setter) {
@@ -3386,6 +3470,11 @@ export default function ConcretarApp() {
   const [showHerrForm, setShowHerrForm] = useState(false);
   const [showOcForm, setShowOcForm] = useState(false);
   const [showFacturaForm, setShowFacturaForm] = useState(false);
+  const [showGastoMensualForm, setShowGastoMensualForm] = useState(false);
+  const [gastoMensualTipo, setGastoMensualTipo] = useState(GASTOS_MENSUALES_FIJOS[0]);
+  const [gastoMensualFormaPago, setGastoMensualFormaPago] = useState("Banco");
+  const [gastoMensualMedioBancario, setGastoMensualMedioBancario] = useState("Débito/Transferencia");
+  const [facturaObraId, setFacturaObraId] = useState("");
   const [facturaFormaPago, setFacturaFormaPago] = useState("Efectivo");
   const [facturaMedioBancario, setFacturaMedioBancario] = useState("Débito/Transferencia");
   const [facturaPlazoEcheq, setFacturaPlazoEcheq] = useState("30");
@@ -4154,6 +4243,8 @@ export default function ConcretarApp() {
     } else if (editando.origen === "ingresos") {
       const i = ingresos.find((x) => x.id === editando.origenId);
       moverAPapelera("ingresos", editando.origenId, setIngresos, `${i?.concepto || "Ingreso"} — ${fmtARS(i?.monto)}`);
+    } else if (editando.origen === "arreglo_caja") {
+      eliminarArregloCaja(editando.origenId);
     } else {
       deleteRecord("movimientos_cuenta", editando.origenId, setMovimientosManual);
     }
@@ -4163,6 +4254,20 @@ export default function ConcretarApp() {
   // Un movimiento por cada ingreso (+), compra/factura (-) y cada lado de una
   // transferencia manual (- en origen, + en destino); sumados por cuenta y
   // formalidad dan exactamente los saldos de arriba.
+  // Las filas que generó "Arreglo de caja" (arreglarCaja) se marcan con un
+  // run-id compartido en el detalle ("Arreglo de caja #<runId>") — acá se
+  // separan del resto de las transferencias manuales para mostrarlas como un
+  // solo renglón agrupado por corrida en vez de una línea por cada lado de
+  // cada cuenta corregida.
+  const ARREGLO_CAJA_RE = /^Arreglo de caja #(\d+)$/;
+  const movimientosManualArreglo = movimientosManual.filter((m) => ARREGLO_CAJA_RE.test(m.detalle));
+  const movimientosManualNormales = movimientosManual.filter((m) => !ARREGLO_CAJA_RE.test(m.detalle));
+  const arreglosPorRun = {};
+  for (const m of movimientosManualArreglo) {
+    const runId = m.detalle.match(ARREGLO_CAJA_RE)[1];
+    if (!arreglosPorRun[runId]) arreglosPorRun[runId] = [];
+    arreglosPorRun[runId].push(m);
+  }
   const movimientosCuentas = [
     ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
       id: `ing-${i.id}`, fecha: i.fecha, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
@@ -4172,10 +4277,14 @@ export default function ConcretarApp() {
       id: `egr-${c.id}`, fecha: c.fecha, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
       origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura,
     })),
-    ...movimientosManual.flatMap((m) => [
+    ...movimientosManualNormales.flatMap((m) => [
       { id: `man-${m.id}-sale`, fecha: m.fecha, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, formalidad: m.formalidad, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null, origen: "movimientos_cuenta", origenId: m.id },
       { id: `man-${m.id}-recibe`, fecha: m.fecha, tipo: "Ingreso", obraId: null, detalle: m.detalle || `Pase desde ${m.cuentaOrigen}`, formalidad: m.formalidad, cuenta: m.cuentaDestino, monto: m.monto || 0, estado: null, origen: "movimientos_cuenta", origenId: m.id },
     ]),
+    ...Object.entries(arreglosPorRun).map(([runId, filas]) => ({
+      id: `arreglo-${runId}`, fecha: filas[0].fecha, tipo: "Ajuste", obraId: null, detalle: "Arreglo de caja", formalidad: null, cuenta: null,
+      monto: filas.reduce((s, f) => s + (f.monto || 0), 0), estado: null, origen: "arreglo_caja", origenId: runId,
+    })),
     ...prestamos.map((p) => ({
       id: `prestamo-alta-${p.id}`, fecha: p.fecha, tipo: "Ingreso", obraId: null, detalle: `Préstamo recibido — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: p.capital || 0, estado: null,
     })),
@@ -4471,6 +4580,10 @@ export default function ConcretarApp() {
   // como negro.
   async function arreglarCaja() {
     let corregidas = 0;
+    // Mismo run-id (timestamp) en el detalle de todas las filas que genera esta
+    // pasada — así en Movimientos se pueden agrupar y mostrar como un solo
+    // renglón "Arreglo de caja", aunque hayan corregido varias cuentas.
+    const runId = Date.now();
     for (const cuenta of CUENTAS) {
       const real = dineroRealDe(cuenta);
       if (real === null) continue;
@@ -4480,7 +4593,7 @@ export default function ConcretarApp() {
       const formalidadAjuste = cuenta === "Banco" || cuenta === "Mercado Pago" ? "Blanco" : "Negro";
       await addRecord("movimientos_cuenta", {
         fecha: hoyISO(),
-        detalle: "Error de cálculo",
+        detalle: `Arreglo de caja #${runId}`,
         formalidad: formalidadAjuste,
         cuentaOrigen: diferencia > 0 ? "Ajuste" : cuenta,
         cuentaDestino: diferencia > 0 ? cuenta : "Ajuste",
@@ -4488,7 +4601,22 @@ export default function ConcretarApp() {
       }, setMovimientosManual);
       corregidas++;
     }
-    alert(corregidas === 0 ? "No hay diferencias entre lo calculado y el dinero real cargado." : `Se corrigieron ${corregidas} cuenta(s) con un movimiento "Error de cálculo".`);
+    alert(corregidas === 0 ? "No hay diferencias entre lo calculado y el dinero real cargado." : `Se corrigieron ${corregidas} cuenta(s). Mirá el detalle en Movimientos → "Arreglo de caja".`);
+  }
+  async function eliminarArregloCaja(runId) {
+    const filas = movimientosManual.filter((m) => m.detalle === `Arreglo de caja #${runId}`);
+    if (filas.length === 0) return;
+    if (!window.confirm(`¿Deshacer este "Arreglo de caja"? Se eliminarán los ${filas.length} movimiento(s) que generó. Esta acción no se puede deshacer.`)) return;
+    if (isSupabaseConfigured) {
+      try {
+        for (const m of filas) await sbDelete("movimientos_cuenta", m.id);
+      } catch (err) {
+        alert("No se pudo deshacer: " + err.message);
+        return;
+      }
+    }
+    const idsAEliminar = new Set(filas.map((m) => m.id));
+    setMovimientosManual((prev) => prev.filter((m) => !idsAEliminar.has(m.id)));
   }
 
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
@@ -9562,11 +9690,84 @@ export default function ConcretarApp() {
                 <button onClick={generarPdfContadores} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
                   <FileDown size={16} /> PDF para el contador ({nombreMesCuentas(mesReporteContador)})
                 </button>
+                <button onClick={() => setShowGastoMensualForm((v) => !v)} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
+                  + Gasto mensual
+                </button>
                 <button onClick={() => setShowFacturaForm((v) => !v)} className={btnPrimary}>
                   <Plus size={16} /> Cargar gasto
                 </button>
               </div>
             </div>
+
+            {showGastoMensualForm && (
+              <Panel title="Gasto mensual fijo" action={<button onClick={() => setShowGastoMensualForm(false)}><X size={16} /></button>}>
+                <form
+                  className="grid grid-cols-1 gap-4 md:grid-cols-3"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const f = new FormData(e.target);
+                    const tipo = f.get("tipo");
+                    const proveedor = tipo === "Otro" ? (f.get("proveedorOtro") || "Gasto mensual") : tipo;
+                    const formaPago = f.get("formaPago");
+                    const medioBancario = formaPago === "Banco" ? f.get("medioBancario") : null;
+                    addRecord("compras_facturas", {
+                      fecha: f.get("fecha"),
+                      obraId: null,
+                      ordenCompraId: null,
+                      proveedor,
+                      categoria: "Varios",
+                      descripcion: "Gasto mensual fijo",
+                      monto: Number(f.get("monto")) || 0,
+                      comprobante: "",
+                      tipoFactura: "Sin factura",
+                      formalidad: f.get("formalidad"),
+                      formaPago,
+                      medioBancario,
+                      fechaPagoEcheq: null,
+                      cuenta: formaPago === "Cuenta corriente" ? null : formaPago === "eCheq" ? "Banco" : formaPago,
+                      estado: (formaPago === "eCheq" || formaPago === "Cuenta corriente") ? "Pendiente" : "Pagada",
+                      archivo: null,
+                      nombreArchivo: null,
+                      tipoArchivo: null,
+                    }, setComprasFacturas);
+                    e.target.reset();
+                    setGastoMensualTipo(GASTOS_MENSUALES_FIJOS[0]);
+                    setGastoMensualFormaPago("Banco");
+                    setGastoMensualMedioBancario("Débito/Transferencia");
+                    setShowGastoMensualForm(false);
+                  }}
+                >
+                  <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
+                  <Field label="Tipo de gasto">
+                    <select name="tipo" value={gastoMensualTipo} onChange={(e) => setGastoMensualTipo(e.target.value)} className={inputCls}>
+                      {GASTOS_MENSUALES_FIJOS.map((g) => <option key={g}>{g}</option>)}
+                    </select>
+                  </Field>
+                  {gastoMensualTipo === "Otro" && (
+                    <Field label="Detalle">
+                      <input name="proveedorOtro" placeholder="Ej: Seguro, alquiler oficina..." required className={inputCls} />
+                    </Field>
+                  )}
+                  <Field label="Monto ($)"><MoneyInput name="monto" className={inputCls} /></Field>
+                  <Field label="Formalidad">
+                    <select name="formalidad" defaultValue="Blanco" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
+                  </Field>
+                  <Field label="Forma de pago">
+                    <select name="formaPago" value={gastoMensualFormaPago} onChange={(e) => setGastoMensualFormaPago(e.target.value)} className={inputCls}>
+                      {FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}
+                    </select>
+                  </Field>
+                  {gastoMensualFormaPago === "Banco" && (
+                    <Field label="Medio">
+                      <select name="medioBancario" value={gastoMensualMedioBancario} onChange={(e) => setGastoMensualMedioBancario(e.target.value)} className={inputCls}>
+                        {MEDIOS_BANCARIOS.map((m) => <option key={m}>{m}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                </form>
+              </Panel>
+            )}
 
             {showFacturaForm && (
               <Panel title="Cargar gasto / factura" action={<button onClick={() => setShowFacturaForm(false)}><X size={16} /></button>}>
@@ -9603,6 +9804,7 @@ export default function ConcretarApp() {
                       tipoArchivo: facturaTipoArchivo,
                     }, setComprasFacturas);
                     e.target.reset();
+                    setFacturaObraId("");
                     setFacturaFormaPago("Efectivo");
                     setFacturaMedioBancario("Débito/Transferencia");
                     setFacturaPlazoEcheq("30");
@@ -9614,10 +9816,13 @@ export default function ConcretarApp() {
                 >
                   <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
                   <Field label="Obra">
-                    <select name="obraId" className={inputCls}>
-                      <option value="">General (sin obra específica)</option>
-                      {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                    </select>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: colorDeObra(obras.find((o) => String(o.id) === facturaObraId)) }} />
+                      <select name="obraId" value={facturaObraId} onChange={(e) => setFacturaObraId(e.target.value)} className={inputCls}>
+                        <option value="">General (sin obra específica)</option>
+                        {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                      </select>
+                    </div>
                   </Field>
                   <Field label="Proveedor - Nombre de fantasía">
                     <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} />
@@ -9698,7 +9903,7 @@ export default function ConcretarApp() {
                   {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((c) => {
                     const obra = obras.find((o) => o.id === c.obraId);
                     return (
-                      <tr key={c.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}1a` }}>
+                      <tr key={c.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}2e`, borderLeft: `3px solid ${colorDeObra(obra)}` }}>
                         <td className="px-2 py-1 text-slate-600">{fmtFecha(c.fecha)}</td>
                         <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1.5"><ObraDot obra={obra} />{obra?.nombre || "General"}</span></td>
                         <td className="px-2 py-1 font-medium text-slate-900">{c.proveedor}</td>
