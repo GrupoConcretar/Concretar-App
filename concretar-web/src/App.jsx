@@ -2523,6 +2523,11 @@ export default function ConcretarApp() {
   // Alertas que el usuario ya revisó y marcó con el tick — no vuelven a
   // aparecer salvo que cambie lo que las generó (ver alertaDescartada más abajo).
   const [alertasDescartadas, setAlertasDescartadas] = useState([]);
+  // Plata extra que se le da a alguien junto con su pago (ej: combustible) —
+  // es solo una anotación (quién, cuánto, en qué formalidad/medio) para
+  // llevar el registro; no es un gasto de la empresa ni resta de ninguna
+  // cuenta, así que no pasa por compras_facturas ni por saldoCuenta.
+  const [extrasPago, setExtrasPago] = useState([]);
 
   // Papelera general: un registro "eliminado" (con fecha en eliminadoEn) deja de
   // contar en toda la app —listados, selectores y balances— hasta que se
@@ -2567,7 +2572,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -2577,7 +2582,7 @@ export default function ConcretarApp() {
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
           sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"), sbSelect("cobros_socios"),
-          sbSelect("prestamos_pagos"), sbSelect("etapas_obra"), sbSelect("alertas_descartadas"),
+          sbSelect("prestamos_pagos"), sbSelect("etapas_obra"), sbSelect("alertas_descartadas"), sbSelect("extras_pago"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -2616,6 +2621,7 @@ export default function ConcretarApp() {
         setPrestamosPagos(pp);
         setEtapasObra(eo);
         setAlertasDescartadas(ad);
+        setExtrasPago(ep);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -3792,16 +3798,26 @@ export default function ConcretarApp() {
   const avancesDeObraHistorial = avancesTanteros.filter((av) => tanterosDeObraHistorial.some((t) => t.id === av.tanteroId));
   const totalHistoricoTanteros = avancesDeObraHistorial.reduce((s, av) => s + (av.monto || 0), 0);
 
-  const semanasHistorial = {}; // semanaKey -> { personal: [...], tanteros: [...] }
+  // Extras (plata de más dada junto con el pago, ej. combustible) de esta obra —
+  // se guardan por semana/obra/persona apenas se cargan, independiente de si ese
+  // pago ya se confirmó o sigue pendiente, así quedan visibles acá siempre.
+  const extrasDeObraHistorial = extrasPago.filter((e) => String(e.obraId ?? "") === String(obraHistorialId));
+
+  const semanasHistorial = {}; // semanaKey -> { personal: [...], tanteros: [...], extras: [...] }
   historialPagos.forEach((a) => {
     const key = claveSemana(a.fecha);
-    if (!semanasHistorial[key]) semanasHistorial[key] = { personal: [], tanteros: [] };
+    if (!semanasHistorial[key]) semanasHistorial[key] = { personal: [], tanteros: [], extras: [] };
     semanasHistorial[key].personal.push(a);
   });
   avancesDeObraHistorial.forEach((av) => {
     const key = claveSemana(av.fecha);
-    if (!semanasHistorial[key]) semanasHistorial[key] = { personal: [], tanteros: [] };
+    if (!semanasHistorial[key]) semanasHistorial[key] = { personal: [], tanteros: [], extras: [] };
     semanasHistorial[key].tanteros.push(av);
+  });
+  extrasDeObraHistorial.forEach((ex) => {
+    const key = ex.semana;
+    if (!semanasHistorial[key]) semanasHistorial[key] = { personal: [], tanteros: [], extras: [] };
+    semanasHistorial[key].extras.push(ex);
   });
   const semanasHistorialOrdenadas = Object.keys(semanasHistorial).sort((a, b) => new Date(b) - new Date(a));
 
@@ -3822,6 +3838,33 @@ export default function ConcretarApp() {
       })
     );
     setSeleccionLiquidacion([]);
+  }
+
+  // "+" en Pendientes de pago: anota plata extra que se le da a alguien junto
+  // con su pago (ej: combustible), con su propia formalidad y medio — es solo
+  // un registro de quién se llevó cuánto y por qué, no un gasto de la empresa
+  // (no toca ninguna cuenta ni aparece en Gastos y Facturas).
+  const [agregandoExtraContexto, setAgregandoExtraContexto] = useState(null); // { semanaKey, obraId, nombre } | null
+  function extrasDe(semanaKey, obraId, nombre) {
+    return extrasPago.filter((e) => e.semana === semanaKey && String(e.obraId ?? "") === String(obraId ?? "") && e.nombre === nombre);
+  }
+  function agregarExtraPago(datos) {
+    if (!agregandoExtraContexto) return;
+    addRecord("extras_pago", {
+      fecha: hoyISO(),
+      semana: agregandoExtraContexto.semanaKey,
+      obraId: agregandoExtraContexto.obraId != null ? Number(agregandoExtraContexto.obraId) : null,
+      nombre: agregandoExtraContexto.nombre,
+      descripcion: datos.descripcion,
+      monto: Number(datos.monto) || 0,
+      formalidad: datos.formalidad,
+      medio: datos.medio,
+      creadoPor: currentRole,
+    }, setExtrasPago);
+    setAgregandoExtraContexto(null);
+  }
+  function eliminarExtraPago(id) {
+    deleteRecord("extras_pago", id, setExtrasPago);
   }
 
   // ---------- Liquidación formal (UOCRA CCT 76/75 Zona A — San Juan, Ley 22.250) ----------
@@ -7395,6 +7438,7 @@ export default function ConcretarApp() {
                               {filasSemana.map((f) => {
                                 const key = `${semanaKey}|${f.obraId}|${f.nombre}`;
                                 const seleccionado = seleccionLiquidacion.includes(key);
+                                const extras = extrasDe(semanaKey, f.obraId, f.nombre);
                                 return (
                                   <tr
                                     key={key}
@@ -7404,7 +7448,27 @@ export default function ConcretarApp() {
                                     <td className="px-2 py-1">
                                       <input type="checkbox" checked={seleccionado} onChange={() => toggleSeleccionLiquidacion(key)} className="h-3.5 w-3.5" />
                                     </td>
-                                    <td className="px-2 py-1 font-medium text-slate-900">{f.nombre}</td>
+                                    <td className="px-2 py-1 font-medium text-slate-900">
+                                      <div>{f.nombre}</div>
+                                      {extras.map((ex) => (
+                                        <div key={ex.id} className="mt-0.5 flex items-center gap-1 text-[10px] font-normal text-slate-500">
+                                          <span>+ {ex.descripcion}: {fmtARS(ex.monto)} ({ex.formalidad} · {ex.medio})</span>
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); eliminarExtraPago(ex.id); }}
+                                            className="text-rose-400 hover:text-rose-600"
+                                            title="Eliminar extra"
+                                          >
+                                            <X size={10} />
+                                          </button>
+                                        </div>
+                                      ))}
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); setAgregandoExtraContexto({ semanaKey, obraId: f.obraId, nombre: f.nombre }); }}
+                                        className="mt-0.5 block text-[10px] font-semibold text-sky-600 hover:underline"
+                                      >
+                                        + Agregar extra
+                                      </button>
+                                    </td>
                                     <td className="px-2 py-1 text-slate-600">{f.obraNombre}</td>
                                     <td className="px-2 py-1 text-right font-mono text-slate-500">{f.horas}</td>
                                     <td className="px-2 py-1 text-right font-mono text-slate-800">{fmtARS(f.monto)}</td>
@@ -7639,7 +7703,7 @@ export default function ConcretarApp() {
                   </div>
                 ) : (
                   semanasHistorialOrdenadas.map((semanaKey) => {
-                    const { personal: pagosSemana, tanteros: avancesSemana } = semanasHistorial[semanaKey];
+                    const { personal: pagosSemana, tanteros: avancesSemana, extras: extrasSemana } = semanasHistorial[semanaKey];
                     const totalSemana =
                       pagosSemana.reduce((s, a) => s + (a.montoAbonado || 0), 0) + avancesSemana.reduce((s, av) => s + (av.monto || 0), 0);
                     return (
@@ -7675,6 +7739,19 @@ export default function ConcretarApp() {
                                     </div>
                                   );
                                 })}
+                              </div>
+                            </div>
+                          )}
+                          {extrasSemana.length > 0 && (
+                            <div className={(pagosSemana.length > 0 || avancesSemana.length > 0) ? "border-t border-stone-100 pt-3" : ""}>
+                              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Extras</div>
+                              <div className="space-y-1">
+                                {extrasSemana.map((ex) => (
+                                  <div key={ex.id} className="flex items-center justify-between text-sm">
+                                    <span className="text-slate-700">{ex.nombre} <span className="text-xs text-slate-400">({ex.descripcion} · {ex.formalidad} · {ex.medio})</span></span>
+                                    <span className="font-mono text-slate-800">{fmtARS(ex.monto)}</span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           )}
@@ -7924,6 +8001,51 @@ export default function ConcretarApp() {
               </>
             )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {agregandoExtraContexto && (
+          <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={() => setAgregandoExtraContexto(null)}>
+            <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Extra para {agregandoExtraContexto.nombre}</h3>
+                  <p className="text-xs text-slate-400">Solo queda anotado junto al pago — no es un gasto de la empresa ni resta de ninguna cuenta.</p>
+                </div>
+                <button onClick={() => setAgregandoExtraContexto(null)}><X size={18} /></button>
+              </div>
+              <form
+                className="grid grid-cols-1 gap-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.target);
+                  if (!f.get("descripcion")) return;
+                  agregarExtraPago({
+                    descripcion: f.get("descripcion"),
+                    monto: f.get("monto"),
+                    formalidad: f.get("formalidad"),
+                    medio: f.get("medio"),
+                  });
+                }}
+              >
+                <Field label="Descripción">
+                  <input name="descripcion" required placeholder="Ej: Combustible, adelanto, gasto por fuera..." className={inputCls} />
+                </Field>
+                <Field label="Monto ($)">
+                  <MoneyInput name="monto" className={inputCls} />
+                </Field>
+                <Field label="Formalidad">
+                  <select name="formalidad" defaultValue="Negro" className={inputCls}>{FORMALIDADES.map((x) => <option key={x}>{x}</option>)}</select>
+                </Field>
+                <Field label="Medio">
+                  <select name="medio" defaultValue="Efectivo" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
+                </Field>
+                <div className="flex items-center gap-2">
+                  <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
+                  <button type="button" onClick={() => setAgregandoExtraContexto(null)} className={btnGhost}>Cancelar</button>
+                </div>
+              </form>
             </div>
           </div>
         )}
