@@ -2142,7 +2142,7 @@ const ALERT_TONE_ICON = {
 
 // Tarjeta visual para el panel de Alertas: ícono en círculo + título + detalle opcional.
 // Reemplaza las franjas de texto planas por bloques que se agrupan en grilla en PC.
-function AlertCard({ tone = "amber", icon: Icon = AlertTriangle, title, children }) {
+function AlertCard({ tone = "amber", icon: Icon = AlertTriangle, title, children, onDescartar }) {
   return (
     <div className={`rounded-xl border p-3.5 shadow-sm ${ALERT_TONE_CARD[tone]}`}>
       <div className="flex items-start gap-3">
@@ -2150,7 +2150,18 @@ function AlertCard({ tone = "amber", icon: Icon = AlertTriangle, title, children
           <Icon size={16} />
         </span>
         <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="text-sm font-semibold leading-snug">{title}</div>
+          <div className="flex items-start justify-between gap-2">
+            <div className="text-sm font-semibold leading-snug">{title}</div>
+            {onDescartar && (
+              <button
+                onClick={onDescartar}
+                title="Marcar como revisado — deja de aparecer acá"
+                className="flex shrink-0 items-center justify-center rounded-full border border-current/30 p-1 hover:bg-white/60"
+              >
+                <Check size={13} />
+              </button>
+            )}
+          </div>
           {children}
         </div>
       </div>
@@ -2468,6 +2479,9 @@ export default function ConcretarApp() {
   const [avancesTanteros, setAvancesTanteros] = useState(isSupabaseConfigured ? [] : DEMO_AVANCES_TANTEROS);
   // Etapas de la Planificación (Gantt) de cada obra.
   const [etapasObraRaw, setEtapasObra] = useState(isSupabaseConfigured ? [] : DEMO_ETAPAS_OBRA);
+  // Alertas que el usuario ya revisó y marcó con el tick — no vuelven a
+  // aparecer salvo que cambie lo que las generó (ver alertaDescartada más abajo).
+  const [alertasDescartadas, setAlertasDescartadas] = useState([]);
 
   // Papelera general: un registro "eliminado" (con fecha en eliminadoEn) deja de
   // contar en toda la app —listados, selectores y balances— hasta que se
@@ -2512,7 +2526,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -2522,7 +2536,7 @@ export default function ConcretarApp() {
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
           sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"), sbSelect("cobros_socios"),
-          sbSelect("prestamos_pagos"), sbSelect("etapas_obra"),
+          sbSelect("prestamos_pagos"), sbSelect("etapas_obra"), sbSelect("alertas_descartadas"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -2560,6 +2574,7 @@ export default function ConcretarApp() {
         setCobrosSocios(cs);
         setPrestamosPagos(pp);
         setEtapasObra(eo);
+        setAlertasDescartadas(ad);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -3161,6 +3176,27 @@ export default function ConcretarApp() {
   // confirmarPedido) — se cuentan ahí (ocPendientesAprobacion), no acá, para no
   // duplicar la alerta. Solo quedan acá las compras generales, que no tienen obra.
   const pedidosPorAprobar = pedidosMateriales.filter((p) => p.estado === "Solicitado" && p.obraId == null && !obraIdsPapelera.has(p.obraId));
+
+  // "Visto bueno" de alertas: una vez descartada (tick) no vuelve a aparecer,
+  // salvo que cambie lo que la generó — se identifica con un tipo fijo más
+  // una "clave" que resume qué se está mostrando ahora (los ids involucrados
+  // para las que tienen una lista concreta detrás; el día o la semana actual
+  // para las que no tienen ningún id propio, como el desvío o el recordatorio
+  // de apertura/cierre).
+  function claveDeLista(items) {
+    return items.map((x) => x.id).sort((a, b) => a - b).join(",");
+  }
+  function claveSemanaActual() {
+    return fechaAISO(lunesOAntes(fechaLocal(hoyISO())));
+  }
+  function alertaDescartada(tipo, clave, obraId = null) {
+    if (!clave) return false;
+    return alertasDescartadas.some((a) => a.tipo === tipo && a.clave === clave && (a.obraId ?? null) === (obraId ?? null));
+  }
+  function descartarAlerta(tipo, clave, obraId = null) {
+    if (!clave) return;
+    addRecord("alertas_descartadas", { tipo, clave, obraId }, setAlertasDescartadas);
+  }
 
   const totalAlertas =
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
@@ -6168,7 +6204,35 @@ export default function ConcretarApp() {
               const pedidosAprobarObra = pedidosPorAprobar.filter((p) => p.obraId === obraSel.id);
               const ocAprobacionObra = ocPendientesAprobacion.filter((o) => o.obraId === obraSel.id);
               const asistEditadasObra = asistenciasEditadas.filter((a) => a.obraId === obraSel.id);
-              const totalAlertasObra = herrAtencionObra.length + cierreObra.length + aperturaObra.length + matVencidosObra.length + matProximosObra.length + pedidosAprobarObra.length + ocAprobacionObra.length + asistEditadasObra.length + (hayDesvioAlerta ? 1 : 0);
+
+              // Tick de "visto bueno" por card — una vez descartada no cuenta más
+              // ni se muestra, salvo que cambien los ids/el día detrás de ella.
+              const claveHerrObra = claveDeLista(herrAtencionObra);
+              const herrObraDescartada = herrAtencionObra.length > 0 && alertaDescartada("herramientas_mal_estado", claveHerrObra, obraSel.id);
+              const cierreObraDescartada = cierreObra.length > 0 && alertaDescartada("cierre_ventana", hoyISO(), obraSel.id);
+              const aperturaObraDescartada = aperturaObra.length > 0 && alertaDescartada("apertura_semana", claveSemanaActual(), obraSel.id);
+              const claveMatVencidosObra = claveDeLista(matVencidosObra);
+              const matVencidosObraDescartada = matVencidosObra.length > 0 && alertaDescartada("materiales_vencidos", claveMatVencidosObra, obraSel.id);
+              const claveMatProximosObra = claveDeLista(matProximosObra);
+              const matProximosObraDescartada = matProximosObra.length > 0 && alertaDescartada("materiales_proximos", claveMatProximosObra, obraSel.id);
+              const clavePedidosAprobarObra = claveDeLista(pedidosAprobarObra);
+              const pedidosAprobarObraDescartada = pedidosAprobarObra.length > 0 && alertaDescartada("pedidos_aprobar", clavePedidosAprobarObra, obraSel.id);
+              const claveOcAprobacionObra = claveDeLista(ocAprobacionObra);
+              const ocAprobacionObraDescartada = ocAprobacionObra.length > 0 && alertaDescartada("oc_pendientes", claveOcAprobacionObra, obraSel.id);
+              const claveAsistEditadasObra = claveDeLista(asistEditadasObra);
+              const asistEditadasObraDescartada = asistEditadasObra.length > 0 && alertaDescartada("asistencias_editadas", claveAsistEditadasObra, obraSel.id);
+              const desvioObraDescartado = hayDesvioAlerta && alertaDescartada("desvio_general", hoyISO(), obraSel.id);
+
+              const totalAlertasObra =
+                (herrObraDescartada ? 0 : herrAtencionObra.length) +
+                (cierreObraDescartada ? 0 : cierreObra.length) +
+                (aperturaObraDescartada ? 0 : aperturaObra.length) +
+                (matVencidosObraDescartada ? 0 : matVencidosObra.length) +
+                (matProximosObraDescartada ? 0 : matProximosObra.length) +
+                (pedidosAprobarObraDescartada ? 0 : pedidosAprobarObra.length) +
+                (ocAprobacionObraDescartada ? 0 : ocAprobacionObra.length) +
+                (asistEditadasObraDescartada ? 0 : asistEditadasObra.length) +
+                (desvioObraDescartado ? 0 : (hayDesvioAlerta ? 1 : 0));
 
               // Historial de gastos de esta obra — mismo criterio que el "Gastado" del
               // Balance por obra (Gastos y Facturas + mano de obra), pero acá se ve cada
@@ -6268,29 +6332,59 @@ export default function ConcretarApp() {
                       <div className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 size={16} /> Todo en orden en esta obra.</div>
                     ) : (
                       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                        {hayDesvioAlerta && (
-                          <AlertCard tone={desvioPct > DESVIO_DANGER_PCT ? "rose" : "amber"} icon={AlertTriangle} title={`Está ${desvioPct.toFixed(1)}% por encima de lo planificado a la fecha.`} />
+                        {hayDesvioAlerta && !desvioObraDescartado && (
+                          <AlertCard
+                            tone={desvioPct > DESVIO_DANGER_PCT ? "rose" : "amber"}
+                            icon={AlertTriangle}
+                            title={`Está ${desvioPct.toFixed(1)}% por encima de lo planificado a la fecha.`}
+                            onDescartar={() => descartarAlerta("desvio_general", hoyISO(), obraSel.id)}
+                          />
                         )}
-                        {ocAprobacionObra.length > 0 && (
-                          <AlertCard tone="rose" icon={AlertTriangle} title={`${ocAprobacionObra.length} orden(es) de compra esperando aprobación.`} />
+                        {ocAprobacionObra.length > 0 && !ocAprobacionObraDescartada && (
+                          <AlertCard
+                            tone="rose"
+                            icon={AlertTriangle}
+                            title={`${ocAprobacionObra.length} orden(es) de compra esperando aprobación.`}
+                            onDescartar={() => descartarAlerta("oc_pendientes", claveOcAprobacionObra, obraSel.id)}
+                          />
                         )}
-                        {herrAtencionObra.length > 0 && (
-                          <AlertCard tone="amber" icon={AlertTriangle} title={`${herrAtencionObra.length} herramienta(s) en mal estado o rota(s) acá.`}>
+                        {herrAtencionObra.length > 0 && !herrObraDescartada && (
+                          <AlertCard
+                            tone="amber"
+                            icon={AlertTriangle}
+                            title={`${herrAtencionObra.length} herramienta(s) en mal estado o rota(s) acá.`}
+                            onDescartar={() => descartarAlerta("herramientas_mal_estado", claveHerrObra, obraSel.id)}
+                          >
                             <ul className="space-y-0.5 text-xs">{herrAtencionObra.map((h) => <li key={h.id} className="truncate">{h.nombre} ({h.numeroSerie}) — {h.estado}</li>)}</ul>
                           </AlertCard>
                         )}
-                        {cierreObra.length > 0 && (
-                          <AlertCard tone="rose" icon={AlertTriangle} title="Falta menos de 1hs para el cierre — hacé el control de herramientas.">
+                        {cierreObra.length > 0 && !cierreObraDescartada && (
+                          <AlertCard
+                            tone="rose"
+                            icon={AlertTriangle}
+                            title="Falta menos de 1hs para el cierre — hacé el control de herramientas."
+                            onDescartar={() => descartarAlerta("cierre_ventana", hoyISO(), obraSel.id)}
+                          >
                             <button onClick={() => abrirAuditoria(obraSel.id, "Cierre")} className="text-xs font-semibold underline hover:no-underline">Hacer control de cierre ahora →</button>
                           </AlertCard>
                         )}
-                        {aperturaObra.length > 0 && (
-                          <AlertCard tone="amber" icon={AlertTriangle} title="Falta validar el inventario inicial de la semana.">
+                        {aperturaObra.length > 0 && !aperturaObraDescartada && (
+                          <AlertCard
+                            tone="amber"
+                            icon={AlertTriangle}
+                            title="Falta validar el inventario inicial de la semana."
+                            onDescartar={() => descartarAlerta("apertura_semana", claveSemanaActual(), obraSel.id)}
+                          >
                             <button onClick={() => abrirAuditoria(obraSel.id, "Apertura")} className="text-xs font-semibold underline hover:no-underline">Hacer control de apertura ahora →</button>
                           </AlertCard>
                         )}
-                        {matVencidosObra.length > 0 && (
-                          <AlertCard tone="rose" icon={Package} title={`${matVencidosObra.length} pedido${matVencidosObra.length > 1 ? "s" : ""} pendiente${matVencidosObra.length > 1 ? "s" : ""} para esta obra — vencido${matVencidosObra.length > 1 ? "s" : ""}`}>
+                        {matVencidosObra.length > 0 && !matVencidosObraDescartada && (
+                          <AlertCard
+                            tone="rose"
+                            icon={Package}
+                            title={`${matVencidosObra.length} pedido${matVencidosObra.length > 1 ? "s" : ""} pendiente${matVencidosObra.length > 1 ? "s" : ""} para esta obra — vencido${matVencidosObra.length > 1 ? "s" : ""}`}
+                            onDescartar={() => descartarAlerta("materiales_vencidos", claveMatVencidosObra, obraSel.id)}
+                          >
                             <div className="space-y-1">
                               {matVencidosObra.map((p) => (
                                 <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
@@ -6301,8 +6395,13 @@ export default function ConcretarApp() {
                             </div>
                           </AlertCard>
                         )}
-                        {matProximosObra.length > 0 && (
-                          <AlertCard tone="amber" icon={Package} title={`${matProximosObra.length} pedido${matProximosObra.length > 1 ? "s" : ""} pendiente${matProximosObra.length > 1 ? "s" : ""} para esta obra — llega${matProximosObra.length > 1 ? "n" : ""} pronto`}>
+                        {matProximosObra.length > 0 && !matProximosObraDescartada && (
+                          <AlertCard
+                            tone="amber"
+                            icon={Package}
+                            title={`${matProximosObra.length} pedido${matProximosObra.length > 1 ? "s" : ""} pendiente${matProximosObra.length > 1 ? "s" : ""} para esta obra — llega${matProximosObra.length > 1 ? "n" : ""} pronto`}
+                            onDescartar={() => descartarAlerta("materiales_proximos", claveMatProximosObra, obraSel.id)}
+                          >
                             <div className="space-y-1">
                               {matProximosObra.map((p) => (
                                 <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
@@ -6313,8 +6412,13 @@ export default function ConcretarApp() {
                             </div>
                           </AlertCard>
                         )}
-                        {pedidosAprobarObra.length > 0 && (
-                          <AlertCard tone="sky" icon={ShoppingCart} title={`${pedidosAprobarObra.length} pedido${pedidosAprobarObra.length > 1 ? "s" : ""} para esta obra esperando aprobación`}>
+                        {pedidosAprobarObra.length > 0 && !pedidosAprobarObraDescartada && (
+                          <AlertCard
+                            tone="sky"
+                            icon={ShoppingCart}
+                            title={`${pedidosAprobarObra.length} pedido${pedidosAprobarObra.length > 1 ? "s" : ""} para esta obra esperando aprobación`}
+                            onDescartar={() => descartarAlerta("pedidos_aprobar", clavePedidosAprobarObra, obraSel.id)}
+                          >
                             <div className="space-y-1">
                               {pedidosAprobarObra.map((p) => (
                                 <button key={p.id} onClick={() => { setTab("materiales"); setVistaMateriales("materiales"); setObraPresupuestoId(p.obraId); }} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1 text-left text-xs hover:bg-white">
@@ -6327,8 +6431,13 @@ export default function ConcretarApp() {
                             </div>
                           </AlertCard>
                         )}
-                        {asistEditadasObra.length > 0 && (
-                          <AlertCard tone="sky" icon={AlertTriangle} title={`${asistEditadasObra.length} registro(s) de asistencia modificados.`} />
+                        {asistEditadasObra.length > 0 && !asistEditadasObraDescartada && (
+                          <AlertCard
+                            tone="sky"
+                            icon={AlertTriangle}
+                            title={`${asistEditadasObra.length} registro(s) de asistencia modificados.`}
+                            onDescartar={() => descartarAlerta("asistencias_editadas", claveAsistEditadasObra, obraSel.id)}
+                          />
                         )}
                       </div>
                     )}
