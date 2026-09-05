@@ -3170,14 +3170,12 @@ export default function ConcretarApp() {
   const NAV = [
     { id: "general", label: "General", icon: LayoutDashboard },
     { id: "obras", label: "Obras", icon: Building2 },
-    { id: "asistencia", label: "Asistencia", icon: ClipboardCheck },
     { id: "herramientas", label: "Herramientas", icon: Wrench },
     { id: "ingresos", label: "Ingresos", icon: TrendingUp },
     { id: "facturas", label: "Gastos y Facturas", icon: Receipt },
-    { id: "personal", label: "Personal/Cuadrillas", icon: Users },
+    { id: "personal", label: "Personal", icon: Users },
     { id: "cuentas", label: "Cuentas", icon: Landmark },
     { id: "cobros_socios", label: "Cobros Ricardo y Pablo", icon: Banknote },
-    { id: "liquidacion", label: "Salario Personal", icon: Wallet },
     { id: "proveedores", label: "Clientes/Proveedores", icon: Truck },
     { id: "calendario", label: "Calendario", icon: CalendarDays },
     // Todavía usamos poco estas dos secciones — quedan al final del menú y resaltadas en amarillo.
@@ -3572,6 +3570,8 @@ export default function ConcretarApp() {
   // en el filtro (desde el detalle de esa obra).
   const [asignarPersonalContexto, setAsignarPersonalContexto] = useState(null);
   const [showAsistenciaForm, setShowAsistenciaForm] = useState(false);
+  const [showAsistenciasHistorial, setShowAsistenciasHistorial] = useState(false);
+  const [showLiquidacionModal, setShowLiquidacionModal] = useState(false);
   const emptyAsistenciaForm = { fecha: hoyISO(), nombre: "", obraId: obras[0]?.id ?? "", horas: 8, estado: "Presente" };
   const [asistenciaForm, setAsistenciaForm] = useState(emptyAsistenciaForm);
   const [asistenciaSesion, setAsistenciaSesion] = useState([]);
@@ -6622,8 +6622,19 @@ export default function ConcretarApp() {
         {tab === "personal" && !viewingPerson && (
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Personal/Cuadrillas</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Personal</h2>
               <div className="flex flex-wrap gap-2">
+                <button onClick={abrirCargaAsistencia} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
+                  <ClipboardCheck size={16} /> Cargar asistencia
+                </button>
+                <button onClick={() => setShowAsistenciasHistorial(true)} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
+                  <ClipboardCheck size={16} /> Ver asistencias
+                </button>
+                {canVerLiquidacion && (
+                  <button onClick={() => setShowLiquidacionModal(true)} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
+                    <Wallet size={16} /> Salario Personal
+                  </button>
+                )}
                 <button
                   onClick={() => setShowCostosPanel((v) => !v)}
                   className={`flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-semibold ${
@@ -7098,149 +7109,153 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "asistencia" && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Asistencia</h2>
-              <button onClick={abrirCargaAsistencia} className={btnPrimary}>
-                <Plus size={16} /> Cargar asistencia
-              </button>
+        {showAsistenciaForm && (
+          <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={finalizarCargaAsistencia}>
+            <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900">Cargar asistencia</h3>
+                <button onClick={finalizarCargaAsistencia}><X size={18} /></button>
+              </div>
+              <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={submitAsistenciaForm}>
+                <Field label="Fecha">
+                  <input type="date" required value={asistenciaForm.fecha} onChange={(e) => asf("fecha")(e.target.value)} className={inputCls} />
+                </Field>
+                <Field label="Nombre y apellido">
+                  <select required value={asistenciaForm.nombre} onChange={(e) => asf("nombre")(e.target.value)} className={inputCls}>
+                    <option value="">-- Elegí a la persona --</option>
+                    {personal.map((p) => <option key={p.id}>{nombreCompletoDe(p)}</option>)}
+                  </select>
+                </Field>
+                <Field label="Centro de costo / Obra">
+                  <select value={asistenciaForm.obraId} onChange={(e) => asf("obraId")(e.target.value)} className={inputCls}>
+                    {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                  </select>
+                </Field>
+                <Field label="Hs trabajadas">
+                  <input type="number" required value={asistenciaForm.horas} onChange={(e) => asf("horas")(e.target.value)} className={inputCls} />
+                </Field>
+                <Field label="Estado">
+                  <select value={asistenciaForm.estado} onChange={(e) => asf("estado")(e.target.value)} className={inputCls}>
+                    {ESTADOS_ASISTENCIA.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </Field>
+                <div className="flex flex-col justify-end gap-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cargado por</span>
+                  <span className="rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-slate-500">{currentRole} (vos)</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+                  <button type="submit" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+                    Confirmar y cargar siguiente
+                  </button>
+                  <button type="button" onClick={finalizarCargaAsistencia} className={btnGhost}>Finalizar</button>
+                </div>
+              </form>
+
+              {asistenciaSesion.length > 0 && (
+                <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide"><CheckCircle2 size={13} /> Cargados en esta tanda ({asistenciaSesion.length})</div>
+                  {asistenciaSesion.join(", ")}
+                </div>
+              )}
             </div>
+          </div>
+        )}
 
-            {showAsistenciaForm && (
-              <Panel title="Cargar asistencia" action={<button onClick={finalizarCargaAsistencia}><X size={16} /></button>}>
-                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitAsistenciaForm}>
-                  <Field label="Fecha">
-                    <input type="date" required value={asistenciaForm.fecha} onChange={(e) => asf("fecha")(e.target.value)} className={inputCls} />
-                  </Field>
-                  <Field label="Nombre y apellido">
-                    <select required value={asistenciaForm.nombre} onChange={(e) => asf("nombre")(e.target.value)} className={inputCls}>
-                      <option value="">-- Elegí a la persona --</option>
-                      {personal.map((p) => <option key={p.id}>{nombreCompletoDe(p)}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Centro de costo / Obra">
-                    <select value={asistenciaForm.obraId} onChange={(e) => asf("obraId")(e.target.value)} className={inputCls}>
-                      {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Hs trabajadas">
-                    <input type="number" required value={asistenciaForm.horas} onChange={(e) => asf("horas")(e.target.value)} className={inputCls} />
-                  </Field>
-                  <Field label="Estado">
-                    <select value={asistenciaForm.estado} onChange={(e) => asf("estado")(e.target.value)} className={inputCls}>
-                      {ESTADOS_ASISTENCIA.map((s) => <option key={s}>{s}</option>)}
-                    </select>
-                  </Field>
-                  <div className="flex flex-col justify-end gap-1">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cargado por</span>
-                    <span className="rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-slate-500">{currentRole} (vos)</span>
-                  </div>
-                  <div className="flex items-end gap-2 md:col-span-3">
-                    <button type="submit" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
-                      Confirmar y cargar siguiente
-                    </button>
-                    <button type="button" onClick={finalizarCargaAsistencia} className={btnGhost}>Finalizar</button>
-                  </div>
-                </form>
+        {showAsistenciasHistorial && (
+          <div
+            className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+            onClick={() => { setShowAsistenciasHistorial(false); cancelEditAsistencia(); }}
+          >
+            <div className="w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900">Asistencias cargadas</h3>
+                <button onClick={() => { setShowAsistenciasHistorial(false); cancelEditAsistencia(); }}><X size={18} /></button>
+              </div>
 
-                {asistenciaSesion.length > 0 && (
-                  <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-                    <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide"><CheckCircle2 size={13} /> Cargados en esta tanda ({asistenciaSesion.length})</div>
-                    {asistenciaSesion.join(", ")}
-                  </div>
-                )}
-
-              </Panel>
-            )}
-
-            {editingAsistenciaId && editAsistenciaDraft && (
-              <Panel title="Editar asistencia" action={<button onClick={cancelEditAsistencia}><X size={16} /></button>}>
-                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitEditAsistencia}>
-                  <Field label="Fecha">
-                    <input type="date" required value={editAsistenciaDraft.fecha} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, fecha: e.target.value }))} className={inputCls} />
-                  </Field>
-                  <Field label="Nombre y apellido">
-                    <select required value={editAsistenciaDraft.nombre} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, nombre: e.target.value }))} className={inputCls}>
-                      {personal.map((p) => <option key={p.id}>{nombreCompletoDe(p)}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Centro de costo / Obra">
-                    <select value={editAsistenciaDraft.obraId} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, obraId: e.target.value }))} className={inputCls}>
-                      {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Hs trabajadas">
-                    <input type="number" required value={editAsistenciaDraft.horas} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, horas: e.target.value }))} className={inputCls} />
-                  </Field>
-                  <Field label="Estado">
-                    <select value={editAsistenciaDraft.estado} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, estado: e.target.value }))} className={inputCls}>
-                      {ESTADOS_ASISTENCIA.map((s) => <option key={s}>{s}</option>)}
-                    </select>
-                  </Field>
-                  <div className="md:col-span-3">
-                    <Field label="Motivo de la modificación (obligatorio)">
-                      <textarea
-                        required
-                        value={motivoEdicionAsistencia}
-                        onChange={(e) => setMotivoEdicionAsistencia(e.target.value)}
-                        rows={2}
-                        placeholder="Ej: me equivoqué de persona, corrección de horas cargadas..."
-                        className={inputCls}
-                      />
+              {editingAsistenciaId && editAsistenciaDraft && (
+                <Panel title="Editar asistencia" action={<button onClick={cancelEditAsistencia}><X size={16} /></button>}>
+                  <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={submitEditAsistencia}>
+                    <Field label="Fecha">
+                      <input type="date" required value={editAsistenciaDraft.fecha} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, fecha: e.target.value }))} className={inputCls} />
                     </Field>
-                  </div>
-                  <div className="flex items-end gap-2 md:col-span-3">
-                    <button type="submit" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar corrección</button>
-                    <button type="button" onClick={cancelEditAsistencia} className={btnGhost}>Cancelar</button>
-                  </div>
-                </form>
-              </Panel>
-            )}
+                    <Field label="Nombre y apellido">
+                      <select required value={editAsistenciaDraft.nombre} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, nombre: e.target.value }))} className={inputCls}>
+                        {personal.map((p) => <option key={p.id}>{nombreCompletoDe(p)}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Centro de costo / Obra">
+                      <select value={editAsistenciaDraft.obraId} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, obraId: e.target.value }))} className={inputCls}>
+                        {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Hs trabajadas">
+                      <input type="number" required value={editAsistenciaDraft.horas} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, horas: e.target.value }))} className={inputCls} />
+                    </Field>
+                    <Field label="Estado">
+                      <select value={editAsistenciaDraft.estado} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, estado: e.target.value }))} className={inputCls}>
+                        {ESTADOS_ASISTENCIA.map((s) => <option key={s}>{s}</option>)}
+                      </select>
+                    </Field>
+                    <div className="md:col-span-2">
+                      <Field label="Motivo de la modificación (obligatorio)">
+                        <textarea
+                          required
+                          value={motivoEdicionAsistencia}
+                          onChange={(e) => setMotivoEdicionAsistencia(e.target.value)}
+                          rows={2}
+                          placeholder="Ej: me equivoqué de persona, corrección de horas cargadas..."
+                          className={inputCls}
+                        />
+                      </Field>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+                      <button type="submit" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar corrección</button>
+                      <button type="button" onClick={cancelEditAsistencia} className={btnGhost}>Cancelar</button>
+                    </div>
+                  </form>
+                </Panel>
+              )}
 
-            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Nombre</th><th className="px-2 py-1.5">Centro de costo</th><th className="px-2 py-1.5">Hs</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Cargado por</th><th className="px-2 py-1.5"></th></tr>
-                </thead>
-                <tbody>
-                  {[...asistencia].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((a) => {
-                    const obra = obras.find((o) => o.id === a.obraId);
-                    return (
-                      <tr key={a.id} className="border-t border-stone-100">
-                        <td className="px-2 py-1 text-slate-600">{fmtFecha(a.fecha)}</td>
-                        <td className="px-2 py-1 font-medium text-slate-900">
-                          <span className="flex items-center gap-1.5">
-                            {a.nombre}
-                            {a.editado && <span title={`Editado por ${a.editadoPor}: ${a.motivoEdicion}`}><AlertTriangle size={12} className="text-sky-500" /></span>}
-                          </span>
-                        </td>
-                        <td className="px-2 py-1 text-slate-600">{obra?.nombre}</td>
-                        <td className="px-2 py-1 font-mono text-slate-700">{a.horas}</td>
-                        <td className="px-2 py-1"><Badge estado={a.estado} /></td>
-                        <td className="px-2 py-1 text-slate-500">{a.cargadoPor}</td>
-                        <td className="px-2 py-1"><button onClick={() => startEditAsistencia(a)} className={btnGhost}>Editar</button></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="max-h-[65vh] overflow-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                <table className="w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Nombre</th><th className="px-2 py-1.5">Centro de costo</th><th className="px-2 py-1.5">Hs</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Cargado por</th><th className="px-2 py-1.5"></th></tr>
+                  </thead>
+                  <tbody>
+                    {[...asistencia].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)).map((a) => {
+                      const obra = obras.find((o) => o.id === a.obraId);
+                      return (
+                        <tr key={a.id} className="border-t border-stone-100">
+                          <td className="px-2 py-1 text-slate-600">{fmtFecha(a.fecha)}</td>
+                          <td className="px-2 py-1 font-medium text-slate-900">
+                            <span className="flex items-center gap-1.5">
+                              {a.nombre}
+                              {a.editado && <span title={`Editado por ${a.editadoPor}: ${a.motivoEdicion}`}><AlertTriangle size={12} className="text-sky-500" /></span>}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1 text-slate-600">{obra?.nombre}</td>
+                          <td className="px-2 py-1 font-mono text-slate-700">{a.horas}</td>
+                          <td className="px-2 py-1"><Badge estado={a.estado} /></td>
+                          <td className="px-2 py-1 text-slate-500">{a.cargadoPor}</td>
+                          <td className="px-2 py-1"><button onClick={() => startEditAsistencia(a)} className={btnGhost}>Editar</button></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
 
-        {tab === "liquidacion" && !canVerLiquidacion && (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
-            <Wallet size={28} className="text-slate-400" />
-            <div className="text-sm font-semibold text-slate-700">Sección restringida</div>
-            <div className="max-w-sm text-xs text-slate-500">Solo Gerente y Contador pueden ver y gestionar los pagos de jornales.</div>
-          </div>
-        )}
-
-        {tab === "liquidacion" && canVerLiquidacion && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Salario Personal</h2>
-
+        {showLiquidacionModal && canVerLiquidacion && (
+          <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-2 sm:p-6" onClick={() => setShowLiquidacionModal(false)}>
+            <div className="max-h-full w-full max-w-6xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900">Salario Personal</h2>
+                <button onClick={() => setShowLiquidacionModal(false)}><X size={20} /></button>
+              </div>
+              <div className="space-y-6">
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setVistaLiquidacion("pendientes")}
@@ -7903,6 +7918,8 @@ export default function ConcretarApp() {
                 )}
               </>
             )}
+              </div>
+            </div>
           </div>
         )}
 
