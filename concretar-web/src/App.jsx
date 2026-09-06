@@ -1452,6 +1452,41 @@ function calcularEstadoPrestamo(p, pagos, hastaOverride) {
   return { saldoCapital, interesAcumulado, totalADevolver: saldoCapital + interesAcumulado, totalPagado, pagos: pagosDelPrestamo, fechaCorte, dias: diasTranscurridosDesde(fechaCorte, hasta) };
 }
 
+// Total adeudado por prestamista (Cuentas → Préstamos): agrupa todos los
+// préstamos de un mismo acreedor para saber cuánto se le debe en total,
+// sumando capital, interés acumulado y el total a devolver de cada uno.
+function TablaTotalesPrestamista({ items }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="px-2 py-1.5">Prestamista</th>
+            <th className="px-2 py-1.5 text-right">Préstamos</th>
+            <th className="px-2 py-1.5 text-right">Capital original</th>
+            <th className="px-2 py-1.5 text-right">Saldo capital</th>
+            <th className="px-2 py-1.5 text-right">Interés acumulado</th>
+            <th className="px-2 py-1.5 text-right">Total a devolver</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((t) => (
+            <tr key={t.acreedor} className="border-t border-stone-100">
+              <td className="px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{t.acreedor}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">{t.cantidad}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(t.capitalOriginal)}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(t.saldoCapital)}</td>
+              <td className="px-2 py-1 text-right font-mono text-amber-700 whitespace-nowrap">{fmtARS(t.interesAcumulado)}</td>
+              <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600 whitespace-nowrap">{fmtARS(t.totalADevolver)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay préstamos cargados.</div>;
@@ -4336,6 +4371,21 @@ export default function ConcretarApp() {
     }
     setPagandoPrestamoId(null);
   }
+  // Total adeudado por prestamista: agrupa todos los préstamos (activos y
+  // pagados) de un mismo acreedor. Los pagados suman naturalmente $0 de saldo
+  // e interés (ya están cancelados), así que no hace falta filtrarlos aparte.
+  const totalesPorPrestamista = Object.values(
+    prestamos.reduce((acc, p) => {
+      const estado = calcularEstadoPrestamo(p, prestamosPagos);
+      const g = (acc[p.acreedor] ??= { acreedor: p.acreedor, cantidad: 0, capitalOriginal: 0, saldoCapital: 0, interesAcumulado: 0, totalADevolver: 0 });
+      g.cantidad += 1;
+      g.capitalOriginal += p.capital || 0;
+      g.saldoCapital += estado.saldoCapital;
+      g.interesAcumulado += estado.interesAcumulado;
+      g.totalADevolver += estado.totalADevolver;
+      return acc;
+    }, {})
+  ).sort((a, b) => b.totalADevolver - a.totalADevolver);
 
   // ---------- Cobros Ricardo y Pablo (retiros de los socios) ----------
   const SOCIOS = ["Ricardo", "Pablo"];
@@ -10725,6 +10775,11 @@ export default function ConcretarApp() {
                 </form>
               </Panel>
             )}
+
+            <div>
+              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Total por prestamista</h3>
+              <TablaTotalesPrestamista items={totalesPorPrestamista} />
+            </div>
 
             <TablaPrestamos
               items={prestamos}
