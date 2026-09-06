@@ -49,6 +49,13 @@ function fmtFecha(fechaStr) {
   const d = fechaLocal(fechaStr);
   return d ? d.toLocaleDateString("es-AR") : "—";
 }
+// "2026-07" -> "Julio de 2026" — usado por IVA/Ganancias y por el agrupado de
+// Movimientos en Cuentas.
+function nombreMesDeClave(clave) {
+  const [y, m] = clave.split("-").map(Number);
+  const nombre = new Date(y, m - 1, 1).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+  return nombre.charAt(0).toUpperCase() + nombre.slice(1);
+}
 // Orden por lo último cargado (no por la fecha que se le puso al registro):
 // así los listados de gastos/ingresos/movimientos siempre muestran arriba lo
 // que se acaba de hacer, sea cual sea la fecha real del gasto — usa el
@@ -507,9 +514,9 @@ function TablaMovimientos({ items, obras, onEditar }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay movimientos.</div>;
   }
-  // Solo gastos/facturas y cobros de socios llevan tipo de factura — el resto
-  // (ingresos, transferencias manuales, préstamos, avances) no tiene ese dato.
-  const tieneFactura = (origen) => origen === "compras_facturas" || origen === "cobros_socios";
+  // Ingresos, gastos/facturas y cobros de socios llevan tipo de factura — el
+  // resto (transferencias manuales, préstamos, avances) no tiene ese dato.
+  const tieneFactura = (origen) => origen === "compras_facturas" || origen === "cobros_socios" || origen === "ingresos";
   return (
     <>
       {/* Celular: tarjetas apiladas, sin scroll horizontal. */}
@@ -741,6 +748,76 @@ function ResumenObrasCuentas({ items }) {
         </table>
       </div>
     </>
+  );
+}
+
+// Balance de IVA mes a mes (Cuentas → IVA y Ganancias): débito fiscal (IVA de
+// lo facturado a clientes) contra crédito fiscal (IVA de las compras con
+// Factura A), arrastrando el saldo a favor de un mes al siguiente.
+function TablaIvaMensual({ items }) {
+  if (items.length === 0) {
+    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos ni gastos con factura A o B cargados.</div>;
+  }
+  return (
+    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="px-2 py-1.5">Mes</th>
+            <th className="px-2 py-1.5 text-right">Débito fiscal</th>
+            <th className="px-2 py-1.5 text-right">Crédito fiscal</th>
+            <th className="px-2 py-1.5 text-right">Saldo a favor usado</th>
+            <th className="px-2 py-1.5 text-right">IVA a pagar</th>
+            <th className="px-2 py-1.5 text-right">Saldo a favor nuevo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((m) => (
+            <tr key={m.clave} className="border-t border-stone-100">
+              <td className="px-2 py-1 font-medium text-slate-900">{nombreMesDeClave(m.clave)}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.debito)}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.credito)}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-500">{fmtARS(m.saldoAFavorAnterior)}</td>
+              <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.aPagar)}</td>
+              <td className={`px-2 py-1 text-right font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Ganancia neta por año (Cuentas → IVA y Ganancias): ingresos menos gastos,
+// ambos netos de IVA, de todo lo que tiene factura (A, B o C) — es la base
+// aproximada para el Impuesto a las Ganancias que después ajusta el contador.
+function TablaGananciasAnual({ items }) {
+  if (items.length === 0) {
+    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos ni gastos con factura cargados.</div>;
+  }
+  return (
+    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="px-2 py-1.5">Año</th>
+            <th className="px-2 py-1.5 text-right">Ingresos netos</th>
+            <th className="px-2 py-1.5 text-right">Gastos netos</th>
+            <th className="px-2 py-1.5 text-right">Ganancia neta</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((r) => (
+            <tr key={r.anio} className="border-t border-stone-100">
+              <td className="px-2 py-1 font-medium text-slate-900">{r.anio}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.ingresos)}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.gastos)}</td>
+              <td className={`px-2 py-1 text-right font-mono font-semibold ${r.ganancia < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(r.ganancia)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -1679,6 +1756,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         concepto: form.concepto,
         monto: Number(form.monto) || 0,
         formalidad: form.formalidad,
+        tipoFactura: form.tipoFactura,
         cuenta: form.cuenta,
         medioBancario: form.cuenta === "Banco" ? form.medioBancario : null,
         estado: form.estado,
@@ -1830,6 +1908,11 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               <Field label="Formalidad">
                 <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
                   {FORMALIDADES.map((x) => <option key={x}>{x}</option>)}
+                </select>
+              </Field>
+              <Field label="Factura">
+                <select value={form.tipoFactura || "Sin factura"} onChange={(e) => setForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
+                  {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
                 </select>
               </Field>
               <Field label="Estado">
@@ -2445,27 +2528,27 @@ export default function ConcretarApp() {
     { id: 3, fecha: "2026-08-10", obraId: 2, proveedor: "Corralón San Martín", item: "Bloques cerámicos x1000", montoEstimado: 1500000, estado: "Pendiente" },
   ];
   const DEMO_FACTURAS = [
-    { id: 1, fecha: "2026-02-15", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 5200000, comprobante: "A-0001-00012345", estado: "Pagada", formalidad: "Blanco", cuenta: "Banco" },
-    { id: 2, fecha: "2026-03-18", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 4800000, comprobante: "A-0001-00012400", estado: "Pagada", formalidad: "Negro", cuenta: "Efectivo" },
-    { id: 3, fecha: "2026-04-20", obraId: 1, ordenCompraId: null, proveedor: "Hierros del Sur", categoria: "Materiales", monto: 6100000, comprobante: "A-0002-00003321", estado: "Pagada", formalidad: "Blanco", cuenta: "Banco" },
-    { id: 4, fecha: "2026-05-22", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 5300000, comprobante: "A-0001-00012551", estado: "Pagada", formalidad: "Negro", cuenta: "Efectivo" },
-    { id: 5, fecha: "2026-06-19", obraId: 1, ordenCompraId: 1, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 4200000, comprobante: "A-0003-00009087", estado: "Pagada", formalidad: "Blanco", cuenta: "Banco" },
-    { id: 6, fecha: "2026-07-25", obraId: 1, ordenCompraId: 2, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 6800000, comprobante: "B-0001-00000442", estado: "Pendiente", formalidad: "Blanco", cuenta: "Banco" },
-    { id: 7, fecha: "2026-05-10", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 3800000, comprobante: "A-0001-00012470", estado: "Pagada", formalidad: "Blanco", cuenta: "Mercado Pago" },
-    { id: 8, fecha: "2026-06-14", obraId: 2, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 2600000, comprobante: "A-0001-00012600", estado: "Pagada", formalidad: "Negro", cuenta: "Efectivo" },
-    { id: 9, fecha: "2026-07-15", obraId: 2, ordenCompraId: 3, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 1500000, comprobante: "A-0004-00001180", estado: "Pendiente", formalidad: "Blanco", cuenta: "Banco" },
-    { id: 10, fecha: "2026-08-20", obraId: 1, ordenCompraId: null, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 2000000, estado: "Pendiente", formalidad: "Blanco", formaPago: "eCheq", fechaPagoEcheq: "2026-10-15", cuenta: "Banco" },
-    { id: 11, fecha: "2026-08-10", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 900000, estado: "Pendiente", formalidad: "Blanco", formaPago: "Cuenta corriente", cuenta: null },
-    { id: 12, fecha: "2026-08-22", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 350000, estado: "Pendiente", formalidad: "Blanco", formaPago: "Cuenta corriente", cuenta: null },
+    { id: 1, fecha: "2026-02-15", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 5200000, comprobante: "A-0001-00012345", estado: "Pagada", formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco" },
+    { id: 2, fecha: "2026-03-18", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 4800000, comprobante: "A-0001-00012400", estado: "Pagada", formalidad: "Negro", tipoFactura: "Sin factura", cuenta: "Efectivo" },
+    { id: 3, fecha: "2026-04-20", obraId: 1, ordenCompraId: null, proveedor: "Hierros del Sur", categoria: "Materiales", monto: 6100000, comprobante: "A-0002-00003321", estado: "Pagada", formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco" },
+    { id: 4, fecha: "2026-05-22", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 5300000, comprobante: "A-0001-00012551", estado: "Pagada", formalidad: "Negro", tipoFactura: "Sin factura", cuenta: "Efectivo" },
+    { id: 5, fecha: "2026-06-19", obraId: 1, ordenCompraId: 1, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 4200000, comprobante: "A-0003-00009087", estado: "Pagada", formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco" },
+    { id: 6, fecha: "2026-07-25", obraId: 1, ordenCompraId: 2, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 6800000, comprobante: "B-0001-00000442", estado: "Pendiente", formalidad: "Blanco", tipoFactura: "B", cuenta: "Banco" },
+    { id: 7, fecha: "2026-05-10", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 3800000, comprobante: "A-0001-00012470", estado: "Pagada", formalidad: "Blanco", tipoFactura: "A", cuenta: "Mercado Pago" },
+    { id: 8, fecha: "2026-06-14", obraId: 2, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 2600000, comprobante: "A-0001-00012600", estado: "Pagada", formalidad: "Negro", tipoFactura: "Sin factura", cuenta: "Efectivo" },
+    { id: 9, fecha: "2026-07-15", obraId: 2, ordenCompraId: 3, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 1500000, comprobante: "A-0004-00001180", estado: "Pendiente", formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco" },
+    { id: 10, fecha: "2026-08-20", obraId: 1, ordenCompraId: null, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 2000000, estado: "Pendiente", formalidad: "Blanco", tipoFactura: "B", formaPago: "eCheq", fechaPagoEcheq: "2026-10-15", cuenta: "Banco" },
+    { id: 11, fecha: "2026-08-10", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 900000, estado: "Pendiente", formalidad: "Blanco", tipoFactura: "C", formaPago: "Cuenta corriente", cuenta: null },
+    { id: 12, fecha: "2026-08-22", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 350000, estado: "Pendiente", formalidad: "Blanco", tipoFactura: "Sin factura", formaPago: "Cuenta corriente", cuenta: null },
   ];
 
   const DEMO_INGRESOS = [
-    { id: 1, fecha: "2026-02-05", obraId: 1, concepto: "Anticipo certificado 1", monto: 20000000, formalidad: "Blanco", cuenta: "Banco", estado: "Cobrado" },
-    { id: 2, fecha: "2026-04-10", obraId: 1, concepto: "Certificado de avance 2", monto: 18000000, formalidad: "Blanco", cuenta: "Banco", estado: "Cobrado" },
-    { id: 3, fecha: "2026-05-15", obraId: 1, concepto: "Adicional acordado con el cliente", monto: 6000000, formalidad: "Negro", cuenta: "Efectivo", estado: "Cobrado" },
-    { id: 4, fecha: "2026-05-01", obraId: 2, concepto: "Anticipo Fam. Ledesma", monto: 12000000, formalidad: "Blanco", cuenta: "Mercado Pago", estado: "Cobrado" },
-    { id: 5, fecha: "2026-06-20", obraId: 2, concepto: "Pago en mano acordado", monto: 4000000, formalidad: "Negro", cuenta: "Efectivo", estado: "Cobrado" },
-    { id: 6, fecha: "2026-09-20", obraId: 1, concepto: "Certificado de avance 3", monto: 15000000, formalidad: "Blanco", cuenta: "Banco", medioBancario: "eCheq", estado: "Pendiente", fechaCobroEstimada: "2026-10-05" },
+    { id: 1, fecha: "2026-02-05", obraId: 1, concepto: "Anticipo certificado 1", monto: 20000000, formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco", estado: "Cobrado" },
+    { id: 2, fecha: "2026-04-10", obraId: 1, concepto: "Certificado de avance 2", monto: 18000000, formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco", estado: "Cobrado" },
+    { id: 3, fecha: "2026-05-15", obraId: 1, concepto: "Adicional acordado con el cliente", monto: 6000000, formalidad: "Negro", tipoFactura: "Sin factura", cuenta: "Efectivo", estado: "Cobrado" },
+    { id: 4, fecha: "2026-05-01", obraId: 2, concepto: "Anticipo Fam. Ledesma", monto: 12000000, formalidad: "Blanco", tipoFactura: "B", cuenta: "Mercado Pago", estado: "Cobrado" },
+    { id: 5, fecha: "2026-06-20", obraId: 2, concepto: "Pago en mano acordado", monto: 4000000, formalidad: "Negro", tipoFactura: "Sin factura", cuenta: "Efectivo", estado: "Cobrado" },
+    { id: 6, fecha: "2026-09-20", obraId: 1, concepto: "Certificado de avance 3", monto: 15000000, formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco", medioBancario: "eCheq", estado: "Pendiente", fechaCobroEstimada: "2026-10-05" },
   ];
 
   const DEMO_PRESTAMOS = [
@@ -4411,7 +4494,7 @@ export default function ConcretarApp() {
   const movimientosCuentas = [
     ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
       id: `ing-${i.id}`, fecha: i.fecha, creadoEn: i.creadoEn, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
-      origen: "ingresos", origenId: i.id,
+      origen: "ingresos", origenId: i.id, tipoFactura: i.tipoFactura,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
       id: `egr-${c.id}`, fecha: c.fecha, creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
@@ -4453,11 +4536,7 @@ export default function ConcretarApp() {
   // Agrupados por mes — el mes actual siempre a la vista, los anteriores quedan
   // colapsados en pestañas desplegables para no alargar la pantalla.
   const claveMesCuentas = (fechaStr) => fechaStr ? fechaStr.slice(0, 7) : "";
-  const nombreMesCuentas = (clave) => {
-    const [y, m] = clave.split("-").map(Number);
-    const nombre = new Date(y, m - 1, 1).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
-    return nombre.charAt(0).toUpperCase() + nombre.slice(1);
-  };
+  const nombreMesCuentas = nombreMesDeClave;
   const mesActualClave = claveMesCuentas(hoyISO());
   const gruposMovimientos = [];
   for (const m of movimientosCuentas) {
@@ -4468,6 +4547,50 @@ export default function ConcretarApp() {
   }
   const movimientosMesActual = gruposMovimientos.find((g) => g.clave === mesActualClave)?.items || [];
   const gruposMovimientosAnteriores = gruposMovimientos.filter((g) => g.clave !== mesActualClave);
+
+  // ---------- IVA y Ganancias ----------
+  // Lo que entra acá no depende de si la operación es "Blanco" o "Negro" en la
+  // caja, sino de si tiene factura (A, B o C) — eso es lo que la hace tributar.
+  // Los montos de Ingresos y Gastos/Facturas ya vienen "finales" (con IVA
+  // incluido cuando corresponde), así que el IVA se saca de adentro del monto.
+  // La C no discrimina IVA (la emite un monotributista), por eso no aporta
+  // débito ni crédito fiscal, pero sí cuenta como ingreso/gasto para Ganancias.
+  const conFacturaGravable = (t) => t === "A" || t === "B" || t === "C";
+  const ivaDeMonto = (monto, tipoFactura) => (tipoFactura === "A" || tipoFactura === "B") ? (monto || 0) - (monto || 0) / 1.21 : 0;
+  const netoDeIvaMonto = (monto, tipoFactura) => (monto || 0) - ivaDeMonto(monto, tipoFactura);
+
+  const ivaPorMes = {};
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && conFacturaGravable(i.tipoFactura)).forEach((i) => {
+    const clave = claveMesCuentas(i.fecha);
+    (ivaPorMes[clave] ??= { debito: 0, credito: 0 }).debito += ivaDeMonto(i.monto, i.tipoFactura);
+  });
+  // Solo la Factura A da crédito fiscal — la B se compra "como consumidor final".
+  comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId) && c.tipoFactura === "A").forEach((c) => {
+    const clave = claveMesCuentas(c.fecha);
+    (ivaPorMes[clave] ??= { debito: 0, credito: 0 }).credito += ivaDeMonto(c.monto, c.tipoFactura);
+  });
+  let saldoAFavorIvaArrastre = 0;
+  const ivaMensual = Object.keys(ivaPorMes).sort().map((clave) => {
+    const { debito, credito } = ivaPorMes[clave];
+    const disponible = credito + saldoAFavorIvaArrastre;
+    const saldoAFavorAnterior = saldoAFavorIvaArrastre;
+    const aPagar = Math.max(0, debito - disponible);
+    saldoAFavorIvaArrastre = Math.max(0, disponible - debito);
+    return { clave, debito, credito, saldoAFavorAnterior, aPagar, saldoAFavorNuevo: saldoAFavorIvaArrastre };
+  }).reverse();
+
+  const gananciasPorAnio = {};
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && conFacturaGravable(i.tipoFactura)).forEach((i) => {
+    const anio = (i.fecha || "").slice(0, 4);
+    (gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 }).ingresos += netoDeIvaMonto(i.monto, i.tipoFactura);
+  });
+  comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId) && conFacturaGravable(c.tipoFactura)).forEach((c) => {
+    const anio = (c.fecha || "").slice(0, 4);
+    (gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 }).gastos += netoDeIvaMonto(c.monto, c.tipoFactura);
+  });
+  const gananciasAnuales = Object.keys(gananciasPorAnio).sort().map((anio) => ({
+    anio, ...gananciasPorAnio[anio], ganancia: gananciasPorAnio[anio].ingresos - gananciasPorAnio[anio].gastos,
+  })).reverse();
 
   // ---------- Resumen por obra (balance de cada obra en curso) ----------
   // Sale de lo que ya tenemos cargado: precio acordado (obra.presupuesto), lo
@@ -10245,6 +10368,7 @@ export default function ConcretarApp() {
                       concepto: f.get("concepto"),
                       monto: Number(f.get("monto")) || 0,
                       formalidad: f.get("formalidad"),
+                      tipoFactura: f.get("tipoFactura"),
                       cuenta: f.get("cuenta"),
                       medioBancario: f.get("cuenta") === "Banco" ? f.get("medioBancario") : null,
                       estado: f.get("estado"),
@@ -10274,6 +10398,9 @@ export default function ConcretarApp() {
                   <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
                   <Field label="Formalidad">
                     <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
+                  </Field>
+                  <Field label="Factura">
+                    <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
                   </Field>
                   <Field label="Cuenta">
                     <select name="cuenta" value={ingresoCuenta} onChange={(e) => setIngresoCuenta(e.target.value)} className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
@@ -10313,7 +10440,7 @@ export default function ConcretarApp() {
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Concepto</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Concepto</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
                 </thead>
                 <tbody>
                   {ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).sort(porCargado).map((i) => {
@@ -10335,6 +10462,13 @@ export default function ConcretarApp() {
                         <td className="px-2 py-1"><Badge estado={i.formalidad || "Blanco"} /></td>
                         <td className="px-2 py-1 text-slate-600">
                           <span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}{i.medioBancario ? ` · ${i.medioBancario}` : ""}</span>
+                        </td>
+                        <td className="px-2 py-1">
+                          {(!i.tipoFactura || i.tipoFactura === "Sin factura") ? (
+                            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
+                          ) : (
+                            <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{i.tipoFactura}</span>
+                          )}
                         </td>
                         <td className="px-2 py-1 text-right font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</td>
                         <td className="px-2 py-1">
@@ -10568,6 +10702,18 @@ export default function ConcretarApp() {
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Balance por obra</h3>
               <ResumenObrasCuentas items={resumenPorObra} />
+            </div>
+
+            <div>
+              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
+              <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B. Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura.</div>
+              <TablaIvaMensual items={ivaMensual} />
+            </div>
+
+            <div>
+              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ganancias por año</h3>
+              <div className="mb-1.5 text-[11px] text-slate-400">Ingresos y gastos netos de IVA, de todo lo que tenga Factura A, B o C — base aproximada para el Impuesto a las Ganancias, sin las deducciones finales que aplica el contador.</div>
+              <TablaGananciasAnual items={gananciasAnuales} />
             </div>
 
             <div>
