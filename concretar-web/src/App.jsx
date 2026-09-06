@@ -1457,123 +1457,63 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay préstamos cargados.</div>;
   }
   return (
-    <>
-      {/* Celular: una tarjeta por préstamo. */}
-      <div className="space-y-2 sm:hidden">
-        {items.map((p) => {
-          const estado = calcularEstadoPrestamo(p, pagos);
-          const proyeccion = (p.estado !== "Pagado" && p.fechaEstimadaDevolucion)
-            ? calcularEstadoPrestamo(p, pagos, p.fechaEstimadaDevolucion).totalADevolver
-            : null;
-          return (
-            <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-3 text-xs shadow-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold text-slate-900">{p.acreedor}</span>
-                <Badge estado={p.estado} />
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
-                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Capital original</div><div className="font-mono font-semibold text-slate-800">{fmtARS(p.capital)}</div></div>
-                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Tasa anual</div><div className="font-mono text-slate-700">{p.tasaAnualPct}%</div></div>
-                {estado.totalPagado > 0 && (
-                  <>
-                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Pagado hasta ahora</div><div className="font-mono text-emerald-700">{fmtARS(estado.totalPagado)}</div></div>
-                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Saldo de capital</div><div className="font-mono text-slate-700">{fmtARS(estado.saldoCapital)}</div></div>
-                  </>
-                )}
-                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Días {estado.totalPagado > 0 ? "desde el último pago" : "transcurridos"}</div><div className="font-mono text-slate-700">{estado.dias}</div></div>
-                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Interés acumulado</div><div className="font-mono text-amber-700">{fmtARS(estado.interesAcumulado)}</div></div>
-                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Total a devolver</div><div className="font-mono font-semibold text-rose-600">{fmtARS(estado.totalADevolver)}</div></div>
-                <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Fecha estimada</div><div className="text-slate-700">{fmtFecha(p.fechaEstimadaDevolucion)}</div></div>
-                {proyeccion !== null && (
-                  <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Monto a devolver en fecha estimada</div><div className="font-mono font-semibold text-slate-800">{fmtARS(proyeccion)}</div></div>
-                )}
-              </div>
-              {estado.pagos.length > 0 && (
-                <div className="mt-2 border-t border-stone-100 pt-2">
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Pagos registrados</div>
-                  <div className="space-y-1">
-                    {estado.pagos.map((pg) => (
-                      <div key={pg.id} className="flex items-center justify-between text-[11px] text-slate-600">
-                        <span>{fmtFecha(pg.fecha)} · {pg.cuenta}</span>
-                        <span className="font-mono">{fmtARS(pg.monto)}</span>
-                      </div>
-                    ))}
+    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="px-2 py-1.5">Acreedor</th>
+            <th className="px-2 py-1.5 text-right">Capital</th>
+            <th className="px-2 py-1.5 text-right">Pagado</th>
+            <th className="px-2 py-1.5 text-right">Saldo capital</th>
+            <th className="px-2 py-1.5 text-right">Tasa anual</th>
+            <th className="px-2 py-1.5 text-right">Días</th>
+            <th className="px-2 py-1.5 text-right">Interés acum.</th>
+            <th className="px-2 py-1.5 text-right">Total a devolver</th>
+            <th className="px-2 py-1.5">Fecha est.</th>
+            <th className="px-2 py-1.5 text-right">A devolver en fecha est.</th>
+            <th className="px-2 py-1.5">Estado</th>
+            <th className="px-2 py-1.5"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((p) => {
+            const estado = calcularEstadoPrestamo(p, pagos);
+            const proyeccion = (p.estado !== "Pagado" && p.fechaEstimadaDevolucion)
+              ? calcularEstadoPrestamo(p, pagos, p.fechaEstimadaDevolucion).totalADevolver
+              : null;
+            return (
+              <tr key={p.id} className="border-t border-stone-100">
+                <td className="px-2 py-1 font-medium text-slate-900 whitespace-nowrap">
+                  {p.acreedor}
+                  {estado.pagos.length > 0 && <div className="font-normal text-slate-400">{estado.pagos.length} pago{estado.pagos.length > 1 ? "s" : ""}</div>}
+                </td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(p.capital)}</td>
+                <td className="px-2 py-1 text-right font-mono text-emerald-700 whitespace-nowrap">{estado.totalPagado > 0 ? fmtARS(estado.totalPagado) : "—"}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(estado.saldoCapital)}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{p.tasaAnualPct}%</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{estado.dias}</td>
+                <td className="px-2 py-1 text-right font-mono text-amber-700 whitespace-nowrap">{fmtARS(estado.interesAcumulado)}</td>
+                <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600 whitespace-nowrap">{fmtARS(estado.totalADevolver)}</td>
+                <td className="px-2 py-1 text-slate-600 whitespace-nowrap">{fmtFecha(p.fechaEstimadaDevolucion)}</td>
+                <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800 whitespace-nowrap">{proyeccion !== null ? fmtARS(proyeccion) : "—"}</td>
+                <td className="px-2 py-1"><Badge estado={p.estado} /></td>
+                <td className="px-2 py-1">
+                  <div className="flex flex-nowrap items-center justify-end gap-1">
+                    {p.estado !== "Pagado" && (
+                      <button onClick={() => onRegistrarPago(p)} className={`${btnGhost} whitespace-nowrap`}>Registrar pago</button>
+                    )}
+                    <button type="button" onClick={() => onEditar(p)} title="Editar préstamo" className="rounded-md border border-transparent p-1 text-slate-400 hover:border-stone-300 hover:bg-stone-100 hover:text-slate-700">
+                      <Pencil size={14} />
+                    </button>
+                    <BotonEliminar onClick={() => onEliminar(p)} title="Eliminar préstamo" />
                   </div>
-                </div>
-              )}
-              <div className="mt-2 flex flex-wrap items-center justify-end gap-1 border-t border-stone-100 pt-2">
-                {p.estado !== "Pagado" && (
-                  <button onClick={() => onRegistrarPago(p)} className={btnGhost}>Registrar pago</button>
-                )}
-                <button type="button" onClick={() => onEditar(p)} title="Editar préstamo" className="rounded-md border border-transparent p-1 text-slate-400 hover:border-stone-300 hover:bg-stone-100 hover:text-slate-700">
-                  <Pencil size={14} />
-                </button>
-                <BotonEliminar onClick={() => onEliminar(p)} title="Eliminar préstamo" />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Tablet/PC: tabla completa. */}
-      <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:block">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-2 py-1.5">Acreedor</th>
-              <th className="px-2 py-1.5 text-right">Capital original</th>
-              <th className="px-2 py-1.5 text-right">Pagado</th>
-              <th className="px-2 py-1.5 text-right">Saldo capital</th>
-              <th className="px-2 py-1.5 text-right">Tasa anual</th>
-              <th className="px-2 py-1.5 text-right">Días</th>
-              <th className="px-2 py-1.5 text-right">Interés acumulado</th>
-              <th className="px-2 py-1.5 text-right">Total a devolver</th>
-              <th className="px-2 py-1.5">Fecha estimada</th>
-              <th className="px-2 py-1.5 text-right">Monto a devolver en fecha estimada</th>
-              <th className="px-2 py-1.5">Estado</th>
-              <th className="px-2 py-1.5"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((p) => {
-              const estado = calcularEstadoPrestamo(p, pagos);
-              const proyeccion = (p.estado !== "Pagado" && p.fechaEstimadaDevolucion)
-                ? calcularEstadoPrestamo(p, pagos, p.fechaEstimadaDevolucion).totalADevolver
-                : null;
-              return (
-                <tr key={p.id} className="border-t border-stone-100">
-                  <td className="px-2 py-1 font-medium text-slate-900">
-                    {p.acreedor}
-                    {estado.pagos.length > 0 && <div className="font-normal text-slate-400">{estado.pagos.length} pago{estado.pagos.length > 1 ? "s" : ""} registrado{estado.pagos.length > 1 ? "s" : ""}</div>}
-                  </td>
-                  <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(p.capital)}</td>
-                  <td className="px-2 py-1 text-right font-mono text-emerald-700">{estado.totalPagado > 0 ? fmtARS(estado.totalPagado) : "—"}</td>
-                  <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(estado.saldoCapital)}</td>
-                  <td className="px-2 py-1 text-right font-mono text-slate-700">{p.tasaAnualPct}%</td>
-                  <td className="px-2 py-1 text-right font-mono text-slate-700">{estado.dias}</td>
-                  <td className="px-2 py-1 text-right font-mono text-amber-700">{fmtARS(estado.interesAcumulado)}</td>
-                  <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(estado.totalADevolver)}</td>
-                  <td className="px-2 py-1 text-slate-600">{fmtFecha(p.fechaEstimadaDevolucion)}</td>
-                  <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800">{proyeccion !== null ? fmtARS(proyeccion) : "—"}</td>
-                  <td className="px-2 py-1"><Badge estado={p.estado} /></td>
-                  <td className="px-2 py-1">
-                    <div className="flex flex-nowrap items-center justify-end gap-1">
-                      {p.estado !== "Pagado" && (
-                        <button onClick={() => onRegistrarPago(p)} className={`${btnGhost} whitespace-nowrap`}>Registrar pago</button>
-                      )}
-                      <button type="button" onClick={() => onEditar(p)} title="Editar préstamo" className="rounded-md border border-transparent p-1 text-slate-400 hover:border-stone-300 hover:bg-stone-100 hover:text-slate-700">
-                        <Pencil size={14} />
-                      </button>
-                      <BotonEliminar onClick={() => onEliminar(p)} title="Eliminar préstamo" />
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
