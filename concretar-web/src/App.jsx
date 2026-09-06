@@ -60,7 +60,12 @@ function porCargado(a, b) {
     const tb = b.creadoEn ? new Date(b.creadoEn).getTime() : 0;
     if (ta !== tb) return tb - ta;
   }
-  return Number(b.id) - Number(a.id);
+  // En listas que mezclan varias tablas (Movimientos) el "id" que se ve acá
+  // es uno sintético tipo "egr-123" armado solo para el key de React — el id
+  // real de la fila de origen (numérico, correlativo por alta) viaja aparte
+  // en origenId. Si no hay origenId (listas de una sola tabla) el propio id
+  // ya es numérico y sirve igual.
+  return Number(b.origenId ?? b.id) - Number(a.origenId ?? a.id);
 }
 function hoyISO() {
   const d = new Date();
@@ -4422,11 +4427,13 @@ export default function ConcretarApp() {
     })),
     ...prestamos.map((p) => ({
       id: `prestamo-alta-${p.id}`, fecha: p.fecha, creadoEn: p.creadoEn, tipo: "Ingreso", obraId: null, detalle: `Préstamo recibido — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: p.capital || 0, estado: null,
+      origenId: p.id,
     })),
     ...prestamosPagos.map((pg) => {
       const p = prestamos.find((x) => x.id === pg.prestamoId);
       return {
         id: `prestamo-pago-${pg.id}`, fecha: pg.fecha, creadoEn: pg.creadoEn, tipo: "Egreso", obraId: null, detalle: `Devolución préstamo — ${p?.acreedor || "?"}`, formalidad: p?.formalidad, cuenta: pg.cuenta, monto: -(pg.monto || 0), estado: "Pagada",
+        origenId: pg.id,
       };
     }),
     ...cobrosSocios.map((c) => ({
@@ -4438,6 +4445,7 @@ export default function ConcretarApp() {
       if (!t || obraIdsPapelera.has(t.obraId)) return [];
       return [{
         id: `avance-tantero-${a.id}`, fecha: a.fecha, creadoEn: a.creadoEn, tipo: "Egreso", obraId: t.obraId, detalle: `Avance tantero — ${t.nombreGrupo}`, formalidad: a.formalidad, cuenta: a.cuenta, monto: -(a.monto || 0), estado: "Pagada",
+        origenId: a.id,
       }];
     }),
   ].sort(porCargado);
