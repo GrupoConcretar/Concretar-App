@@ -8,7 +8,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, Percent
 } from "lucide-react";
 
 // Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
@@ -754,7 +754,7 @@ function ResumenObrasCuentas({ items }) {
 // Balance de IVA mes a mes (Cuentas → IVA y Ganancias): débito fiscal (IVA de
 // lo facturado a clientes) contra crédito fiscal (IVA de las compras con
 // Factura A), arrastrando el saldo a favor de un mes al siguiente.
-function TablaIvaMensual({ items }) {
+function TablaIvaMensual({ items, onActualizarReal }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos ni gastos con factura A o B cargados.</div>;
   }
@@ -767,8 +767,10 @@ function TablaIvaMensual({ items }) {
             <th className="px-2 py-1.5 text-right">Débito fiscal</th>
             <th className="px-2 py-1.5 text-right">Crédito fiscal</th>
             <th className="px-2 py-1.5 text-right">Saldo a favor usado</th>
-            <th className="px-2 py-1.5 text-right">IVA a pagar</th>
+            <th className="px-2 py-1.5 text-right">IVA a pagar (app)</th>
             <th className="px-2 py-1.5 text-right">Saldo a favor nuevo</th>
+            <th className="px-2 py-1.5 text-right">IVA real (contador)</th>
+            <th className="px-2 py-1.5 text-right">Diferencia</th>
           </tr>
         </thead>
         <tbody>
@@ -780,6 +782,12 @@ function TablaIvaMensual({ items }) {
               <td className="px-2 py-1 text-right font-mono text-slate-500">{fmtARS(m.saldoAFavorAnterior)}</td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.aPagar)}</td>
               <td className={`px-2 py-1 text-right font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</td>
+              <td className="px-2 py-1 text-right">
+                <MoneyInput value={m.real ?? 0} onBlur={(v) => onActualizarReal(m.clave, v)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+              </td>
+              <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -791,7 +799,7 @@ function TablaIvaMensual({ items }) {
 // Ganancia neta por año (Cuentas → IVA y Ganancias): ingresos menos gastos,
 // ambos netos de IVA, de todo lo que tiene factura (A, B o C) — es la base
 // aproximada para el Impuesto a las Ganancias que después ajusta el contador.
-function TablaGananciasAnual({ items }) {
+function TablaGananciasAnual({ items, onActualizarReal }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos ni gastos con factura cargados.</div>;
   }
@@ -803,7 +811,9 @@ function TablaGananciasAnual({ items }) {
             <th className="px-2 py-1.5">Año</th>
             <th className="px-2 py-1.5 text-right">Ingresos netos</th>
             <th className="px-2 py-1.5 text-right">Gastos netos</th>
-            <th className="px-2 py-1.5 text-right">Ganancia neta</th>
+            <th className="px-2 py-1.5 text-right">Ganancia neta (app)</th>
+            <th className="px-2 py-1.5 text-right">Ganancia real (contador)</th>
+            <th className="px-2 py-1.5 text-right">Diferencia</th>
           </tr>
         </thead>
         <tbody>
@@ -813,6 +823,12 @@ function TablaGananciasAnual({ items }) {
               <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.ingresos)}</td>
               <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.gastos)}</td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${r.ganancia < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(r.ganancia)}</td>
+              <td className="px-2 py-1 text-right">
+                <MoneyInput value={r.real ?? 0} onBlur={(v) => onActualizarReal(r.anio, v)} className="w-32 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+              </td>
+              <td className={`px-2 py-1 text-right font-mono font-semibold ${r.diferencia === null || Math.abs(r.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                {r.diferencia === null ? "Sin dato" : fmtARS(r.diferencia)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -2607,6 +2623,10 @@ export default function ConcretarApp() {
   // Plata contada a mano (caja física / resumen bancario) para comparar contra lo
   // que el sistema calcula y detectar errores de carga.
   const [dineroReal, setDineroReal] = useState([]);
+  // Valor real de IVA/Ganancias que informa el contador — para comparar contra
+  // lo que la app estima solo con lo cargado (Ingresos/Gastos con factura) y
+  // saber cuán cerca está la app de la realidad.
+  const [ajustesFiscales, setAjustesFiscales] = useState([]);
   // Préstamos de inversores o bancos: el capital entra a una cuenta como plata real,
   // pero es una deuda, no un ingreso — el interés se calcula solo, día a día, hasta
   // que se marca como devuelto. Siempre "General" (sin obra), como pidió el usuario.
@@ -2674,7 +2694,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -2685,6 +2705,7 @@ export default function ConcretarApp() {
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
           sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"), sbSelect("cobros_socios"),
           sbSelect("prestamos_pagos"), sbSelect("etapas_obra"), sbSelect("alertas_descartadas"), sbSelect("extras_pago"),
+          sbSelect("ajustes_fiscales"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -2724,6 +2745,7 @@ export default function ConcretarApp() {
         setEtapasObra(eo);
         setAlertasDescartadas(ad);
         setExtrasPago(ep);
+        setAjustesFiscales(af);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -4576,7 +4598,8 @@ export default function ConcretarApp() {
     const saldoAFavorAnterior = saldoAFavorIvaArrastre;
     const aPagar = Math.max(0, debito - disponible);
     saldoAFavorIvaArrastre = Math.max(0, disponible - debito);
-    return { clave, debito, credito, saldoAFavorAnterior, aPagar, saldoAFavorNuevo: saldoAFavorIvaArrastre };
+    const real = ajusteFiscalDe("iva", clave);
+    return { clave, debito, credito, saldoAFavorAnterior, aPagar, saldoAFavorNuevo: saldoAFavorIvaArrastre, real, diferencia: real === null ? null : real - aPagar };
   }).reverse();
 
   const gananciasPorAnio = {};
@@ -4588,9 +4611,11 @@ export default function ConcretarApp() {
     const anio = (c.fecha || "").slice(0, 4);
     (gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 }).gastos += netoDeIvaMonto(c.monto, c.tipoFactura);
   });
-  const gananciasAnuales = Object.keys(gananciasPorAnio).sort().map((anio) => ({
-    anio, ...gananciasPorAnio[anio], ganancia: gananciasPorAnio[anio].ingresos - gananciasPorAnio[anio].gastos,
-  })).reverse();
+  const gananciasAnuales = Object.keys(gananciasPorAnio).sort().map((anio) => {
+    const ganancia = gananciasPorAnio[anio].ingresos - gananciasPorAnio[anio].gastos;
+    const real = ajusteFiscalDe("ganancia", anio);
+    return { anio, ...gananciasPorAnio[anio], ganancia, real, diferencia: real === null ? null : real - ganancia };
+  }).reverse();
 
   // ---------- Resumen por obra (balance de cada obra en curso) ----------
   // Sale de lo que ya tenemos cargado: precio acordado (obra.presupuesto), lo
@@ -4696,6 +4721,8 @@ export default function ConcretarApp() {
   // ---------- Próximos pagos/ingresos ----------
   const [showProximos, setShowProximos] = useState(false);
   const [mesProximosSeleccionado, setMesProximosSeleccionado] = useState(null);
+  const [showPrestamos, setShowPrestamos] = useState(false);
+  const [showIvaGanancias, setShowIvaGanancias] = useState(false);
   const prestamosPorDevolver = prestamos
     .filter((p) => p.estado !== "Pagado")
     .sort((a, b) => fechaLocal(a.fechaEstimadaDevolucion || a.fecha) - fechaLocal(b.fechaEstimadaDevolucion || b.fecha));
@@ -4836,6 +4863,19 @@ export default function ConcretarApp() {
       updateRecord("dinero_real_cuentas", existente.id, { monto, actualizado: hoyISO() }, setDineroReal);
     } else {
       addRecord("dinero_real_cuentas", { cuenta, monto, actualizado: hoyISO() }, setDineroReal);
+    }
+  }
+
+  // ---------- Ajuste fiscal (IVA/Ganancias real que informa el contador) ----------
+  function ajusteFiscalDe(tipo, clave) {
+    return ajustesFiscales.find((a) => a.tipo === tipo && a.clave === clave)?.monto ?? null;
+  }
+  function actualizarAjusteFiscal(tipo, clave, monto) {
+    const existente = ajustesFiscales.find((a) => a.tipo === tipo && a.clave === clave);
+    if (existente) {
+      updateRecord("ajustes_fiscales", existente.id, { monto, actualizado: hoyISO() }, setAjustesFiscales);
+    } else {
+      addRecord("ajustes_fiscales", { tipo, clave, monto, actualizado: hoyISO() }, setAjustesFiscales);
     }
   }
   // Un "Error de cálculo" nunca es transferencia real entre nuestras cuentas: usamos
@@ -10502,7 +10542,7 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "cuentas" && canVerFinanzas && !showProximos && (
+        {tab === "cuentas" && canVerFinanzas && !showProximos && !showPrestamos && !showIvaGanancias && (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
@@ -10520,10 +10560,16 @@ export default function ConcretarApp() {
                   <Wrench size={16} /> Arreglo de caja
                 </button>
                 <button
-                  onClick={() => setShowPrestamoForm((v) => !v)}
+                  onClick={() => setShowPrestamos(true)}
                   className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
                 >
-                  <Landmark size={16} /> Agregar préstamo
+                  <Landmark size={16} /> Préstamos
+                </button>
+                <button
+                  onClick={() => setShowIvaGanancias(true)}
+                  className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
+                >
+                  <Percent size={16} /> IVA y Ganancias
                 </button>
                 <button
                   onClick={() => setShowMovimientoForm((v) => !v)}
@@ -10533,46 +10579,6 @@ export default function ConcretarApp() {
                 </button>
               </div>
             </div>
-
-            {showPrestamoForm && (
-              <Panel title="Agregar préstamo" action={<button onClick={() => setShowPrestamoForm(false)}><X size={16} /></button>}>
-                <div className="mb-3 text-xs text-slate-500">Plata de un inversor o del banco. El capital entra a la cuenta que elijas como plata real, pero es una deuda — el interés corre solo, día a día, hasta que lo marques como devuelto. Queda siempre en "General", sin obra asociada.</div>
-                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitPrestamoForm}>
-                  <Field label="Fecha">
-                    <input type="date" value={prestamoForm.fecha} onChange={(e) => setPrestamoForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
-                  </Field>
-                  <Field label="Acreedor (inversor / banco)">
-                    <input value={prestamoForm.acreedor} onChange={(e) => setPrestamoForm((f) => ({ ...f, acreedor: e.target.value }))} required placeholder="Ej: Juan Pérez, Banco San Juan" className={inputCls} />
-                  </Field>
-                  <Field label="Capital ($)">
-                    <MoneyInput value={prestamoForm.capital} onChange={(v) => setPrestamoForm((f) => ({ ...f, capital: v }))} className={inputCls} />
-                  </Field>
-                  <Field label="Tasa anual (%)">
-                    <input
-                      type="number" min="0" step="0.01" placeholder="Ej: 60"
-                      value={prestamoForm.tasaAnualPct}
-                      onChange={(e) => setPrestamoForm((f) => ({ ...f, tasaAnualPct: e.target.value }))}
-                      required
-                      className={inputCls}
-                    />
-                  </Field>
-                  <Field label="Cuenta donde entra">
-                    <select value={prestamoForm.cuenta} onChange={(e) => setPrestamoForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
-                      {CUENTAS.map((c) => <option key={c}>{c}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Formalidad">
-                    <select value={prestamoForm.formalidad} onChange={(e) => setPrestamoForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-                      {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Fecha estimada de devolución">
-                    <input type="date" value={prestamoForm.fechaEstimadaDevolucion} onChange={(e) => setPrestamoForm((f) => ({ ...f, fechaEstimadaDevolucion: e.target.value }))} className={inputCls} />
-                  </Field>
-                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
-                </form>
-              </Panel>
-            )}
 
             {showMovimientoForm && (
               <Panel title="Agregar movimiento" action={<button onClick={() => setShowMovimientoForm(false)}><X size={16} /></button>}>
@@ -10705,18 +10711,6 @@ export default function ConcretarApp() {
             </div>
 
             <div>
-              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B. Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura.</div>
-              <TablaIvaMensual items={ivaMensual} />
-            </div>
-
-            <div>
-              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ganancias por año</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Ingresos y gastos netos de IVA, de todo lo que tenga Factura A, B o C — base aproximada para el Impuesto a las Ganancias, sin las deducciones finales que aplica el contador.</div>
-              <TablaGananciasAnual items={gananciasAnuales} />
-            </div>
-
-            <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Movimientos — {nombreMesCuentas(mesActualClave)}</h3>
               <TablaMovimientos items={movimientosMesActual} obras={obras} onEditar={(m) => setEditandoMovimiento({ origen: m.origen, origenId: m.origenId })} />
             </div>
@@ -10731,16 +10725,97 @@ export default function ConcretarApp() {
                 </div>
               </details>
             ))}
+          </div>
+        )}
+
+        {tab === "cuentas" && canVerFinanzas && showPrestamos && (
+          <div className="space-y-4">
+            <button
+              onClick={() => setShowPrestamos(false)}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-800"
+            >
+              ← Volver a Cuentas
+            </button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Préstamos</h2>
+              <button
+                onClick={() => setShowPrestamoForm((v) => !v)}
+                className={btnPrimary}
+              >
+                <Plus size={16} /> Agregar préstamo
+              </button>
+            </div>
+
+            {showPrestamoForm && (
+              <Panel title="Agregar préstamo" action={<button onClick={() => setShowPrestamoForm(false)}><X size={16} /></button>}>
+                <div className="mb-3 text-xs text-slate-500">Plata de un inversor o del banco. El capital entra a la cuenta que elijas como plata real, pero es una deuda — el interés corre solo, día a día, hasta que lo marques como devuelto. Queda siempre en "General", sin obra asociada.</div>
+                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitPrestamoForm}>
+                  <Field label="Fecha">
+                    <input type="date" value={prestamoForm.fecha} onChange={(e) => setPrestamoForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+                  </Field>
+                  <Field label="Acreedor (inversor / banco)">
+                    <input value={prestamoForm.acreedor} onChange={(e) => setPrestamoForm((f) => ({ ...f, acreedor: e.target.value }))} required placeholder="Ej: Juan Pérez, Banco San Juan" className={inputCls} />
+                  </Field>
+                  <Field label="Capital ($)">
+                    <MoneyInput value={prestamoForm.capital} onChange={(v) => setPrestamoForm((f) => ({ ...f, capital: v }))} className={inputCls} />
+                  </Field>
+                  <Field label="Tasa anual (%)">
+                    <input
+                      type="number" min="0" step="0.01" placeholder="Ej: 60"
+                      value={prestamoForm.tasaAnualPct}
+                      onChange={(e) => setPrestamoForm((f) => ({ ...f, tasaAnualPct: e.target.value }))}
+                      required
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Cuenta donde entra">
+                    <select value={prestamoForm.cuenta} onChange={(e) => setPrestamoForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+                      {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Formalidad">
+                    <select value={prestamoForm.formalidad} onChange={(e) => setPrestamoForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
+                      {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Fecha estimada de devolución">
+                    <input type="date" value={prestamoForm.fechaEstimadaDevolucion} onChange={(e) => setPrestamoForm((f) => ({ ...f, fechaEstimadaDevolucion: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                </form>
+              </Panel>
+            )}
+
+            <TablaPrestamos
+              items={prestamos}
+              pagos={prestamosPagos}
+              onEditar={(p) => setEditandoPrestamoId(p.id)}
+              onRegistrarPago={(p) => setPagandoPrestamoId(p.id)}
+              onEliminar={(p) => moverAPapelera("prestamos", p.id, setPrestamos, p.acreedor)}
+            />
+          </div>
+        )}
+
+        {tab === "cuentas" && canVerFinanzas && showIvaGanancias && (
+          <div className="space-y-4">
+            <button
+              onClick={() => setShowIvaGanancias(false)}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-800"
+            >
+              ← Volver a Cuentas
+            </button>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">IVA y Ganancias</h2>
 
             <div>
-              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Préstamos</h3>
-              <TablaPrestamos
-                items={prestamos}
-                pagos={prestamosPagos}
-                onEditar={(p) => setEditandoPrestamoId(p.id)}
-                onRegistrarPago={(p) => setPagandoPrestamoId(p.id)}
-                onEliminar={(p) => moverAPapelera("prestamos", p.id, setPrestamos, p.acreedor)}
-              />
+              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
+              <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B. Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Cargá en "IVA real (contador)" lo que informe el contador para comparar contra lo que calcula la app.</div>
+              <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} />
+            </div>
+
+            <div>
+              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ganancias por año</h3>
+              <div className="mb-1.5 text-[11px] text-slate-400">Ingresos y gastos netos de IVA, de todo lo que tenga Factura A, B o C — base aproximada para el Impuesto a las Ganancias. Cargá en "Ganancia real (contador)" el número que informe el contador para compararlo contra la estimación de la app.</div>
+              <TablaGananciasAnual items={gananciasAnuales} onActualizarReal={(anio, monto) => actualizarAjusteFiscal("ganancia", anio, monto)} />
             </div>
           </div>
         )}
