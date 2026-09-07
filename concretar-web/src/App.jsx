@@ -3703,6 +3703,8 @@ export default function ConcretarApp() {
   const [showCobroObraForm, setShowCobroObraForm] = useState(false);
   const [cobroObraCuenta, setCobroObraCuenta] = useState(CUENTAS[0]);
   const [cobroObraMedioBancario, setCobroObraMedioBancario] = useState("Transferencia");
+  const [cobroObraMonto, setCobroObraMonto] = useState(0);
+  const [cobroObraMontoResetKey, setCobroObraMontoResetKey] = useState(0);
   const [showPersonalForm, setShowPersonalForm] = useState(false);
   // "Asignar personal": null = cerrado; "todos" = abierto sin filtro (desde
   // Personal/Cuadrillas); un id de obra = abierto con esa obra preseleccionada
@@ -6980,12 +6982,26 @@ export default function ConcretarApp() {
                           e.target.reset();
                           setCobroObraCuenta(CUENTAS[0]);
                           setCobroObraMedioBancario("Transferencia");
+                          setCobroObraMonto(0);
+                          setCobroObraMontoResetKey((k) => k + 1);
                           setShowCobroObraForm(false);
                         }}
                       >
                         <Field label="Día posible de cobro"><input name="fechaCobroEstimada" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
                         <Field label="Concepto"><input name="concepto" required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
-                        <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
+                        <Field label="Monto (ARS)">
+                          <div className="flex items-center gap-1.5">
+                            <MoneyInput key={cobroObraMontoResetKey} name="monto" value={cobroObraMonto} onChange={setCobroObraMonto} className={inputCls} />
+                            <button
+                              type="button"
+                              title={`Cargar lo que falta cobrar de esta obra (${fmtARS(resumenObraSel?.faltaCobrar || 0)})`}
+                              onClick={() => { setCobroObraMonto(resumenObraSel?.faltaCobrar || 0); setCobroObraMontoResetKey((k) => k + 1); }}
+                              className="shrink-0 rounded-md border border-emerald-300 bg-emerald-50 p-2 text-emerald-700 hover:bg-emerald-100"
+                            >
+                              <Check size={14} />
+                            </button>
+                          </div>
+                        </Field>
                         <Field label="Formalidad">
                           <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
                         </Field>
@@ -7005,7 +7021,7 @@ export default function ConcretarApp() {
                         )}
                         <div className="flex items-end gap-2 md:col-span-3">
                           <button type="submit" className={btnPrimary}>Guardar</button>
-                          <button type="button" onClick={() => setShowCobroObraForm(false)} className={btnGhost}>Cancelar</button>
+                          <button type="button" onClick={() => { setShowCobroObraForm(false); setCobroObraMonto(0); setCobroObraMontoResetKey((k) => k + 1); }} className={btnGhost}>Cancelar</button>
                         </div>
                       </form>
                     )}
