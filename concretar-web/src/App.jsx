@@ -4693,13 +4693,25 @@ export default function ConcretarApp() {
     if (!arreglosPorRun[runId]) arreglosPorRun[runId] = [];
     arreglosPorRun[runId].push(m);
   }
+  // Para que la curva de gastos/ingresos de Cuentas sea real, un movimiento con una
+  // fecha de pago/cobro futura distinta de cuando se cargó (Cuenta corriente, eCheq, o
+  // un ingreso pendiente) va agrupado por mes según esa fecha real de caja, no según
+  // cuándo se cargó — así "Trielec" con vencimiento en octubre aparece en octubre, no
+  // en el mes en que se registró la compra.
+  const fechaEfectivaMovimiento = (c) => {
+    const esCC = c.formaPago === "Cuenta corriente" || c.medioBancario === "Cuenta corriente";
+    const esECheq = c.medioBancario === "eCheq" || c.formaPago === "eCheq";
+    if (esCC && c.fechaVencimientoCc) return c.fechaVencimientoCc;
+    if (esECheq && c.fechaPagoEcheq) return c.fechaPagoEcheq;
+    return c.fecha;
+  };
   const movimientosCuentas = [
     ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
-      id: `ing-${i.id}`, fecha: i.fecha, creadoEn: i.creadoEn, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
+      id: `ing-${i.id}`, fecha: i.estado === "Pendiente" && i.fechaCobroEstimada ? i.fechaCobroEstimada : i.fecha, creadoEn: i.creadoEn, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
       origen: "ingresos", origenId: i.id, tipoFactura: i.tipoFactura,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
-      id: `egr-${c.id}`, fecha: c.fecha, creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
+      id: `egr-${c.id}`, fecha: fechaEfectivaMovimiento(c), creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
       origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura, formaPago: c.formaPago, medioBancario: c.medioBancario,
     })),
     ...movimientosManualNormales.flatMap((m) => [
