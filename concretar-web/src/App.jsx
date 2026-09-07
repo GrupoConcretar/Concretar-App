@@ -4256,6 +4256,17 @@ export default function ConcretarApp() {
     return avancesTanteros.filter((a) => a.tanteroId === tanteroId).reduce((s, a) => s + (a.monto || 0), 0);
   }
 
+  // "Finalizado" solo saca al grupo de la lista activa de Tanteros — sus avances
+  // (los gastos ya cargados) siguen contando igual en Gastos y en el historial de
+  // la obra, no se tocan ni se borran.
+  const [showTanterosFinalizados, setShowTanterosFinalizados] = useState(false);
+  const tanterosActivos = tanteros.filter((t) => !t.finalizado);
+  const tanterosFinalizados = tanteros.filter((t) => t.finalizado);
+  function finalizarTantero(t) {
+    if (!window.confirm(`¿Marcar "${t.nombreGrupo}" como finalizado? Pasa a "Trabajos finalizados" — sus gastos ya cargados siguen contando igual.`)) return;
+    updateRecord("tanteros", t.id, { finalizado: true, fechaFinalizado: hoyISO() }, setTanteros);
+  }
+
   function submitAvanceForm(e, tanteroId) {
     e.preventDefault();
     // La formalidad siempre es la del grupo — no se re-elige pago por pago.
@@ -7688,9 +7699,13 @@ export default function ConcretarApp() {
               </>
             )}
 
-            {vistaLiquidacion === "tanteros" && (
+            {vistaLiquidacion === "tanteros" && !showTanterosFinalizados && (
               <>
-                <div className="flex items-center justify-end">
+                <div className="flex items-center justify-end gap-2">
+                  <button onClick={() => setShowTanterosFinalizados(true)} className="flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
+                    <CheckCircle2 size={16} /> Trabajos finalizados
+                    {tanterosFinalizados.length > 0 && <span className="text-slate-400">({tanterosFinalizados.length})</span>}
+                  </button>
                   <button onClick={() => setShowTanteroForm((v) => !v)} className={btnPrimary}>
                     <Plus size={16} /> Nuevo grupo
                   </button>
@@ -7756,13 +7771,13 @@ export default function ConcretarApp() {
                   </Panel>
                 )}
 
-                {tanteros.length === 0 ? (
+                {tanterosActivos.length === 0 ? (
                   <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
-                    Todavía no hay grupos de tanteros cargados.
+                    Todavía no hay grupos de tanteros activos.
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {tanteros.map((t) => {
+                    {tanterosActivos.map((t) => {
                       const obra = obras.find((o) => o.id === t.obraId);
                       const pagado = pagadoDeTantero(t.id);
                       const saldo = (t.precioTotal || 0) - pagado;
@@ -7793,6 +7808,9 @@ export default function ConcretarApp() {
                               className={btnGhost}
                             >
                               {avanceAbiertoId === t.id ? "Cancelar" : "Cargar avance"}
+                            </button>
+                            <button onClick={() => finalizarTantero(t)} className={btnGhost}>
+                              <span className="flex items-center gap-1"><CheckCircle2 size={13} /> Finalizado</span>
                             </button>
                           </div>
 
@@ -7886,6 +7904,80 @@ export default function ConcretarApp() {
                 )}
               </>
             )}
+
+            {vistaLiquidacion === "tanteros" && showTanterosFinalizados && (() => {
+              const gruposPorMes = {};
+              tanterosFinalizados.forEach((t) => {
+                const clave = (t.fechaFinalizado || "").slice(0, 7) || "sin-fecha";
+                (gruposPorMes[clave] ??= []).push(t);
+              });
+              const clavesOrdenadas = Object.keys(gruposPorMes).sort().reverse();
+              return (
+                <>
+                  <button onClick={() => setShowTanterosFinalizados(false)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
+                    ← Volver a Tanteros
+                  </button>
+                  <h3 className="text-lg font-bold text-slate-900">Trabajos finalizados</h3>
+
+                  {tanterosFinalizados.length === 0 ? (
+                    <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
+                      Todavía no hay trabajos de tanteros finalizados.
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {clavesOrdenadas.map((clave) => (
+                        <div key={clave}>
+                          <h4 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                            {clave === "sin-fecha" ? "Sin fecha de finalización" : nombreMesDeClave(clave)}
+                          </h4>
+                          <div className="space-y-3">
+                            {gruposPorMes[clave].sort(porCargado).map((t) => {
+                              const obra = obras.find((o) => o.id === t.obraId);
+                              const pagado = pagadoDeTantero(t.id);
+                              const integrantesNombres = (t.integrantes || []).map((id) => {
+                                const p = personal.find((x) => x.id === id);
+                                return p ? nombreCompletoDe(p) : null;
+                              }).filter(Boolean);
+                              return (
+                                <div key={t.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <div className="font-bold text-slate-900">{t.nombreGrupo}</div>
+                                      <div className="text-sm text-slate-500">{obra?.nombre} · {integrantesNombres.length} integrante(s): {integrantesNombres.join(", ")}</div>
+                                      <div className="text-xs text-slate-400">Finalizado el {fmtFecha(t.fechaFinalizado)}</div>
+                                    </div>
+                                    <button
+                                      onClick={() => updateRecord("tanteros", t.id, { finalizado: false, fechaFinalizado: null }, setTanteros)}
+                                      className={btnGhost}
+                                    >
+                                      Reabrir
+                                    </button>
+                                  </div>
+                                  <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                                    <div>
+                                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Precio cerrado</div>
+                                      <div className="font-mono font-semibold text-slate-900">{fmtARS(t.precioTotal)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pagado</div>
+                                      <div className="font-mono font-semibold text-emerald-700">{fmtARS(pagado)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Formalidad</div>
+                                      <div className="text-slate-700">{t.formalidad || "—"}</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             {vistaLiquidacion === "historial" && (
               <>
