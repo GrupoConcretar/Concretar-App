@@ -2807,7 +2807,7 @@ export default function ConcretarApp() {
       formaPago: "Banco",
       medioBancario: "Débito/Transferencia",
       fechaPagoEcheq: null,
-      fechaVencimientoCC: null,
+      fechaVencimientoCc: null,
       cuenta: "Banco",
       estado: "Pagada",
       archivo: null,
@@ -4013,7 +4013,7 @@ export default function ConcretarApp() {
           formaPago: "Efectivo",
           medioBancario: null,
           fechaPagoEcheq: null,
-          fechaVencimientoCC: null,
+          fechaVencimientoCc: null,
           cuenta: "Efectivo",
           estado: "Pagada",
           archivo: null,
@@ -4053,7 +4053,7 @@ export default function ConcretarApp() {
       formaPago: datos.medio,
       medioBancario: datos.medio === "Banco" ? "Débito/Transferencia" : null,
       fechaPagoEcheq: null,
-      fechaVencimientoCC: null,
+      fechaVencimientoCc: null,
       cuenta: datos.medio,
       estado: "Pagada",
       archivo: null,
@@ -4817,8 +4817,8 @@ export default function ConcretarApp() {
         if (!grupos[c.proveedor]) grupos[c.proveedor] = { proveedor: c.proveedor, monto: 0, cantidad: 0, fechaMasProxima: null };
         grupos[c.proveedor].monto += c.monto || 0;
         grupos[c.proveedor].cantidad += 1;
-        if (c.fechaVencimientoCC && (!grupos[c.proveedor].fechaMasProxima || fechaLocal(c.fechaVencimientoCC) < fechaLocal(grupos[c.proveedor].fechaMasProxima))) {
-          grupos[c.proveedor].fechaMasProxima = c.fechaVencimientoCC;
+        if (c.fechaVencimientoCc && (!grupos[c.proveedor].fechaMasProxima || fechaLocal(c.fechaVencimientoCc) < fechaLocal(grupos[c.proveedor].fechaMasProxima))) {
+          grupos[c.proveedor].fechaMasProxima = c.fechaVencimientoCc;
         }
       });
     return Object.values(grupos)
@@ -4828,7 +4828,7 @@ export default function ConcretarApp() {
           ...g,
           proveedorId: prov?.id ?? null,
           diaPago: prov?.diaPago || null,
-          fechaVencimiento: prov?.diaPago ? proximaFechaPago(prov.diaPago) : (g.fechaMasProxima || prov?.fechaVencimientoCC || null),
+          fechaVencimiento: prov?.diaPago ? proximaFechaPago(prov.diaPago) : (g.fechaMasProxima || prov?.fechaVencimientoCc || null),
         };
       })
       .sort((a, b) => {
@@ -10179,7 +10179,7 @@ export default function ConcretarApp() {
                       formaPago,
                       medioBancario,
                       fechaPagoEcheq,
-                      fechaVencimientoCC: null,
+                      fechaVencimientoCc: null,
                       cuenta: formaPago,
                       estado: medioBancario === "eCheq" ? "Pendiente" : "Pagada",
                       archivo: null,
@@ -10251,14 +10251,14 @@ export default function ConcretarApp() {
                     let cuenta = formaPago;
                     let medioBancarioFinal = medioBancario;
                     let estado = medioBancario === "eCheq" ? "Pendiente" : "Pagada";
-                    let fechaVencimientoCC = null;
+                    let fechaVencimientoCc = null;
                     if (formaPago === "Cuenta corriente") {
                       const estadoCC = f.get("estadoCC");
                       if (estadoCC === "Pendiente") {
                         cuenta = null;
                         medioBancarioFinal = null;
                         estado = "Pendiente";
-                        fechaVencimientoCC = f.get("fechaVencimientoCC");
+                        fechaVencimientoCc = f.get("fechaVencimientoCc");
                       } else {
                         const medioPagoCC = f.get("medioPagoCC");
                         cuenta = medioPagoCC === "Transferencia" ? "Banco" : "Efectivo";
@@ -10280,7 +10280,7 @@ export default function ConcretarApp() {
                       formaPago,
                       medioBancario: medioBancarioFinal,
                       fechaPagoEcheq,
-                      fechaVencimientoCC,
+                      fechaVencimientoCc,
                       cuenta,
                       estado,
                       archivo: facturaArchivo,
@@ -10374,7 +10374,7 @@ export default function ConcretarApp() {
                       </Field>
                       {facturaEstadoCC === "Pendiente" ? (
                         <Field label="Fecha de pago">
-                          <input name="fechaVencimientoCC" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
+                          <input name="fechaVencimientoCc" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
                           <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esa fecha — la marcás como "Pagada" a mano desde la tabla cuando la saldemos.</div>
                         </Field>
                       ) : (
@@ -10421,8 +10421,8 @@ export default function ConcretarApp() {
                           {(c.medioBancario === "eCheq" || c.formaPago === "eCheq") && c.estado === "Pendiente" && (
                             <div className="text-[9px] text-slate-400">Cobra el {fmtFecha(c.fechaPagoEcheq)}</div>
                           )}
-                          {(c.medioBancario === "Cuenta corriente" || c.formaPago === "Cuenta corriente") && c.estado === "Pendiente" && c.fechaVencimientoCC && (
-                            <div className="text-[9px] text-slate-400">Vence el {fmtFecha(c.fechaVencimientoCC)}</div>
+                          {(c.medioBancario === "Cuenta corriente" || c.formaPago === "Cuenta corriente") && c.estado === "Pendiente" && c.fechaVencimientoCc && (
+                            <div className="text-[9px] text-slate-400">Vence el {fmtFecha(c.fechaVencimientoCc)}</div>
                           )}
                         </td>
                         <td className="px-1.5 py-0.5">
@@ -11659,8 +11659,8 @@ export default function ConcretarApp() {
                                     {(f.medioBancario === "eCheq" || f.formaPago === "eCheq") && f.fechaPagoEcheq && (
                                       <span className="text-[10px] text-slate-400">Cobra el {fmtFecha(f.fechaPagoEcheq)}</span>
                                     )}
-                                    {esCuentaCorriente(f) && f.fechaVencimientoCC && (
-                                      <span className="text-[10px] text-slate-400">Vence el {fmtFecha(f.fechaVencimientoCC)}</span>
+                                    {esCuentaCorriente(f) && f.fechaVencimientoCc && (
+                                      <span className="text-[10px] text-slate-400">Vence el {fmtFecha(f.fechaVencimientoCc)}</span>
                                     )}
                                   </div>
                                   {esCuentaCorriente(f) ? (
