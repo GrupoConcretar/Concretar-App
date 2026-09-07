@@ -10471,7 +10471,79 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "ingresos" && canVerFinanzas && (
+        {tab === "ingresos" && canVerFinanzas && (() => {
+          // Agrupados por año — el año actual se muestra siempre entero, y cada año
+          // anterior queda colapsado en su propia pestaña (mismo criterio que los
+          // meses de Movimientos en Cuentas), con el total de ese año a la vista.
+          const ingresosOrdenados = ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).sort(porCargado);
+          const anioActualIngresos = hoyISO().slice(0, 4);
+          const gruposIngresosPorAnio = {};
+          ingresosOrdenados.forEach((i) => {
+            const anio = (i.fecha || "").slice(0, 4) || anioActualIngresos;
+            if (!gruposIngresosPorAnio[anio]) gruposIngresosPorAnio[anio] = [];
+            gruposIngresosPorAnio[anio].push(i);
+          });
+          const ingresosAnioActual = gruposIngresosPorAnio[anioActualIngresos] || [];
+          const totalAnio = (items) => items.reduce((s, i) => s + (i.monto || 0), 0);
+          const aniosIngresosAnteriores = Object.keys(gruposIngresosPorAnio)
+            .filter((a) => a !== anioActualIngresos)
+            .sort((a, b) => b.localeCompare(a));
+          const renderFilaIngreso = (i) => {
+            const obra = obras.find((o) => o.id === i.obraId);
+            return (
+              <tr key={i.id} className="border-t border-stone-100">
+                <td className="px-2 py-1 text-slate-600">{fmtFecha(i.fecha)}</td>
+                <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
+                <td className="px-2 py-1 font-medium text-slate-900">
+                  <span className="flex items-center gap-1.5">
+                    {i.concepto}
+                    {i.archivo && (
+                      <a href={i.archivo} target="_blank" rel="noreferrer" title={i.nombreArchivo || "Ver comprobante"} className="text-slate-400 hover:text-slate-700">
+                        <FileDown size={13} />
+                      </a>
+                    )}
+                  </span>
+                </td>
+                <td className="px-2 py-1"><Badge estado={i.formalidad || "Blanco"} /></td>
+                <td className="px-2 py-1 text-slate-600">
+                  <span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}{i.medioBancario ? ` · ${i.medioBancario}` : ""}</span>
+                </td>
+                <td className="px-2 py-1">
+                  {(!i.tipoFactura || i.tipoFactura === "Sin factura") ? (
+                    <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
+                  ) : (
+                    <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{i.tipoFactura}</span>
+                  )}
+                </td>
+                <td className="px-2 py-1 text-right font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</td>
+                <td className="px-2 py-1">
+                  <Badge estado={i.estado === "Pendiente" ? "Pendiente" : "Cobrado"} />
+                  {i.estado === "Pendiente" && i.fechaCobroEstimada && (
+                    <div className="mt-0.5 text-[10px] text-slate-400">Cobra el {fmtFecha(i.fechaCobroEstimada)}</div>
+                  )}
+                </td>
+                <td className="px-2 py-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {i.estado === "Pendiente" && (
+                      <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
+                    )}
+                    <BotonEliminar onClick={() => moverAPapelera("ingresos", i.id, setIngresos, `${i.concepto} — ${fmtARS(i.monto)}`)} title="Eliminar ingreso" />
+                  </div>
+                </td>
+              </tr>
+            );
+          };
+          const renderTablaIngresos = (items) => (
+            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Concepto</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
+                </thead>
+                <tbody>{items.map(renderFilaIngreso)}</tbody>
+              </table>
+            </div>
+          );
+          return (
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Ingresos</h2>
@@ -10562,62 +10634,27 @@ export default function ConcretarApp() {
               </Panel>
             )}
 
-            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Concepto</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
-                </thead>
-                <tbody>
-                  {ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).sort(porCargado).map((i) => {
-                    const obra = obras.find((o) => o.id === i.obraId);
-                    return (
-                      <tr key={i.id} className="border-t border-stone-100">
-                        <td className="px-2 py-1 text-slate-600">{fmtFecha(i.fecha)}</td>
-                        <td className="px-2 py-1 text-slate-600">{obra?.nombre || "General"}</td>
-                        <td className="px-2 py-1 font-medium text-slate-900">
-                          <span className="flex items-center gap-1.5">
-                            {i.concepto}
-                            {i.archivo && (
-                              <a href={i.archivo} target="_blank" rel="noreferrer" title={i.nombreArchivo || "Ver comprobante"} className="text-slate-400 hover:text-slate-700">
-                                <FileDown size={13} />
-                              </a>
-                            )}
-                          </span>
-                        </td>
-                        <td className="px-2 py-1"><Badge estado={i.formalidad || "Blanco"} /></td>
-                        <td className="px-2 py-1 text-slate-600">
-                          <span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}{i.medioBancario ? ` · ${i.medioBancario}` : ""}</span>
-                        </td>
-                        <td className="px-2 py-1">
-                          {(!i.tipoFactura || i.tipoFactura === "Sin factura") ? (
-                            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
-                          ) : (
-                            <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{i.tipoFactura}</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-1 text-right font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</td>
-                        <td className="px-2 py-1">
-                          <Badge estado={i.estado === "Pendiente" ? "Pendiente" : "Cobrado"} />
-                          {i.estado === "Pendiente" && i.fechaCobroEstimada && (
-                            <div className="mt-0.5 text-[10px] text-slate-400">Cobra el {fmtFecha(i.fechaCobroEstimada)}</div>
-                          )}
-                        </td>
-                        <td className="px-2 py-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {i.estado === "Pendiente" && (
-                              <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
-                            )}
-                            <BotonEliminar onClick={() => moverAPapelera("ingresos", i.id, setIngresos, `${i.concepto} — ${fmtARS(i.monto)}`)} title="Eliminar ingreso" />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-2 border-stone-300 bg-stone-50 px-4 py-2.5">
+              <span className="text-sm font-bold text-slate-700">Total {anioActualIngresos}</span>
+              <span className="font-mono text-lg font-bold text-emerald-700">{fmtARS(totalAnio(ingresosAnioActual))}</span>
             </div>
+
+            {renderTablaIngresos(ingresosAnioActual)}
+
+            {aniosIngresosAnteriores.map((anio) => (
+              <details key={anio} className="rounded-lg border border-stone-200 bg-white">
+                <summary className="flex cursor-pointer select-none items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
+                  <span>{anio} <span className="font-normal text-slate-400">({gruposIngresosPorAnio[anio].length})</span></span>
+                  <span className="font-mono text-emerald-700">{fmtARS(totalAnio(gruposIngresosPorAnio[anio]))}</span>
+                </summary>
+                <div className="border-t border-stone-100 p-3">
+                  {renderTablaIngresos(gruposIngresosPorAnio[anio])}
+                </div>
+              </details>
+            ))}
           </div>
-        )}
+          );
+        })()}
 
         {tab === "cuentas" && !canVerFinanzas && (
           <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
