@@ -2559,6 +2559,9 @@ export default function ConcretarApp() {
   const [liquidacionesFormales, setLiquidacionesFormales] = useState(isSupabaseConfigured ? [] : []);
   const [recibosLiquidacion, setRecibosLiquidacion] = useState(isSupabaseConfigured ? [] : []);
   const [asistencia, setAsistencia] = useState(isSupabaseConfigured ? [] : DEMO_ASISTENCIA);
+  // Registro liviano de qué asistencias se borraron (se borran de verdad, no van
+  // a Papelera) — solo para poder avisar "se eliminó tal registro" durante 24hs.
+  const [asistenciaEliminadaLog, setAsistenciaEliminadaLog] = useState([]);
   const [herramientasRaw, setHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_HERRAMIENTAS);
   const [combosHerramientas, setCombosHerramientas] = useState(isSupabaseConfigured ? [] : DEMO_COMBOS);
   const [catalogoNombresHerr, setCatalogoNombresHerr] = useState(isSupabaseConfigured ? [] : DEMO_CATALOGO_NOMBRES);
@@ -2655,7 +2658,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -2666,7 +2669,7 @@ export default function ConcretarApp() {
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
           sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"), sbSelect("cobros_socios"),
           sbSelect("prestamos_pagos"), sbSelect("etapas_obra"), sbSelect("alertas_descartadas"), sbSelect("extras_pago"),
-          sbSelect("ajustes_fiscales"),
+          sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -2706,6 +2709,7 @@ export default function ConcretarApp() {
         setAlertasDescartadas(ad);
         setExtrasPago(ep);
         setAjustesFiscales(af);
+        setAsistenciaEliminadaLog(ael);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -3314,7 +3318,17 @@ export default function ConcretarApp() {
   });
   const ocPendientesAprobacion = ordenesCompra.filter((o) => o.estado === "Requiere aprobación" && !obraIdsPapelera.has(o.obraId));
   const hayDesvioAlerta = desvioPct > DESVIO_ALERTA_PCT;
-  const asistenciasEditadas = asistencia.filter((a) => a.editado);
+  // Los avisos de cambio/eliminación de asistencia son solo para revisión
+  // inmediata — pasadas 24hs de hecho el cambio dejan de mostrarse solas.
+  const asistenciasEditadas = asistencia.filter((a) => {
+    if (!a.editado || !a.fechaEdicion) return false;
+    const horas = (Date.now() - new Date(a.fechaEdicion).getTime()) / 36e5;
+    return horas >= 0 && horas < 24;
+  });
+  const asistenciasEliminadasRecientes = asistenciaEliminadaLog.filter((a) => {
+    const horas = (Date.now() - new Date(a.eliminadoEn).getTime()) / 36e5;
+    return horas >= 0 && horas < 24;
+  });
 
   // Alarmas previas de materiales: según la "Fecha Necesaria" del presupuesto importado.
   function diasHasta(fechaStr) {
@@ -3348,7 +3362,7 @@ export default function ConcretarApp() {
 
   const totalAlertas =
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
-    (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length +
+    (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + asistenciasEliminadasRecientes.length +
     materialesVencidos.length + materialesProximos.length + pedidosPorAprobar.length + personalSinObra5Dias.length;
 
   // ---------- Forms state ----------
@@ -3704,8 +3718,30 @@ export default function ConcretarApp() {
     }, setAsistencia);
     cancelEditAsistencia();
   }
-  function eliminarAsistencia(id) {
-    deleteRecord("asistencia", id, setAsistencia);
+  async function eliminarAsistencia(id) {
+    if (!window.confirm("¿Eliminar este registro? Esta acción no se puede deshacer.")) return;
+    const a = asistencia.find((x) => x.id === id);
+    if (isSupabaseConfigured) {
+      try {
+        await sbDelete("asistencia", id);
+      } catch (err) {
+        alert("No se pudo eliminar: " + err.message);
+        return;
+      }
+    }
+    setAsistencia((prev) => prev.filter((x) => x.id !== id));
+    // Solo un aviso de 24hs de que se borró algo — no va a Papelera (se borra
+    // de verdad), así que este registro liviano es lo único que queda.
+    if (a) {
+      addRecord("asistencia_eliminaciones_log", {
+        nombre: a.nombre,
+        obraId: a.obraId,
+        fecha: a.fecha,
+        horas: a.horas,
+        eliminadoPor: currentRole,
+        eliminadoEn: new Date().toISOString(),
+      }, setAsistenciaEliminadaLog);
+    }
   }
 
   // ---------- Liquidación (pago de jornales) ----------
@@ -6126,6 +6162,15 @@ export default function ConcretarApp() {
                       <ul className="space-y-0.5 text-xs">
                         {asistenciasEditadas.slice(0, 5).map((a) => (
                           <li key={a.id} className="truncate">{a.nombre} ({fmtFecha(a.fecha)}) — {a.editadoPor}: "{a.motivoEdicion}"</li>
+                        ))}
+                      </ul>
+                    </AlertCard>
+                  )}
+                  {asistenciasEliminadasRecientes.length > 0 && (
+                    <AlertCard tone="sky" icon={AlertTriangle} title={`${asistenciasEliminadasRecientes.length} registro(s) de asistencia eliminados — revisión sugerida.`}>
+                      <ul className="space-y-0.5 text-xs">
+                        {asistenciasEliminadasRecientes.slice(0, 5).map((a) => (
+                          <li key={a.id} className="truncate">{a.nombre} ({fmtFecha(a.fecha)}) — eliminado por {a.eliminadoPor}</li>
                         ))}
                       </ul>
                     </AlertCard>
