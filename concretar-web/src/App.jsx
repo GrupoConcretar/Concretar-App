@@ -2777,6 +2777,7 @@ export default function ConcretarApp() {
       formaPago: "Banco",
       medioBancario: "Débito/Transferencia",
       fechaPagoEcheq: null,
+      fechaVencimientoCC: null,
       cuenta: "Banco",
       estado: "Pagada",
       archivo: null,
@@ -3980,6 +3981,7 @@ export default function ConcretarApp() {
           formaPago: "Efectivo",
           medioBancario: null,
           fechaPagoEcheq: null,
+          fechaVencimientoCC: null,
           cuenta: "Efectivo",
           estado: "Pagada",
           archivo: null,
@@ -4019,6 +4021,7 @@ export default function ConcretarApp() {
       formaPago: datos.medio,
       medioBancario: datos.medio === "Banco" ? "Débito/Transferencia" : null,
       fechaPagoEcheq: null,
+      fechaVencimientoCC: null,
       cuenta: datos.medio,
       estado: "Pagada",
       archivo: null,
@@ -4751,10 +4754,10 @@ export default function ConcretarApp() {
     .filter((i) => i.medioBancario === "eCheq" && i.estado === "Pendiente" && !obraIdsPapelera.has(i.obraId))
     .sort((a, b) => fechaLocal(a.fechaCobroEstimada || a.fecha) - fechaLocal(b.fechaCobroEstimada || b.fecha));
   // Las cuentas corrientes se pagan de una sola vez por proveedor, no factura por
-  // factura — se agrupan y suman, y la fecha de vencimiento es del proveedor (cada
-  // uno tiene la suya), no de cada compra.
-  // El día de pago es mensual y recurrente (ej: "el 10 de cada mes"), así que la fecha
-  // de vencimiento se recalcula sola todos los meses en vez de tener que cargarla a mano.
+  // factura — se agrupan y suman. Si el proveedor tiene un día de pago fijo (mensual
+  // y recurrente, ej: "el 10 de cada mes"), esa fecha manda y se recalcula sola todos
+  // los meses; si no lo tiene cargado, se usa la fecha de pago más próxima entre las
+  // que se eligieron al cargar cada gasto de ese proveedor.
   function proximaFechaPago(diaPago) {
     if (!diaPago) return null;
     const hoy = new Date();
@@ -4773,9 +4776,12 @@ export default function ConcretarApp() {
     comprasFacturas
       .filter((c) => c.formaPago === "Cuenta corriente" && c.estado === "Pendiente" && !obraIdsPapelera.has(c.obraId))
       .forEach((c) => {
-        if (!grupos[c.proveedor]) grupos[c.proveedor] = { proveedor: c.proveedor, monto: 0, cantidad: 0 };
+        if (!grupos[c.proveedor]) grupos[c.proveedor] = { proveedor: c.proveedor, monto: 0, cantidad: 0, fechaMasProxima: null };
         grupos[c.proveedor].monto += c.monto || 0;
         grupos[c.proveedor].cantidad += 1;
+        if (c.fechaVencimientoCC && (!grupos[c.proveedor].fechaMasProxima || fechaLocal(c.fechaVencimientoCC) < fechaLocal(grupos[c.proveedor].fechaMasProxima))) {
+          grupos[c.proveedor].fechaMasProxima = c.fechaVencimientoCC;
+        }
       });
     return Object.values(grupos)
       .map((g) => {
@@ -4784,7 +4790,7 @@ export default function ConcretarApp() {
           ...g,
           proveedorId: prov?.id ?? null,
           diaPago: prov?.diaPago || null,
-          fechaVencimiento: prov?.diaPago ? proximaFechaPago(prov.diaPago) : (prov?.fechaVencimientoCC || null),
+          fechaVencimiento: prov?.diaPago ? proximaFechaPago(prov.diaPago) : (g.fechaMasProxima || prov?.fechaVencimientoCC || null),
         };
       })
       .sort((a, b) => {
@@ -10079,6 +10085,8 @@ export default function ConcretarApp() {
                     const proveedor = tipo === "Otro" ? (f.get("proveedorOtro") || "Gasto mensual") : tipo;
                     const formaPago = f.get("formaPago");
                     const medioBancario = formaPago === "Banco" ? f.get("medioBancario") : null;
+                    const fechaPagoEcheq = formaPago === "eCheq" ? f.get("fechaPagoEcheq") : null;
+                    const fechaVencimientoCC = formaPago === "Cuenta corriente" ? f.get("fechaVencimientoCC") : null;
                     addRecord("compras_facturas", {
                       fecha: f.get("fecha"),
                       obraId: null,
@@ -10092,7 +10100,8 @@ export default function ConcretarApp() {
                       formalidad: f.get("formalidad"),
                       formaPago,
                       medioBancario,
-                      fechaPagoEcheq: null,
+                      fechaPagoEcheq,
+                      fechaVencimientoCC,
                       cuenta: formaPago === "Cuenta corriente" ? null : formaPago === "eCheq" ? "Banco" : formaPago,
                       estado: (formaPago === "eCheq" || formaPago === "Cuenta corriente") ? "Pendiente" : "Pagada",
                       archivo: null,
@@ -10133,6 +10142,18 @@ export default function ConcretarApp() {
                       </select>
                     </Field>
                   )}
+                  {gastoMensualFormaPago === "eCheq" && (
+                    <Field label="Fecha de pago">
+                      <input name="fechaPagoEcheq" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
+                      <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esa fecha — ese día pasa solo a "Pagado".</div>
+                    </Field>
+                  )}
+                  {gastoMensualFormaPago === "Cuenta corriente" && (
+                    <Field label="Fecha de pago">
+                      <input name="fechaVencimientoCC" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
+                      <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta que la marques como "Pagada" desde la tabla.</div>
+                    </Field>
+                  )}
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
               </Panel>
@@ -10149,6 +10170,7 @@ export default function ConcretarApp() {
                     const formaPago = f.get("formaPago");
                     const medioBancario = formaPago === "Banco" ? f.get("medioBancario") : null;
                     const fechaPagoEcheq = formaPago === "eCheq" ? f.get("fechaPagoEcheq") : null;
+                    const fechaVencimientoCC = formaPago === "Cuenta corriente" ? f.get("fechaVencimientoCC") : null;
                     addRecord("compras_facturas", {
                       fecha: f.get("fecha"),
                       obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
@@ -10163,6 +10185,7 @@ export default function ConcretarApp() {
                       formaPago,
                       medioBancario,
                       fechaPagoEcheq,
+                      fechaVencimientoCC,
                       // Efectivo, Mercado Pago, débito/transferencia y crédito se acreditan al toque.
                       // El eCheq queda pendiente hasta su fecha de pago y la cuenta corriente hasta que la saldemos a mano.
                       // El eCheq se cobra a través del banco, por eso cuenta a la balanza de Banco.
@@ -10248,7 +10271,10 @@ export default function ConcretarApp() {
                     </>
                   )}
                   {facturaFormaPago === "Cuenta corriente" && (
-                    <div className="flex items-center text-[11px] text-slate-400">Queda "Pendiente" hasta que la paguemos — ahí la marcás como "Pagada" desde la tabla.</div>
+                    <Field label="Fecha de pago">
+                      <input name="fechaVencimientoCC" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
+                      <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esa fecha — la marcás como "Pagada" a mano desde la tabla cuando la saldemos.</div>
+                    </Field>
                   )}
                   <div className="md:col-span-2">
                     <ArchivoInput
@@ -10283,6 +10309,9 @@ export default function ConcretarApp() {
                           <span className="flex items-center gap-1"><CuentaIcon cuenta={c.formaPago === "eCheq" ? "Banco" : c.formaPago} />{c.formaPago || c.cuenta || "—"}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
                           {(c.formaPago === "eCheq" || c.medioBancario === "eCheq") && c.estado === "Pendiente" && (
                             <div className="text-[10px] text-slate-400">Cobra el {fmtFecha(c.fechaPagoEcheq)}</div>
+                          )}
+                          {c.formaPago === "Cuenta corriente" && c.estado === "Pendiente" && c.fechaVencimientoCC && (
+                            <div className="text-[10px] text-slate-400">Vence el {fmtFecha(c.fechaVencimientoCC)}</div>
                           )}
                         </td>
                         <td className="px-2 py-1">
