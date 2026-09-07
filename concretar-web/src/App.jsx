@@ -3000,19 +3000,34 @@ export default function ConcretarApp() {
     if (!window.confirm(`¿Dar de baja a ${nombreCompletoDe(p)}? Va a dejar de aparecer como personal activo.`)) return;
     updateRecord("personal", p.id, { estado: "Baja" }, setPersonal);
   }
+  // Click directo sobre el estado (Activo/Baja) de la lista de Personal para
+  // alternarlo, sin tener que entrar a editar a la persona.
+  function toggleEstadoPersonal(p) {
+    if (p.estado === "Baja") {
+      updateRecord("personal", p.id, { estado: "Activo" }, setPersonal);
+    } else {
+      darDeBajaPersonal(p);
+    }
+  }
 
   // ---------- Agrupación para "Personal/Cuadrillas" ----------
-  const idsEnAlgunGrupoTantero = new Set(tanteros.flatMap((t) => t.integrantes || []));
-  const personalCentroGeneral = personal.filter((p) => CATEGORIAS_CENTRO_GENERAL.includes(p.categoria));
+  // Un grupo de tanteros finalizado deja de "reservar" a sus integrantes: vuelven
+  // a contar como disponibles (Sin asignar), no siguen apareciendo bajo la obra.
+  const idsEnAlgunGrupoTantero = new Set(tanteros.filter((t) => !t.finalizado).flatMap((t) => t.integrantes || []));
+  // "Baja" no cuenta como personal afectado a ningún lado — ya no está activo.
+  // Queda aparte en su propia lista para no perderla de vista (reactivar es
+  // tan simple como tocar de nuevo el estado "Baja").
+  const personalDeBaja = personal.filter((p) => p.estado === "Baja");
+  const personalCentroGeneral = personal.filter((p) => CATEGORIAS_CENTRO_GENERAL.includes(p.categoria) && p.estado !== "Baja");
   const cuadrillasPorObra = {}; // obraId -> { obra, empresa: [...], gruposTantero: [...] }
   const personalSinAsignar = [];
 
   personal
-    .filter((p) => !CATEGORIAS_CENTRO_GENERAL.includes(p.categoria))
+    .filter((p) => !CATEGORIAS_CENTRO_GENERAL.includes(p.categoria) && p.estado !== "Baja")
     .forEach((p) => {
       if (p.tipoTrabajador === "Tantero") {
         if (!idsEnAlgunGrupoTantero.has(p.id)) personalSinAsignar.push(p);
-        return; // si está en un grupo, se muestra a través del grupo, no individualmente
+        return; // si está en un grupo activo, se muestra a través del grupo, no individualmente
       }
       const obraActual = obraActualDe(p);
       if (obraActual) {
@@ -3023,7 +3038,9 @@ export default function ConcretarApp() {
       }
     });
 
-  tanteros.forEach((t) => {
+  // Los grupos finalizados no se muestran acá — ver "Trabajos finalizados" en
+  // Personal → Pagos → Tanteros.
+  tanteros.filter((t) => !t.finalizado).forEach((t) => {
     if (!cuadrillasPorObra[t.obraId]) {
       const obra = obras.find((o) => o.id === t.obraId);
       if (obra) cuadrillasPorObra[t.obraId] = { obra, empresa: [], gruposTantero: [] };
@@ -3062,7 +3079,13 @@ export default function ConcretarApp() {
         </span>
         <span className="flex shrink-0 items-center gap-2 text-xs text-slate-500">
           <span>{p.categoria}</span>
-          <Badge estado={p.estado} />
+          {modoSeleccionPdf ? (
+            <Badge estado={p.estado} />
+          ) : (
+            <button onClick={(e) => { e.stopPropagation(); toggleEstadoPersonal(p); }} title="Cambiar entre Activo y Baja" className="cursor-pointer">
+              <Badge estado={p.estado} />
+            </button>
+          )}
         </span>
       </div>
     );
@@ -7196,7 +7219,7 @@ export default function ConcretarApp() {
                       </div>
                     )}
                     {gruposTantero.map((t) => {
-                      const integrantes = (t.integrantes || []).map((id) => personal.find((p) => p.id === id)).filter(Boolean);
+                      const integrantes = (t.integrantes || []).map((id) => personal.find((p) => p.id === id)).filter((p) => p && p.estado !== "Baja");
                       return (
                         <div key={t.id} className="mb-2">
                           <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Tanteros — {t.nombreGrupo}</div>
@@ -7224,6 +7247,18 @@ export default function ConcretarApp() {
                   Gente que tenemos disponible por si hace falta llamarla, aunque no esté trabajando en este momento.
                 </div>
               </div>
+
+              {personalDeBaja.length > 0 && (
+                <div className="rounded-lg border border-stone-200 bg-white shadow-sm">
+                  <div className="flex items-center gap-1.5 border-b border-stone-100 bg-stone-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
+                    <Users size={14} className="text-rose-500" /> Personal de baja
+                  </div>
+                  <div className="divide-y divide-stone-50 p-1">{personalDeBaja.map(renderPersonaRow)}</div>
+                  <div className="border-t border-stone-100 px-3 py-1.5 text-[11px] text-slate-400">
+                    Ya no cuentan como personal activo ni afectan a ninguna obra. Tocá "Baja" para reactivar a alguien.
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
