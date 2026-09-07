@@ -1731,7 +1731,25 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
     : editando.origen === "ingresos" ? ingresos.find((i) => i.id === editando.origenId)
     : editando.origen === "arreglo_caja" ? { id: editando.origenId }
     : movimientosManual.find((m) => m.id === editando.origenId);
-  const [form, setForm] = useState(registroInicial || {});
+  // Registros viejos de compras_facturas pueden no tener "formaPago" guardado (se
+  // agregó después): se lo deriva una vez de cuenta/medioBancario/estado para que el
+  // selector de "Forma de pago" abra mostrando lo que ya tiene cargado, en vez de caer
+  // siempre en "Efectivo" por defecto.
+  const [form, setForm] = useState(() => {
+    if (!registroInicial) return {};
+    if (editando.origen === "compras_facturas") {
+      const formaPago = registroInicial.formaPago || (
+        registroInicial.medioBancario === "Cuenta corriente" || registroInicial.estado === "Pendiente"
+          ? "Cuenta corriente"
+          : (registroInicial.cuenta || "Efectivo")
+      );
+      const fechaVencimientoCc = formaPago === "Cuenta corriente" && registroInicial.estado === "Pendiente"
+        ? (registroInicial.fechaVencimientoCc || fechaMasDias(30))
+        : registroInicial.fechaVencimientoCc;
+      return { ...registroInicial, formaPago, fechaVencimientoCc };
+    }
+    return registroInicial;
+  });
   if (!registroInicial) return null;
   // Las filas reales que generó ese "Arreglo de caja" (una por cuenta corregida),
   // identificadas por compartir el mismo run-id en el detalle — así se pueden
@@ -1752,6 +1770,12 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         monto: Number(form.monto) || 0,
         formalidad: form.formalidad,
         tipoFactura: form.tipoFactura,
+        formaPago: form.formaPago,
+        medioBancario: form.medioBancario || null,
+        fechaPagoEcheq: form.fechaPagoEcheq || null,
+        fechaVencimientoCc: form.fechaVencimientoCc || null,
+        cuenta: form.cuenta || null,
+        estado: form.estado,
         archivo: form.archivo,
         nombreArchivo: form.nombreArchivo,
         tipoArchivo: form.tipoArchivo,
@@ -1855,6 +1879,106 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                   {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
                 </select>
               </Field>
+              <Field label="Forma de pago">
+                <select
+                  value={form.formaPago || "Efectivo"}
+                  onChange={(e) => {
+                    const formaPago = e.target.value;
+                    setForm((f) => {
+                      if (formaPago === "Cuenta corriente") {
+                        return { ...f, formaPago, cuenta: null, medioBancario: null, fechaPagoEcheq: null, estado: "Pendiente", fechaVencimientoCc: f.fechaVencimientoCc || fechaMasDias(30) };
+                      }
+                      if (formaPago === "Banco") {
+                        const medioBancario = MEDIOS_BANCARIOS.includes(f.medioBancario) ? f.medioBancario : "Débito/Transferencia";
+                        return { ...f, formaPago, cuenta: "Banco", medioBancario, estado: medioBancario === "eCheq" ? "Pendiente" : "Pagada", fechaVencimientoCc: null };
+                      }
+                      return { ...f, formaPago, cuenta: formaPago, medioBancario: null, estado: "Pagada", fechaPagoEcheq: null, fechaVencimientoCc: null };
+                    });
+                  }}
+                  className={inputCls}
+                >
+                  {FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}
+                </select>
+              </Field>
+              {form.formaPago === "Banco" && (
+                <Field label="Medio">
+                  <select
+                    value={form.medioBancario || "Débito/Transferencia"}
+                    onChange={(e) => {
+                      const medioBancario = e.target.value;
+                      setForm((f) => ({
+                        ...f,
+                        medioBancario,
+                        cuenta: "Banco",
+                        estado: medioBancario === "eCheq" ? "Pendiente" : "Pagada",
+                        fechaPagoEcheq: medioBancario === "eCheq" ? (f.fechaPagoEcheq || fechaMasDias(30)) : null,
+                      }));
+                    }}
+                    className={inputCls}
+                  >
+                    {MEDIOS_BANCARIOS.map((m) => <option key={m}>{m}</option>)}
+                  </select>
+                </Field>
+              )}
+              {form.formaPago === "Banco" && form.medioBancario === "eCheq" && (
+                <Field label="Fecha de pago">
+                  <input
+                    type="date"
+                    value={form.fechaPagoEcheq || ""}
+                    onChange={(e) => setForm((f) => ({ ...f, fechaPagoEcheq: e.target.value }))}
+                    required
+                    className={inputCls}
+                  />
+                </Field>
+              )}
+              {form.formaPago === "Cuenta corriente" && (
+                <Field label="Estado">
+                  <select
+                    value={form.estado === "Pendiente" ? "Pendiente" : "Pagado"}
+                    onChange={(e) => {
+                      const estadoCC = e.target.value;
+                      setForm((f) => estadoCC === "Pendiente"
+                        ? { ...f, estado: "Pendiente", cuenta: null, medioBancario: null, fechaVencimientoCc: f.fechaVencimientoCc || fechaMasDias(30) }
+                        : { ...f, estado: "Pagada", fechaVencimientoCc: null, cuenta: f.cuenta === "Banco" ? "Banco" : "Efectivo", medioBancario: f.cuenta === "Banco" ? "Débito/Transferencia" : null }
+                      );
+                    }}
+                    className={inputCls}
+                  >
+                    <option value="Pendiente">Pendiente de pago</option>
+                    <option value="Pagado">Pagado</option>
+                  </select>
+                </Field>
+              )}
+              {form.formaPago === "Cuenta corriente" && form.estado === "Pendiente" && (
+                <Field label="Fecha de pago">
+                  <input
+                    type="date"
+                    value={form.fechaVencimientoCc || ""}
+                    onChange={(e) => setForm((f) => ({ ...f, fechaVencimientoCc: e.target.value }))}
+                    required
+                    className={inputCls}
+                  />
+                </Field>
+              )}
+              {form.formaPago === "Cuenta corriente" && form.estado !== "Pendiente" && (
+                <Field label="Medio de pago">
+                  <select
+                    value={form.cuenta === "Banco" ? "Transferencia" : "Efectivo"}
+                    onChange={(e) => {
+                      const medio = e.target.value;
+                      setForm((f) => ({
+                        ...f,
+                        cuenta: medio === "Transferencia" ? "Banco" : "Efectivo",
+                        medioBancario: medio === "Transferencia" ? "Débito/Transferencia" : null,
+                      }));
+                    }}
+                    className={inputCls}
+                  >
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Transferencia">Transferencia</option>
+                  </select>
+                </Field>
+              )}
             </>
           )}
           {editando.origen === "cobros_socios" && (
