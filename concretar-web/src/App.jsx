@@ -374,6 +374,9 @@ function Field({ label, children }) {
 
 const inputCls = "rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30";
 const btnGhost = "rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-stone-100";
+// Versión compacta de btnGhost para tablas densas (Gastos y Facturas), donde varios
+// botones por fila necesitan entrar en poco alto sin forzar la fila a dos líneas.
+const btnGhostSm = "rounded-md border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-stone-100";
 // Botón amarillo de "agregar/cargar" — se repetía a mano en cada pestaña.
 const btnPrimary = "flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400";
 
@@ -5229,12 +5232,11 @@ export default function ConcretarApp() {
     updateRecord("compras_facturas", factura.id, { estado: "Pagada", cuenta, medioBancario }, setComprasFacturas);
     setMarcandoPagoCCId(null);
   }
-  // Toggle genérico del badge Estado en Movimientos: para compras que no son cuenta
-  // corriente alterna directo entre Pendiente/Pagada; una cuenta corriente pendiente
-  // en cambio abre el mismo selector de medio (Efectivo/Transferencia) que en Gastos.
-  function toggleEstadoMovimientoCompra(m) {
-    const factura = comprasFacturas.find((c) => c.id === m.origenId);
-    if (!factura) return;
+  // Toggle genérico del badge Estado (usado en Gastos y Facturas y en Movimientos):
+  // para compras que no son cuenta corriente alterna directo entre Pendiente/Pagada;
+  // una cuenta corriente pendiente en cambio abre el selector de medio real
+  // (Efectivo/Transferencia) antes de saldarla.
+  function toggleEstadoCompra(factura) {
     if (factura.estado === "Pagada") {
       marcarCompraPendiente(factura);
     } else if (esCuentaCorriente(factura)) {
@@ -5242,6 +5244,10 @@ export default function ConcretarApp() {
     } else {
       marcarFacturaPagada(factura);
     }
+  }
+  function toggleEstadoMovimientoCompra(m) {
+    const factura = comprasFacturas.find((c) => c.id === m.origenId);
+    if (factura) toggleEstadoCompra(factura);
   }
   // Un eCheq queda "Pendiente" hasta su fecha de pago; llegado ese día se acredita solo,
   // sin que nadie tenga que entrar a marcarlo a mano.
@@ -10391,58 +10397,55 @@ export default function ConcretarApp() {
             )}
 
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Proveedor</th><th className="px-2 py-1.5">Categoría</th><th className="px-2 py-1.5">Descripción</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Forma de pago</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
+              <table className="w-full text-left text-[11px] leading-tight">
+                <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  <tr><th className="px-1.5 py-1">Fecha</th><th className="px-1.5 py-1">Obra</th><th className="px-1.5 py-1">Proveedor</th><th className="px-1.5 py-1">Categoría</th><th className="px-1.5 py-1">Descripción</th><th className="px-1.5 py-1">Formalidad</th><th className="px-1.5 py-1">Forma de pago</th><th className="px-1.5 py-1">Factura</th><th className="px-1.5 py-1">Monto</th><th className="px-1.5 py-1">Estado</th><th className="px-1.5 py-1"></th></tr>
                 </thead>
                 <tbody>
                   {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort(porCargado).map((c) => {
                     const obra = obras.find((o) => o.id === c.obraId);
                     return (
                       <tr key={c.id} className="border-t border-stone-100" style={{ backgroundColor: `${colorDeObra(obra)}2e`, borderLeft: `3px solid ${colorDeObra(obra)}` }}>
-                        <td className="px-2 py-1 text-slate-600">{fmtFecha(c.fecha)}</td>
-                        <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1.5"><ObraDot obra={obra} />{obra?.nombre || "General"}</span></td>
-                        <td className="px-2 py-1 font-medium text-slate-900">{c.proveedor}</td>
-                        <td className="px-2 py-1 text-slate-600">{c.categoria}</td>
-                        <td className="px-2 py-1 text-slate-500">{c.descripcion || "—"}</td>
-                        <td className="px-2 py-1"><Badge estado={c.formalidad || "Blanco"} /></td>
-                        <td className="px-2 py-1 text-slate-600">
+                        <td className="whitespace-nowrap px-1.5 py-0.5 text-slate-600">{fmtFecha(c.fecha)}</td>
+                        <td className="px-1.5 py-0.5 text-slate-600"><span className="flex items-center gap-1"><ObraDot obra={obra} />{obra?.nombre || "General"}</span></td>
+                        <td className="px-1.5 py-0.5 font-medium text-slate-900">{c.proveedor}</td>
+                        <td className="px-1.5 py-0.5 text-slate-600">{c.categoria}</td>
+                        <td className="px-1.5 py-0.5 text-slate-500">{c.descripcion || "—"}</td>
+                        <td className="px-1.5 py-0.5"><Badge estado={c.formalidad || "Blanco"} /></td>
+                        <td className="px-1.5 py-0.5 text-slate-600">
                           <span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta || "Banco"} />{c.formaPago || c.cuenta || "—"}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
                           {(c.medioBancario === "eCheq" || c.formaPago === "eCheq") && c.estado === "Pendiente" && (
-                            <div className="text-[10px] text-slate-400">Cobra el {fmtFecha(c.fechaPagoEcheq)}</div>
+                            <div className="text-[9px] text-slate-400">Cobra el {fmtFecha(c.fechaPagoEcheq)}</div>
                           )}
                           {(c.medioBancario === "Cuenta corriente" || c.formaPago === "Cuenta corriente") && c.estado === "Pendiente" && c.fechaVencimientoCC && (
-                            <div className="text-[10px] text-slate-400">Vence el {fmtFecha(c.fechaVencimientoCC)}</div>
+                            <div className="text-[9px] text-slate-400">Vence el {fmtFecha(c.fechaVencimientoCC)}</div>
                           )}
                         </td>
-                        <td className="px-2 py-1">
+                        <td className="px-1.5 py-0.5">
                           {(!c.tipoFactura || c.tipoFactura === "Sin factura") ? (
-                            <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
+                            <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
                           ) : (
-                            <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{c.tipoFactura}</span>
+                            <span className="rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-emerald-700">{c.tipoFactura}</span>
                           )}
                         </td>
-                        <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</td>
-                        <td className="px-2 py-1"><Badge estado={c.estado} /></td>
-                        <td className="px-2 py-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {c.estado === "Pendiente" && esCuentaCorriente(c) && (
-                              marcandoPagoCCId === c.id ? (
-                                <span className="flex flex-wrap items-center gap-1">
-                                  <span className="text-[11px] text-slate-500">¿Con qué se pagó?</span>
-                                  <button onClick={() => marcarCuentaCorrientePagada(c, "Efectivo")} className={btnGhost}>Efectivo</button>
-                                  <button onClick={() => marcarCuentaCorrientePagada(c, "Transferencia")} className={btnGhost}>Transferencia</button>
-                                  <button onClick={() => setMarcandoPagoCCId(null)} className={btnGhost}><X size={12} /></button>
-                                </span>
-                              ) : (
-                                <button onClick={() => setMarcandoPagoCCId(c.id)} className={btnGhost}>Marcar pagada</button>
-                              )
-                            )}
-                            {c.estado === "Pendiente" && !esCuentaCorriente(c) && (
-                              <button onClick={() => marcarFacturaPagada(c)} className={btnGhost}>Marcar pagada</button>
-                            )}
-                            <button onClick={() => setEditandoMovimiento({ origen: "compras_facturas", origenId: c.id })} className={btnGhost}>
-                              <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
+                        <td className="whitespace-nowrap px-1.5 py-0.5 text-right font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</td>
+                        <td className="px-1.5 py-0.5">
+                          {c.estado === "Pendiente" && esCuentaCorriente(c) && marcandoPagoCCId === c.id ? (
+                            <span className="flex flex-nowrap items-center gap-1">
+                              <button onClick={() => marcarCuentaCorrientePagada(c, "Efectivo")} className={btnGhostSm}>Efectivo</button>
+                              <button onClick={() => marcarCuentaCorrientePagada(c, "Transferencia")} className={btnGhostSm}>Transferencia</button>
+                              <button onClick={() => setMarcandoPagoCCId(null)} className={btnGhostSm}><X size={10} /></button>
+                            </span>
+                          ) : (
+                            <button onClick={() => toggleEstadoCompra(c)} title="Cambiar entre Pendiente y Pagada" className="cursor-pointer">
+                              <Badge estado={c.estado} />
+                            </button>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-1.5 py-0.5">
+                          <div className="flex flex-nowrap items-center gap-1">
+                            <button onClick={() => setEditandoMovimiento({ origen: "compras_facturas", origenId: c.id })} className={btnGhostSm} title="Editar">
+                              <Pencil size={11} />
                             </button>
                             <BotonEliminar onClick={() => moverAPapelera("compras_facturas", c.id, setComprasFacturas, `${c.proveedor} — ${fmtARS(c.monto)}`)} title="Eliminar gasto" />
                           </div>
