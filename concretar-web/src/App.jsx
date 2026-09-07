@@ -7799,7 +7799,11 @@ export default function ConcretarApp() {
                           <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                             <div>
                               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Precio cerrado</div>
-                              <div className="font-mono font-semibold text-slate-900">{fmtARS(t.precioTotal)}</div>
+                              <MoneyInput
+                                value={t.precioTotal}
+                                onBlur={(v) => updateRecord("tanteros", t.id, { precioTotal: v }, setTanteros)}
+                                className="w-full rounded-md border border-stone-300 px-2 py-1 text-sm font-mono font-semibold text-slate-900"
+                              />
                             </div>
                             <div>
                               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pagado</div>
