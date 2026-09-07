@@ -3700,6 +3700,9 @@ export default function ConcretarApp() {
   const [ingresoArchivo, setIngresoArchivo] = useState(null);
   const [ingresoNombreArchivo, setIngresoNombreArchivo] = useState(null);
   const [ingresoTipoArchivo, setIngresoTipoArchivo] = useState(null);
+  const [showCobroObraForm, setShowCobroObraForm] = useState(false);
+  const [cobroObraCuenta, setCobroObraCuenta] = useState(CUENTAS[0]);
+  const [cobroObraMedioBancario, setCobroObraMedioBancario] = useState("Transferencia");
   const [showPersonalForm, setShowPersonalForm] = useState(false);
   // "Asignar personal": null = cerrado; "todos" = abierto sin filtro (desde
   // Personal/Cuadrillas); un id de obra = abierto con esa obra preseleccionada
@@ -6771,6 +6774,9 @@ export default function ConcretarApp() {
                 });
               historialGastosObra.sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
               const resumenObraSel = resumenPorObra.find((r) => r.obra.id === obraSel.id);
+              const cobrosPendientesObra = ingresos
+                .filter((i) => i.obraId === obraSel.id && i.estado === "Pendiente")
+                .sort((a, b) => fechaLocal(a.fechaCobroEstimada || a.fecha) - fechaLocal(b.fechaCobroEstimada || b.fecha));
 
               return (
                 <>
@@ -6943,6 +6949,84 @@ export default function ConcretarApp() {
                         </div>
                       );
                     })()}
+                  </Panel>
+
+                  <Panel
+                    title="Cobros"
+                    action={
+                      <button onClick={() => setShowCobroObraForm((v) => !v)} className={btnGhost}>
+                        <span className="flex items-center gap-1"><Plus size={13} /> Agregar día posible de cobro</span>
+                      </button>
+                    }
+                  >
+                    {showCobroObraForm && (
+                      <form
+                        className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 md:grid-cols-3"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const f = new FormData(e.target);
+                          addRecord("ingresos", {
+                            fecha: hoyISO(),
+                            obraId: obraSel.id,
+                            concepto: f.get("concepto"),
+                            monto: Number(f.get("monto")) || 0,
+                            formalidad: f.get("formalidad"),
+                            tipoFactura: f.get("tipoFactura"),
+                            cuenta: f.get("cuenta"),
+                            medioBancario: f.get("cuenta") === "Banco" ? f.get("medioBancario") : null,
+                            estado: "Pendiente",
+                            fechaCobroEstimada: f.get("fechaCobroEstimada"),
+                          }, setIngresos);
+                          e.target.reset();
+                          setCobroObraCuenta(CUENTAS[0]);
+                          setCobroObraMedioBancario("Transferencia");
+                          setShowCobroObraForm(false);
+                        }}
+                      >
+                        <Field label="Día posible de cobro"><input name="fechaCobroEstimada" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
+                        <Field label="Concepto"><input name="concepto" required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
+                        <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
+                        <Field label="Formalidad">
+                          <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
+                        </Field>
+                        <Field label="Factura">
+                          <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
+                        </Field>
+                        <Field label="Cuenta">
+                          <select name="cuenta" value={cobroObraCuenta} onChange={(e) => setCobroObraCuenta(e.target.value)} className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
+                        </Field>
+                        {cobroObraCuenta === "Banco" && (
+                          <Field label="Medio">
+                            <select name="medioBancario" value={cobroObraMedioBancario} onChange={(e) => setCobroObraMedioBancario(e.target.value)} className={inputCls}>
+                              <option value="Transferencia">Transferencia</option>
+                              <option value="eCheq">eCheq</option>
+                            </select>
+                          </Field>
+                        )}
+                        <div className="flex items-end gap-2 md:col-span-3">
+                          <button type="submit" className={btnPrimary}>Guardar</button>
+                          <button type="button" onClick={() => setShowCobroObraForm(false)} className={btnGhost}>Cancelar</button>
+                        </div>
+                      </form>
+                    )}
+                    {cobrosPendientesObra.length === 0 ? (
+                      <div className="text-xs text-slate-400">No hay cobros pendientes cargados para esta obra.</div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {cobrosPendientesObra.map((i) => (
+                          <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs">
+                            <div>
+                              <div className="font-medium text-slate-800">{i.concepto}</div>
+                              <div className="text-slate-400">Cobra el {fmtFecha(i.fechaCobroEstimada)}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
+                              <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </Panel>
 
                   <Panel title="Historial de gastos">
