@@ -2696,6 +2696,10 @@ export default function ConcretarApp() {
     { id: 2, fecha: "2026-08-01", socio: "Pablo", monto: 1200000, cuenta: "Efectivo", medioBancario: null, formalidad: "Negro", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" },
   ];
 
+  const DEMO_NOTAS_CREDITO = [
+    { id: 1, fecha: "2026-08-05", proveedor: "Corralón San Martín", obraId: 1, monto: 150000, motivo: "Devolución de bolsas de cemento en mal estado", archivo: null, nombreArchivo: null, tipoArchivo: null },
+  ];
+
   const DEMO_TANTEROS = [
     { id: 1, nombreGrupo: "Mario Electricista", obraId: 1, integrantes: [7, 8], precioTotal: 12000000, formalidad: "Blanco" },
   ];
@@ -2755,6 +2759,10 @@ export default function ConcretarApp() {
   // Retiros de los socios (Ricardo y Pablo) — plata real que sale de la caja de la
   // empresa, separada de Gastos/Facturas para poder ver el historial de cada uno.
   const [cobrosSociosRaw, setCobrosSocios] = useState(isSupabaseConfigured ? [] : DEMO_COBROS_SOCIOS);
+  // Notas de crédito de proveedores: cuando devolvemos materiales/herramientas y el
+  // proveedor nos las reconoce, restan de lo que le debemos (o quedan a favor) sin
+  // tocar el gasto/factura original — así se conserva el historial de la compra.
+  const [notasCreditoRaw, setNotasCredito] = useState(isSupabaseConfigured ? [] : DEMO_NOTAS_CREDITO);
   const [tanteros, setTanteros] = useState(isSupabaseConfigured ? [] : DEMO_TANTEROS);
   const [avancesTanteros, setAvancesTanteros] = useState(isSupabaseConfigured ? [] : DEMO_AVANCES_TANTEROS);
   // Etapas de la Planificación (Gantt) de cada obra.
@@ -2784,6 +2792,7 @@ export default function ConcretarApp() {
   const ingresos = ingresosRaw.filter((i) => !i.eliminadoEn);
   const prestamos = prestamosRaw.filter((p) => !p.eliminadoEn);
   const cobrosSocios = cobrosSociosRaw.filter((c) => !c.eliminadoEn);
+  const notasCredito = notasCreditoRaw.filter((n) => !n.eliminadoEn);
   const etapasObra = etapasObraRaw.filter((e) => !e.eliminadoEn);
 
   // Lo que está en la Papelera ahora mismo, para la pestaña "Papelera".
@@ -2797,6 +2806,7 @@ export default function ConcretarApp() {
   const ingresosPapelera = ingresosRaw.filter((i) => i.eliminadoEn);
   const prestamosPapelera = prestamosRaw.filter((p) => p.eliminadoEn);
   const cobrosSociosPapelera = cobrosSociosRaw.filter((c) => c.eliminadoEn);
+  const notasCreditoPapelera = notasCreditoRaw.filter((n) => n.eliminadoEn);
   const etapasObraPapelera = etapasObraRaw.filter((e) => e.eliminadoEn);
 
   const [dbLoading, setDbLoading] = useState(isSupabaseConfigured);
@@ -2812,7 +2822,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -2823,7 +2833,7 @@ export default function ConcretarApp() {
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
           sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"), sbSelect("cobros_socios"),
           sbSelect("prestamos_pagos"), sbSelect("etapas_obra"), sbSelect("alertas_descartadas"), sbSelect("extras_pago"),
-          sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"),
+          sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"), sbSelect("notas_credito"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -2864,6 +2874,7 @@ export default function ConcretarApp() {
         setExtrasPago(ep);
         setAjustesFiscales(af);
         setAsistenciaEliminadaLog(ael);
+        setNotasCredito(nc);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -4962,7 +4973,16 @@ export default function ConcretarApp() {
           grupos[c.proveedor].fechaMasProxima = c.fechaVencimientoCc;
         }
       });
+    // Las notas de crédito por devoluciones restan de la deuda pendiente con ese
+    // proveedor — si la dejan en cero o a favor, deja de contar como "próximo pago".
+    notasCredito
+      .filter((n) => !obraIdsPapelera.has(n.obraId))
+      .forEach((n) => {
+        if (!grupos[n.proveedor]) grupos[n.proveedor] = { proveedor: n.proveedor, monto: 0, cantidad: 0, fechaMasProxima: null };
+        grupos[n.proveedor].monto -= n.monto || 0;
+      });
     return Object.values(grupos)
+      .filter((g) => g.monto > 0)
       .map((g) => {
         const prov = proveedores.find((p) => nombreComercial(p) === g.proveedor);
         return {
@@ -5308,6 +5328,9 @@ export default function ConcretarApp() {
   const [proveedorForm, setProveedorForm] = useState(emptyProveedorForm);
   const [showProveedorForm, setShowProveedorForm] = useState(false);
   const [editandoProveedorId, setEditandoProveedorId] = useState(null);
+  // Id del proveedor cuyo formulario de "Agregar nota de crédito" está abierto
+  // (uno solo a la vez, como el de edición).
+  const [agregandoNotaCreditoId, setAgregandoNotaCreditoId] = useState(null);
   const talleres = proveedores.filter((p) => p.esTaller === "Sí");
 
   function submitProveedorForm(e) {
@@ -5348,7 +5371,26 @@ export default function ConcretarApp() {
     const facturas = comprasFacturas.filter((c) => c.proveedor === nombreComercial(prov) && !obraIdsPapelera.has(c.obraId));
     const totalFacturado = facturas.reduce((s, c) => s + (c.monto || 0), 0);
     const totalPagado = facturas.filter((c) => c.estado === "Pagada").reduce((s, c) => s + (c.monto || 0), 0);
-    return { totalFacturado, totalPagado, saldo: totalFacturado - totalPagado, facturasPendientes: facturas.filter((c) => c.estado !== "Pagada") };
+    const notasDeEsteProveedor = notasCredito.filter((n) => n.proveedor === nombreComercial(prov) && !obraIdsPapelera.has(n.obraId));
+    const totalNotasCredito = notasDeEsteProveedor.reduce((s, n) => s + (n.monto || 0), 0);
+    return {
+      totalFacturado, totalPagado, totalNotasCredito, notasDeEsteProveedor,
+      saldo: totalFacturado - totalPagado - totalNotasCredito,
+      facturasPendientes: facturas.filter((c) => c.estado !== "Pagada"),
+    };
+  }
+  function agregarNotaCredito(proveedor, datos) {
+    addRecord("notas_credito", {
+      fecha: datos.fecha,
+      proveedor: nombreComercial(proveedor),
+      obraId: datos.obraId,
+      monto: datos.monto,
+      motivo: datos.motivo || "",
+      archivo: null,
+      nombreArchivo: null,
+      tipoArchivo: null,
+    }, setNotasCredito);
+    setAgregandoNotaCreditoId(null);
   }
   function marcarFacturaPagada(factura) {
     // Restaura la cuenta real (Banco/Efectivo/Mercado Pago) para que vuelva a contar
@@ -11852,7 +11894,7 @@ export default function ConcretarApp() {
                 ) : (
                   <div className="space-y-3">
                     {proveedores.map((p) => {
-                      const { totalFacturado, totalPagado, saldo, facturasPendientes } = balanceProveedor(p);
+                      const { totalFacturado, totalPagado, saldo, facturasPendientes, totalNotasCredito, notasDeEsteProveedor } = balanceProveedor(p);
                       return (
                         <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -11870,6 +11912,9 @@ export default function ConcretarApp() {
                                 <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Saldo — le debés</div>
                                 <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
                               </div>
+                              <button onClick={() => setAgregandoNotaCreditoId((id) => (id === p.id ? null : p.id))} className={btnGhost}>
+                                <span className="flex items-center gap-1"><Plus size={13} /> Nota de crédito</span>
+                              </button>
                               <button onClick={() => editarProveedor(p)} className={btnGhost}>
                                 <span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span>
                               </button>
@@ -11879,10 +11924,54 @@ export default function ConcretarApp() {
                           <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
                             <span>Facturado: <span className="font-mono text-slate-700">{fmtARS(totalFacturado)}</span></span>
                             <span>Pagado: <span className="font-mono text-slate-700">{fmtARS(totalPagado)}</span></span>
+                            {totalNotasCredito > 0 && <span>Notas de crédito: <span className="font-mono text-emerald-700">-{fmtARS(totalNotasCredito)}</span></span>}
                             <span>Día de pago: <span className="font-mono text-slate-700">{p.diaPago ? `${p.diaPago} de cada mes` : "sin definir"}</span></span>
                             {p.cbu && <span>CBU: <span className="font-mono text-slate-700">{p.cbu}</span></span>}
                             {p.numeroCuenta && <span>Cuenta: <span className="font-mono text-slate-700">{p.numeroCuenta}</span></span>}
                           </div>
+                          {agregandoNotaCreditoId === p.id && (
+                            <form
+                              className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 md:grid-cols-4"
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                const f = new FormData(e.target);
+                                agregarNotaCredito(p, {
+                                  fecha: f.get("fecha"),
+                                  obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
+                                  monto: Number(f.get("monto")) || 0,
+                                  motivo: f.get("motivo"),
+                                });
+                              }}
+                            >
+                              <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
+                              <Field label="Obra (opcional)">
+                                <select name="obraId" className={inputCls}>
+                                  <option value="">General (sin obra específica)</option>
+                                  {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                                </select>
+                              </Field>
+                              <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
+                              <Field label="Motivo"><input name="motivo" required placeholder="Ej: devolución de cemento en mal estado" className={inputCls} /></Field>
+                              <div className="flex items-end gap-2 md:col-span-4">
+                                <button type="submit" className={btnPrimary}>Guardar</button>
+                                <button type="button" onClick={() => setAgregandoNotaCreditoId(null)} className={btnGhost}>Cancelar</button>
+                              </div>
+                            </form>
+                          )}
+                          {notasDeEsteProveedor.length > 0 && (
+                            <div className="mt-3 space-y-1.5 border-t border-stone-100 pt-2">
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Notas de crédito</div>
+                              {notasDeEsteProveedor.map((n) => (
+                                <div key={n.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-100 bg-emerald-50/40 px-2 py-1.5 text-xs">
+                                  <span className="text-slate-600">
+                                    {fmtFecha(n.fecha)} — {n.motivo || "sin motivo"} — <span className="font-mono font-semibold text-emerald-700">-{fmtARS(n.monto)}</span>
+                                    {n.obraId && <span className="ml-1 text-slate-400">({obras.find((o) => o.id === n.obraId)?.nombre || "obra eliminada"})</span>}
+                                  </span>
+                                  <BotonEliminar onClick={() => moverAPapelera("notas_credito", n.id, setNotasCredito, `Nota de crédito — ${fmtARS(n.monto)}`)} title="Eliminar nota de crédito" />
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           {facturasPendientes.length > 0 && (
                             <div className="mt-3 space-y-1.5 border-t border-stone-100 pt-2">
                               <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Deudas pendientes</div>
@@ -12038,7 +12127,7 @@ export default function ConcretarApp() {
           <div className="space-y-6">
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">Papelera</h2>
             {(herramientasPapelera.length + personalPapelera.length + proveedoresPapelera.length + clientesPapelera.length
-              + ordenesCompraPapelera.length + pedidosMaterialesPapelera.length + etapasObraPapelera.length
+              + ordenesCompraPapelera.length + pedidosMaterialesPapelera.length + etapasObraPapelera.length + notasCreditoPapelera.length
               + (canVerFinanzas ? comprasFacturasPapelera.length + ingresosPapelera.length + prestamosPapelera.length + cobrosSociosPapelera.length : 0)
             ) === 0 ? (
               <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">La Papelera está vacía.</div>
@@ -12064,6 +12153,13 @@ export default function ConcretarApp() {
                   nombreDe={(p) => nombreComercial(p)}
                   detalleDe={(p) => p.contacto}
                   onRestaurar={(p) => restaurarDePapelera("proveedores", p.id, setProveedores)}
+                />
+                <SeccionPapelera
+                  titulo="Notas de crédito"
+                  items={notasCreditoPapelera}
+                  nombreDe={(n) => `${n.proveedor} — ${fmtARS(n.monto)}`}
+                  detalleDe={(n) => `${fmtFecha(n.fecha)} · ${n.motivo}`}
+                  onRestaurar={(n) => restaurarDePapelera("notas_credito", n.id, setNotasCredito)}
                 />
                 <SeccionPapelera
                   titulo="Clientes"
