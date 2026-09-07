@@ -134,7 +134,6 @@ const ESTADOS_OBRA = ["En curso", "Pendiente de cobro", "Pausada", "Finalizada"]
 const ESTADOS_ITEM_COMBO = ["Entregado", "Roto", "Perdido", "Devuelto"];
 const TIPOS_CAJA = ["Electricista", "Civil", "Pintor", "Metalúrgico"];
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-const DIAS_SEMANA_JS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
 const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
 const CATEGORIAS_GASTO = ["Materiales", "Equipos y Herramientas", "Epps", "Consumibles", "Combustible", "Mano de obra", "Varios"];
@@ -2470,18 +2469,6 @@ export default function ConcretarApp() {
       recibidoPor: "Gerente",
     },
   ];
-  const DEMO_AUDITORIAS = [
-    {
-      id: 1,
-      obraId: 1,
-      fecha: "2026-08-14",
-      tipo: "Cierre",
-      realizadoPor: "Capataz",
-      herramientasPresentes: [2],
-      herramientasFaltantes: [],
-      observaciones: "Todo en orden, semana cerrada sin novedades.",
-    },
-  ];
   const DEMO_FERIADOS = [
     { id: 1, fecha: "2026-12-25", descripcion: "Navidad" },
     { id: 2, fecha: "2026-01-01", descripcion: "Año Nuevo" },
@@ -2580,7 +2567,6 @@ export default function ConcretarApp() {
   const [proveedoresRaw, setProveedores] = useState(isSupabaseConfigured ? [] : DEMO_PROVEEDORES);
   const [clientesRaw, setClientes] = useState(isSupabaseConfigured ? [] : DEMO_CLIENTES);
   const [remitos, setRemitos] = useState(isSupabaseConfigured ? [] : DEMO_REMITOS);
-  const [auditorias, setAuditorias] = useState(isSupabaseConfigured ? [] : DEMO_AUDITORIAS);
   const [feriados, setFeriados] = useState(isSupabaseConfigured ? [] : DEMO_FERIADOS);
   const [subcategoriasMat, setSubcategoriasMat] = useState(isSupabaseConfigured ? [] : DEMO_SUBCATEGORIAS_MAT);
   const [tiposMaterial, setTiposMaterial] = useState(isSupabaseConfigured ? [] : DEMO_TIPOS_MATERIAL);
@@ -2669,12 +2655,12 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, au, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
           sbSelect("catalogo_nombres_herramienta"), sbSelect("catalogo_marcas"), sbSelect("catalogo_herramientas_chicas"),
-          sbSelect("proveedores"), sbSelect("remitos"), sbSelect("auditorias_herramientas"), sbSelect("feriados"), sbSelect("clientes"),
+          sbSelect("proveedores"), sbSelect("remitos"), sbSelect("feriados"), sbSelect("clientes"),
           sbSelect("subcategorias_material"), sbSelect("tipos_material"), sbSelect("catalogo_materiales"), sbSelect("presupuesto_materiales"),
           sbSelect("pedidos_materiales"), sbSelect("presupuesto_general"), sbSelect("stock_materiales"),
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
@@ -2703,7 +2689,6 @@ export default function ConcretarApp() {
         setProveedores(pv);
         setClientes(cli);
         setRemitos(rm);
-        setAuditorias(au);
         setFeriados(fer);
         setSubcategoriasMat(sm);
         setTiposMaterial(tm);
@@ -3330,32 +3315,6 @@ export default function ConcretarApp() {
   const ocPendientesAprobacion = ordenesCompra.filter((o) => o.estado === "Requiere aprobación" && !obraIdsPapelera.has(o.obraId));
   const hayDesvioAlerta = desvioPct > DESVIO_ALERTA_PCT;
   const asistenciasEditadas = asistencia.filter((a) => a.editado);
-  function nombreDiaHoy() {
-    return DIAS_SEMANA_JS[new Date().getDay()];
-  }
-  function esFeriadoHoy() {
-    return feriados.some((f) => f.fecha === hoyISO());
-  }
-  function primerDiaLaborable(obra) {
-    const dias = obra.diasLaborables || [];
-    return DIAS_SEMANA.find((d) => dias.includes(d)) || null;
-  }
-  function dentroDeVentanaCierre(obra) {
-    if (esFeriadoHoy()) return false;
-    if (!obra.diaCierre || !obra.horaCierre) return false;
-    if (nombreDiaHoy() !== obra.diaCierre) return false;
-    const [h, m] = obra.horaCierre.split(":").map(Number);
-    const ahora = new Date();
-    const cierre = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), h, m || 0);
-    const diffMin = (cierre - ahora) / 60000;
-    return diffMin > 0 && diffMin <= 60;
-  }
-  function auditoriaHoy(obraId, tipo) {
-    return auditorias.some((a) => a.obraId === obraId && a.tipo === tipo && a.fecha === hoyISO());
-  }
-  const obrasEnVentanaCierre = obras.filter((o) => dentroDeVentanaCierre(o) && !auditoriaHoy(o.id, "Cierre"));
-  // "Apertura" dispara en el primer día laborable configurado de cada obra (normalmente lunes, pero se adapta si esa obra trabaja otros días), salvo feriado.
-  const obrasSinAperturaLunes = esFeriadoHoy() ? [] : obras.filter((o) => nombreDiaHoy() === primerDiaLaborable(o) && !auditoriaHoy(o.id, "Apertura"));
 
   // Alarmas previas de materiales: según la "Fecha Necesaria" del presupuesto importado.
   function diasHasta(fechaStr) {
@@ -3378,9 +3337,6 @@ export default function ConcretarApp() {
   function claveDeLista(items) {
     return items.map((x) => x.id).sort((a, b) => a - b).join(",");
   }
-  function claveSemanaActual() {
-    return fechaAISO(lunesOAntes(fechaLocal(hoyISO())));
-  }
   function alertaDescartada(tipo, clave, obraId = null) {
     if (!clave) return false;
     return alertasDescartadas.some((a) => a.tipo === tipo && a.clave === clave && (a.obraId ?? null) === (obraId ?? null));
@@ -3392,7 +3348,7 @@ export default function ConcretarApp() {
 
   const totalAlertas =
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
-    (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + obrasEnVentanaCierre.length + obrasSinAperturaLunes.length +
+    (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length +
     materialesVencidos.length + materialesProximos.length + pedidosPorAprobar.length + personalSinObra5Dias.length;
 
   // ---------- Forms state ----------
@@ -5353,43 +5309,6 @@ export default function ConcretarApp() {
     setCantidadParaStock(1);
   }
 
-  // ---------- Auditoría semanal de herramientas: formulario ----------
-  const [obraAuditoriaId, setObraAuditoriaId] = useState(obras[0]?.id ?? "");
-  const [tipoAuditoria, setTipoAuditoria] = useState("Cierre");
-  const [presentesAuditoria, setPresentesAuditoria] = useState([]);
-  const [obsAuditoria, setObsAuditoria] = useState("");
-  const [showAuditoriaForm, setShowAuditoriaForm] = useState(false);
-
-  const obraAuditoriaSel = obras.find((o) => o.id === Number(obraAuditoriaId));
-  const herramientasDeObraAuditoria = herramientas.filter((h) => obraAuditoriaSel && h.ubicacion === obraAuditoriaSel.nombre);
-
-  function abrirAuditoria(obraId, tipo) {
-    setObraAuditoriaId(obraId);
-    setTipoAuditoria(tipo);
-    setPresentesAuditoria([]);
-    setObsAuditoria("");
-    setShowAuditoriaForm(true);
-    setVistaHerramientas("auditoria");
-    setTab("herramientas");
-  }
-  function togglePresenteAuditoria(id) {
-    setPresentesAuditoria((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
-  function submitAuditoria(e) {
-    e.preventDefault();
-    const faltantes = herramientasDeObraAuditoria.map((h) => h.id).filter((id) => !presentesAuditoria.includes(id));
-    addRecord("auditorias_herramientas", {
-      obraId: Number(obraAuditoriaId),
-      fecha: hoyISO(),
-      tipo: tipoAuditoria,
-      realizadoPor: currentRole,
-      herramientasPresentes: presentesAuditoria,
-      herramientasFaltantes: faltantes,
-      observaciones: obsAuditoria,
-    }, setAuditorias);
-    setShowAuditoriaForm(false);
-  }
-
   // ---------- Calendario Corporativo: feriados y ficha horaria por obra ----------
   const emptyFeriadoForm = { fecha: hoyISO(), descripcion: "" };
   const [feriadoForm, setFeriadoForm] = useState(emptyFeriadoForm);
@@ -6125,20 +6044,6 @@ export default function ConcretarApp() {
                       </ul>
                     </AlertCard>
                   )}
-                  {obrasEnVentanaCierre.map((o) => (
-                    <AlertCard key={`cierre-${o.id}`} tone="rose" icon={AlertTriangle} title={`Falta menos de 1hs para el cierre de "${o.nombre}" (${o.horaCierre}) — hacé el control de herramientas.`}>
-                      <button onClick={() => abrirAuditoria(o.id, "Cierre")} className="text-xs font-semibold underline hover:no-underline">
-                        Hacer control de cierre ahora →
-                      </button>
-                    </AlertCard>
-                  ))}
-                  {obrasSinAperturaLunes.map((o) => (
-                    <AlertCard key={`apertura-${o.id}`} tone="amber" icon={AlertTriangle} title={`Falta validar el inventario inicial de "${o.nombre}" para arrancar la semana.`}>
-                      <button onClick={() => abrirAuditoria(o.id, "Apertura")} className="text-xs font-semibold underline hover:no-underline">
-                        Hacer control de apertura ahora →
-                      </button>
-                    </AlertCard>
-                  ))}
                   {agruparPedidosPorObra(materialesVencidos, obras).map((grupo) => (
                     <AlertCard
                       key={`venc-${grupo.obraId}`}
@@ -6621,8 +6526,6 @@ export default function ConcretarApp() {
             {(() => {
               const encargadoObra = personal.find((p) => p.id === obraSel.encargadoId);
               const herrAtencionObra = herramientasAtencion.filter((h) => h.ubicacion === obraSel.nombre);
-              const cierreObra = obrasEnVentanaCierre.filter((o) => o.id === obraSel.id);
-              const aperturaObra = obrasSinAperturaLunes.filter((o) => o.id === obraSel.id);
               const matVencidosObra = materialesVencidos.filter((p) => p.obraId === obraSel.id);
               const matProximosObra = materialesProximos.filter((p) => p.obraId === obraSel.id);
               const pedidosAprobarObra = pedidosPorAprobar.filter((p) => p.obraId === obraSel.id);
@@ -6633,8 +6536,6 @@ export default function ConcretarApp() {
               // ni se muestra, salvo que cambien los ids/el día detrás de ella.
               const claveHerrObra = claveDeLista(herrAtencionObra);
               const herrObraDescartada = herrAtencionObra.length > 0 && alertaDescartada("herramientas_mal_estado", claveHerrObra, obraSel.id);
-              const cierreObraDescartada = cierreObra.length > 0 && alertaDescartada("cierre_ventana", hoyISO(), obraSel.id);
-              const aperturaObraDescartada = aperturaObra.length > 0 && alertaDescartada("apertura_semana", claveSemanaActual(), obraSel.id);
               const claveMatVencidosObra = claveDeLista(matVencidosObra);
               const matVencidosObraDescartada = matVencidosObra.length > 0 && alertaDescartada("materiales_vencidos", claveMatVencidosObra, obraSel.id);
               const claveMatProximosObra = claveDeLista(matProximosObra);
@@ -6649,8 +6550,6 @@ export default function ConcretarApp() {
 
               const totalAlertasObra =
                 (herrObraDescartada ? 0 : herrAtencionObra.length) +
-                (cierreObraDescartada ? 0 : cierreObra.length) +
-                (aperturaObraDescartada ? 0 : aperturaObra.length) +
                 (matVencidosObraDescartada ? 0 : matVencidosObra.length) +
                 (matProximosObraDescartada ? 0 : matProximosObra.length) +
                 (pedidosAprobarObraDescartada ? 0 : pedidosAprobarObra.length) +
@@ -6780,26 +6679,6 @@ export default function ConcretarApp() {
                             onDescartar={() => descartarAlerta("herramientas_mal_estado", claveHerrObra, obraSel.id)}
                           >
                             <ul className="space-y-0.5 text-xs">{herrAtencionObra.map((h) => <li key={h.id} className="truncate">{h.nombre} ({h.numeroSerie}) — {h.estado}</li>)}</ul>
-                          </AlertCard>
-                        )}
-                        {cierreObra.length > 0 && !cierreObraDescartada && (
-                          <AlertCard
-                            tone="rose"
-                            icon={AlertTriangle}
-                            title="Falta menos de 1hs para el cierre — hacé el control de herramientas."
-                            onDescartar={() => descartarAlerta("cierre_ventana", hoyISO(), obraSel.id)}
-                          >
-                            <button onClick={() => abrirAuditoria(obraSel.id, "Cierre")} className="text-xs font-semibold underline hover:no-underline">Hacer control de cierre ahora →</button>
-                          </AlertCard>
-                        )}
-                        {aperturaObra.length > 0 && !aperturaObraDescartada && (
-                          <AlertCard
-                            tone="amber"
-                            icon={AlertTriangle}
-                            title="Falta validar el inventario inicial de la semana."
-                            onDescartar={() => descartarAlerta("apertura_semana", claveSemanaActual(), obraSel.id)}
-                          >
-                            <button onClick={() => abrirAuditoria(obraSel.id, "Apertura")} className="text-xs font-semibold underline hover:no-underline">Hacer control de apertura ahora →</button>
                           </AlertCard>
                         )}
                         {matVencidosObra.length > 0 && !matVencidosObraDescartada && (
@@ -8355,15 +8234,6 @@ export default function ConcretarApp() {
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{remitosPendientes.length}</span>
                 )}
               </button>
-              <button
-                onClick={() => setVistaHerramientas("auditoria")}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold ${vistaHerramientas === "auditoria" ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
-              >
-                Auditoría Semanal
-                {(obrasEnVentanaCierre.length + obrasSinAperturaLunes.length) > 0 && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">{obrasEnVentanaCierre.length + obrasSinAperturaLunes.length}</span>
-                )}
-              </button>
             </div>
 
             {vistaHerramientas === "altoValor" && !viewingHerramienta && (
@@ -8878,106 +8748,6 @@ export default function ConcretarApp() {
               </>
             )}
 
-            {vistaHerramientas === "auditoria" && (
-              <>
-
-                {(obrasEnVentanaCierre.length > 0 || obrasSinAperturaLunes.length > 0) && (
-                  <div className="space-y-2">
-                    {obrasEnVentanaCierre.map((o) => (
-                      <div key={`c-${o.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-rose-300 bg-rose-50 px-4 py-3">
-                        <span className="text-sm text-rose-800">Cierre de "{o.nombre}" en menos de 1hs ({o.horaCierre}).</span>
-                        <button onClick={() => abrirAuditoria(o.id, "Cierre")} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Hacer control</button>
-                      </div>
-                    ))}
-                    {obrasSinAperturaLunes.map((o) => (
-                      <div key={`a-${o.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3">
-                        <span className="text-sm text-amber-800">Falta la apertura de semana de "{o.nombre}".</span>
-                        <button onClick={() => abrirAuditoria(o.id, "Apertura")} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Hacer control</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex items-center justify-end">
-                  <button
-                    onClick={() => { setShowAuditoriaForm((v) => !v); setPresentesAuditoria([]); setObsAuditoria(""); }}
-                    className={btnPrimary}
-                  >
-                    <ClipboardCheck size={16} /> Hacer un control manual
-                  </button>
-                </div>
-
-                {showAuditoriaForm && (
-                  <Panel title={`Control de ${tipoAuditoria.toLowerCase()} de herramientas`} action={<button onClick={() => setShowAuditoriaForm(false)}><X size={16} /></button>}>
-                    <form className="space-y-4" onSubmit={submitAuditoria}>
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <Field label="Obra">
-                          <select value={obraAuditoriaId} onChange={(e) => { setObraAuditoriaId(Number(e.target.value)); setPresentesAuditoria([]); }} className={inputCls}>
-                            {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                          </select>
-                        </Field>
-                        <Field label="Tipo de control">
-                          <select value={tipoAuditoria} onChange={(e) => setTipoAuditoria(e.target.value)} className={inputCls}>
-                            <option>Cierre</option>
-                            <option>Apertura</option>
-                          </select>
-                        </Field>
-                      </div>
-
-                      <div>
-                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                          Herramientas registradas en "{obraAuditoriaSel?.nombre}" — tildá las que están físicamente presentes
-                        </div>
-                        {herramientasDeObraAuditoria.length === 0 ? (
-                          <div className="rounded-md border border-dashed border-stone-300 p-3 text-xs text-slate-500">No hay herramientas de Alto Valor registradas en esta obra.</div>
-                        ) : (
-                          <div className="space-y-1 rounded-md border border-stone-200 p-2">
-                            {herramientasDeObraAuditoria.map((h) => (
-                              <label key={h.id} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-stone-50">
-                                <input type="checkbox" checked={presentesAuditoria.includes(h.id)} onChange={() => togglePresenteAuditoria(h.id)} className="h-3.5 w-3.5" />
-                                <CategoriaHerrIcon categoria={h.categoria} />
-                                {h.nombre} <span className="font-mono text-xs text-slate-400">({h.numeroSerie || "s/n"})</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <Field label="Observaciones">
-                        <textarea value={obsAuditoria} onChange={(e) => setObsAuditoria(e.target.value)} rows={2} placeholder="Ej: falta el rotomartillo, avisado al encargado..." className={inputCls} />
-                      </Field>
-
-                      <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar control</button>
-                    </form>
-                  </Panel>
-                )}
-
-                {auditorias.length > 0 && (
-                  <div>
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Historial de controles</div>
-                    <div className="space-y-2">
-                      {[...auditorias].sort(porCargado).slice(0, 15).map((a) => {
-                        const obra = obras.find((o) => o.id === a.obraId);
-                        return (
-                          <div key={a.id} className="rounded-lg border border-stone-200 bg-white px-4 py-2.5 text-sm">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="font-medium text-slate-800">{obra?.nombre} — {a.tipo}</span>
-                              <span className="text-xs text-slate-400">{fmtFecha(a.fecha)} ({a.realizadoPor})</span>
-                            </div>
-                            {a.herramientasFaltantes?.length > 0 && (
-                              <div className="mt-1 text-xs text-rose-600">
-                                Faltantes: {a.herramientasFaltantes.map((id) => herramientas.find((h) => h.id === id)?.nombre).filter(Boolean).join(", ")}
-                              </div>
-                            )}
-                            {a.observaciones && <div className="mt-1 text-xs text-slate-500">{a.observaciones}</div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
           </div>
         )}
 
