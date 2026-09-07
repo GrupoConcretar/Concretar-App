@@ -213,11 +213,12 @@ const ROLES_FINANZAS = ["Gerente", "Contador"];
 const ROLES_VEN_PRECIOS_PEDIDO = ["Gerente", "Contador", "Logística"];
 const FORMALIDADES = ["Blanco", "Negro"];
 const CUENTAS = ["Efectivo", "Banco", "Mercado Pago"];
-const FORMAS_PAGO = ["Banco", "Mercado Pago", "Efectivo"];
-// "eCheq" y "Cuenta corriente" son medios de pago del Banco: quedan "Pendiente" hasta
-// su fecha (eCheq) o hasta que se salden a mano (Cuenta corriente), en vez de
+// "Cuenta corriente" es su propia forma de pago (no es un medio del Banco: es una
+// deuda con el proveedor, todavía no se sabe por qué canal real se va a saldar).
+const FORMAS_PAGO = ["Banco", "Mercado Pago", "Efectivo", "Cuenta corriente"];
+// "eCheq" sí es un medio del Banco: queda "Pendiente" hasta su fecha en vez de
 // acreditarse al toque como Débito/Transferencia y Crédito.
-const MEDIOS_BANCARIOS = ["Débito/Transferencia", "eCheq", "Crédito", "Cuenta corriente"];
+const MEDIOS_BANCARIOS = ["Débito/Transferencia", "eCheq", "Crédito"];
 const TIPOS_FACTURA = ["Sin factura", "A", "B", "C"];
 
 // ============================================================
@@ -3583,6 +3584,8 @@ export default function ConcretarApp() {
   const [facturaFormaPago, setFacturaFormaPago] = useState("Efectivo");
   const [facturaMedioBancario, setFacturaMedioBancario] = useState("Débito/Transferencia");
   const [facturaPlazoEcheq, setFacturaPlazoEcheq] = useState("30");
+  const [facturaEstadoCC, setFacturaEstadoCC] = useState("Pendiente");
+  const [facturaMedioPagoCC, setFacturaMedioPagoCC] = useState("Efectivo");
   const [facturaArchivo, setFacturaArchivo] = useState(null);
   const [facturaNombreArchivo, setFacturaNombreArchivo] = useState(null);
   const [facturaTipoArchivo, setFacturaTipoArchivo] = useState(null);
@@ -5178,6 +5181,16 @@ export default function ConcretarApp() {
   }
   function marcarFacturaPagada(factura) {
     updateRecord("compras_facturas", factura.id, { estado: "Pagada" }, setComprasFacturas);
+  }
+  const esCuentaCorriente = (c) => c.formaPago === "Cuenta corriente" || c.medioBancario === "Cuenta corriente";
+  // "Cuenta corriente" no es un canal real de pago — recién al saldarla se sabe si
+  // salió de Efectivo o de una Transferencia, así que hay que preguntarlo en ese momento.
+  const [marcandoPagoCCId, setMarcandoPagoCCId] = useState(null);
+  function marcarCuentaCorrientePagada(factura, medio) {
+    const cuenta = medio === "Transferencia" ? "Banco" : "Efectivo";
+    const medioBancario = medio === "Transferencia" ? "Débito/Transferencia" : null;
+    updateRecord("compras_facturas", factura.id, { estado: "Pagada", cuenta, medioBancario }, setComprasFacturas);
+    setMarcandoPagoCCId(null);
   }
   // Un eCheq queda "Pendiente" hasta su fecha de pago; llegado ese día se acredita solo,
   // sin que nadie tenga que entrar a marcarlo a mano.
@@ -10091,7 +10104,6 @@ export default function ConcretarApp() {
                     const formaPago = f.get("formaPago");
                     const medioBancario = formaPago === "Banco" ? f.get("medioBancario") : null;
                     const fechaPagoEcheq = medioBancario === "eCheq" ? f.get("fechaPagoEcheq") : null;
-                    const fechaVencimientoCC = medioBancario === "Cuenta corriente" ? f.get("fechaVencimientoCC") : null;
                     addRecord("compras_facturas", {
                       fecha: f.get("fecha"),
                       obraId: null,
@@ -10106,9 +10118,9 @@ export default function ConcretarApp() {
                       formaPago,
                       medioBancario,
                       fechaPagoEcheq,
-                      fechaVencimientoCC,
-                      cuenta: medioBancario === "Cuenta corriente" ? null : formaPago,
-                      estado: (medioBancario === "eCheq" || medioBancario === "Cuenta corriente") ? "Pendiente" : "Pagada",
+                      fechaVencimientoCC: null,
+                      cuenta: formaPago,
+                      estado: medioBancario === "eCheq" ? "Pendiente" : "Pagada",
                       archivo: null,
                       nombreArchivo: null,
                       tipoArchivo: null,
@@ -10136,17 +10148,17 @@ export default function ConcretarApp() {
                     <select name="formalidad" defaultValue="Blanco" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
                   </Field>
                   <Field label="Forma de pago">
+                    {/* Sin "Cuenta corriente": los gastos mensuales fijos son gastos propios
+                        recurrentes (alquiler, seguros, etc.), no compras a cuenta corriente con
+                        un proveedor — esas se cargan desde "Cargar gasto / factura". */}
                     <select name="formaPago" value={gastoMensualFormaPago} onChange={(e) => setGastoMensualFormaPago(e.target.value)} className={inputCls}>
-                      {FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}
+                      {FORMAS_PAGO.filter((fp) => fp !== "Cuenta corriente").map((fp) => <option key={fp}>{fp}</option>)}
                     </select>
                   </Field>
                   {gastoMensualFormaPago === "Banco" && (
                     <Field label="Medio">
-                      {/* Los gastos mensuales fijos son gastos propios recurrentes (alquiler,
-                          seguros, etc.), no compras a cuenta corriente con un proveedor — esas
-                          se cargan desde "Cargar gasto / factura". */}
                       <select name="medioBancario" value={gastoMensualMedioBancario} onChange={(e) => setGastoMensualMedioBancario(e.target.value)} className={inputCls}>
-                        {MEDIOS_BANCARIOS.filter((m) => m !== "Cuenta corriente").map((m) => <option key={m}>{m}</option>)}
+                        {MEDIOS_BANCARIOS.map((m) => <option key={m}>{m}</option>)}
                       </select>
                     </Field>
                   )}
@@ -10172,7 +10184,27 @@ export default function ConcretarApp() {
                     const formaPago = f.get("formaPago");
                     const medioBancario = formaPago === "Banco" ? f.get("medioBancario") : null;
                     const fechaPagoEcheq = medioBancario === "eCheq" ? f.get("fechaPagoEcheq") : null;
-                    const fechaVencimientoCC = medioBancario === "Cuenta corriente" ? f.get("fechaVencimientoCC") : null;
+                    // "Cuenta corriente" es una deuda con el proveedor, no un canal real de pago:
+                    // al cargarla se elige si ya se saldó (y por qué medio) o si queda pendiente
+                    // para una fecha futura.
+                    let cuenta = formaPago;
+                    let medioBancarioFinal = medioBancario;
+                    let estado = medioBancario === "eCheq" ? "Pendiente" : "Pagada";
+                    let fechaVencimientoCC = null;
+                    if (formaPago === "Cuenta corriente") {
+                      const estadoCC = f.get("estadoCC");
+                      if (estadoCC === "Pendiente") {
+                        cuenta = null;
+                        medioBancarioFinal = null;
+                        estado = "Pendiente";
+                        fechaVencimientoCC = f.get("fechaVencimientoCC");
+                      } else {
+                        const medioPagoCC = f.get("medioPagoCC");
+                        cuenta = medioPagoCC === "Transferencia" ? "Banco" : "Efectivo";
+                        medioBancarioFinal = medioPagoCC === "Transferencia" ? "Débito/Transferencia" : null;
+                        estado = "Pagada";
+                      }
+                    }
                     addRecord("compras_facturas", {
                       fecha: f.get("fecha"),
                       obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
@@ -10185,14 +10217,11 @@ export default function ConcretarApp() {
                       tipoFactura: f.get("tipoFactura"),
                       formalidad: f.get("formalidad"),
                       formaPago,
-                      medioBancario,
+                      medioBancario: medioBancarioFinal,
                       fechaPagoEcheq,
                       fechaVencimientoCC,
-                      // Efectivo, Mercado Pago, débito/transferencia y crédito se acreditan al toque.
-                      // El eCheq queda pendiente hasta su fecha de pago y la cuenta corriente hasta que la saldemos a mano.
-                      // Los dos son medios del Banco, así que ya cuentan a esa balanza en cuanto se saldan.
-                      cuenta: medioBancario === "Cuenta corriente" ? null : formaPago,
-                      estado: (medioBancario === "eCheq" || medioBancario === "Cuenta corriente") ? "Pendiente" : "Pagada",
+                      cuenta,
+                      estado,
                       archivo: facturaArchivo,
                       nombreArchivo: facturaNombreArchivo,
                       tipoArchivo: facturaTipoArchivo,
@@ -10202,6 +10231,8 @@ export default function ConcretarApp() {
                     setFacturaFormaPago("Efectivo");
                     setFacturaMedioBancario("Débito/Transferencia");
                     setFacturaPlazoEcheq("30");
+                    setFacturaEstadoCC("Pendiente");
+                    setFacturaMedioPagoCC("Efectivo");
                     setFacturaArchivo(null);
                     setFacturaNombreArchivo(null);
                     setFacturaTipoArchivo(null);
@@ -10272,11 +10303,28 @@ export default function ConcretarApp() {
                       </Field>
                     </>
                   )}
-                  {facturaFormaPago === "Banco" && facturaMedioBancario === "Cuenta corriente" && (
-                    <Field label="Fecha de pago">
-                      <input name="fechaVencimientoCC" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
-                      <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esa fecha — la marcás como "Pagada" a mano desde la tabla cuando la saldemos.</div>
-                    </Field>
+                  {facturaFormaPago === "Cuenta corriente" && (
+                    <>
+                      <Field label="Estado">
+                        <select name="estadoCC" value={facturaEstadoCC} onChange={(e) => setFacturaEstadoCC(e.target.value)} className={inputCls}>
+                          <option value="Pendiente">Pendiente de pago</option>
+                          <option value="Pagado">Pagado</option>
+                        </select>
+                      </Field>
+                      {facturaEstadoCC === "Pendiente" ? (
+                        <Field label="Fecha de pago">
+                          <input name="fechaVencimientoCC" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
+                          <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esa fecha — la marcás como "Pagada" a mano desde la tabla cuando la saldemos.</div>
+                        </Field>
+                      ) : (
+                        <Field label="Medio de pago">
+                          <select name="medioPagoCC" value={facturaMedioPagoCC} onChange={(e) => setFacturaMedioPagoCC(e.target.value)} className={inputCls}>
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Transferencia">Transferencia</option>
+                          </select>
+                        </Field>
+                      )}
+                    </>
                   )}
                   <div className="md:col-span-2">
                     <ArchivoInput
@@ -10308,7 +10356,7 @@ export default function ConcretarApp() {
                         <td className="px-2 py-1 text-slate-500">{c.descripcion || "—"}</td>
                         <td className="px-2 py-1"><Badge estado={c.formalidad || "Blanco"} /></td>
                         <td className="px-2 py-1 text-slate-600">
-                          <span className="flex items-center gap-1"><CuentaIcon cuenta={["eCheq", "Cuenta corriente"].includes(c.formaPago) ? "Banco" : c.formaPago} />{c.formaPago || c.cuenta || "—"}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
+                          <span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta || "Banco"} />{c.formaPago || c.cuenta || "—"}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
                           {(c.medioBancario === "eCheq" || c.formaPago === "eCheq") && c.estado === "Pendiente" && (
                             <div className="text-[10px] text-slate-400">Cobra el {fmtFecha(c.fechaPagoEcheq)}</div>
                           )}
@@ -10327,7 +10375,19 @@ export default function ConcretarApp() {
                         <td className="px-2 py-1"><Badge estado={c.estado} /></td>
                         <td className="px-2 py-1">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {c.estado === "Pendiente" && (
+                            {c.estado === "Pendiente" && esCuentaCorriente(c) && (
+                              marcandoPagoCCId === c.id ? (
+                                <span className="flex flex-wrap items-center gap-1">
+                                  <span className="text-[11px] text-slate-500">¿Con qué se pagó?</span>
+                                  <button onClick={() => marcarCuentaCorrientePagada(c, "Efectivo")} className={btnGhost}>Efectivo</button>
+                                  <button onClick={() => marcarCuentaCorrientePagada(c, "Transferencia")} className={btnGhost}>Transferencia</button>
+                                  <button onClick={() => setMarcandoPagoCCId(null)} className={btnGhost}><X size={12} /></button>
+                                </span>
+                              ) : (
+                                <button onClick={() => setMarcandoPagoCCId(c.id)} className={btnGhost}>Marcar pagada</button>
+                              )
+                            )}
+                            {c.estado === "Pendiente" && !esCuentaCorriente(c) && (
                               <button onClick={() => marcarFacturaPagada(c)} className={btnGhost}>Marcar pagada</button>
                             )}
                             <button onClick={() => setEditandoMovimiento({ origen: "compras_facturas", origenId: c.id })} className={btnGhost}>
@@ -11484,7 +11544,20 @@ export default function ConcretarApp() {
                               {facturasPendientes.map((f) => (
                                 <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
                                   <span className="text-slate-600">{fmtFecha(f.fecha)} — {f.comprobante || "sin comprobante"} — <span className="font-mono">{fmtARS(f.monto)}</span></span>
-                                  <button onClick={() => marcarFacturaPagada(f)} className={btnGhost}>Marcar pagada</button>
+                                  {esCuentaCorriente(f) ? (
+                                    marcandoPagoCCId === f.id ? (
+                                      <span className="flex flex-wrap items-center gap-1">
+                                        <span className="text-[11px] text-slate-500">¿Con qué se pagó?</span>
+                                        <button onClick={() => marcarCuentaCorrientePagada(f, "Efectivo")} className={btnGhost}>Efectivo</button>
+                                        <button onClick={() => marcarCuentaCorrientePagada(f, "Transferencia")} className={btnGhost}>Transferencia</button>
+                                        <button onClick={() => setMarcandoPagoCCId(null)} className={btnGhost}><X size={12} /></button>
+                                      </span>
+                                    ) : (
+                                      <button onClick={() => setMarcandoPagoCCId(f.id)} className={btnGhost}>Marcar pagada</button>
+                                    )
+                                  ) : (
+                                    <button onClick={() => marcarFacturaPagada(f)} className={btnGhost}>Marcar pagada</button>
+                                  )}
                                 </div>
                               ))}
                             </div>
