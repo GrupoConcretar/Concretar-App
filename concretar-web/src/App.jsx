@@ -513,13 +513,36 @@ function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) 
 }
 // Tabla de movimientos de Cuentas (ingresos, egresos y pases entre cuentas),
 // reutilizada tanto para el mes actual como para cada mes anterior colapsado.
-function TablaMovimientos({ items, obras, onEditar }) {
+function TablaMovimientos({ items, obras, onEditar, onToggleEstado, marcandoPagoCCId, onConfirmarPagoCC, onCancelarPagoCC }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay movimientos.</div>;
   }
   // Ingresos, gastos/facturas y cobros de socios llevan tipo de factura — el
   // resto (transferencias manuales, préstamos, avances) no tiene ese dato.
   const tieneFactura = (origen) => origen === "compras_facturas" || origen === "cobros_socios" || origen === "ingresos";
+  // Solo un Gasto/Factura se puede corregir de Pendiente a Pagada o viceversa desde
+  // acá (por error de carga, o porque en realidad todavía no se pagó); una Cuenta
+  // corriente pendiente pide primero el medio real (Efectivo/Transferencia), igual
+  // que en Gastos y Facturas.
+  function EstadoMovimiento({ m }) {
+    if (!m.estado) return null;
+    if (m.origen !== "compras_facturas" || !onToggleEstado) return <Badge estado={m.estado} />;
+    const esCC = m.formaPago === "Cuenta corriente" || m.medioBancario === "Cuenta corriente";
+    if (m.estado === "Pendiente" && esCC && marcandoPagoCCId === m.origenId) {
+      return (
+        <span className="flex flex-wrap items-center gap-1">
+          <button onClick={() => onConfirmarPagoCC(m, "Efectivo")} className={btnGhost}>Efectivo</button>
+          <button onClick={() => onConfirmarPagoCC(m, "Transferencia")} className={btnGhost}>Transferencia</button>
+          <button onClick={() => onCancelarPagoCC()} className={btnGhost}><X size={10} /></button>
+        </span>
+      );
+    }
+    return (
+      <button onClick={() => onToggleEstado(m)} title="Cambiar entre Pendiente y Pagada" className="cursor-pointer">
+        <Badge estado={m.estado} />
+      </button>
+    );
+  }
   return (
     <>
       {/* Celular: tarjetas apiladas, sin scroll horizontal. */}
@@ -540,7 +563,7 @@ function TablaMovimientos({ items, obras, onEditar }) {
                 {m.origen !== "arreglo_caja" && <Badge estado={m.formalidad || "Blanco"} />}
                 <span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span>
                 <span className="flex items-center gap-1"><ObraDot obra={obra} />{obra?.nombre || "General"}</span>
-                {m.estado && <Badge estado={m.estado} />}
+                <EstadoMovimiento m={m} />
                 {tieneFactura(m.origen) && (
                   <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "border-amber-300 bg-amber-50 text-amber-700" : "border-emerald-300 bg-emerald-50 text-emerald-700"}`}>
                     {(!m.tipoFactura || m.tipoFactura === "Sin factura") ? "S/F" : m.tipoFactura}
@@ -585,7 +608,7 @@ function TablaMovimientos({ items, obras, onEditar }) {
                   <td className="px-2 py-1">{m.origen !== "arreglo_caja" && <Badge estado={m.formalidad || "Blanco"} />}</td>
                   <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
                   <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
-                  <td className="px-2 py-1">{m.estado && <Badge estado={m.estado} />}</td>
+                  <td className="px-2 py-1"><EstadoMovimiento m={m} /></td>
                   <td className="px-2 py-1">
                     {tieneFactura(m.origen) && (
                       (!m.tipoFactura || m.tipoFactura === "Sin factura") ? (
@@ -4545,7 +4568,7 @@ export default function ConcretarApp() {
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
       id: `egr-${c.id}`, fecha: c.fecha, creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
-      origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura,
+      origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura, formaPago: c.formaPago, medioBancario: c.medioBancario,
     })),
     ...movimientosManualNormales.flatMap((m) => [
       { id: `man-${m.id}-sale`, fecha: m.fecha, creadoEn: m.creadoEn, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, formalidad: m.formalidad, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null, origen: "movimientos_cuenta", origenId: m.id },
@@ -5180,7 +5203,21 @@ export default function ConcretarApp() {
     return { totalFacturado, totalPagado, saldo: totalFacturado - totalPagado, facturasPendientes: facturas.filter((c) => c.estado !== "Pagada") };
   }
   function marcarFacturaPagada(factura) {
-    updateRecord("compras_facturas", factura.id, { estado: "Pagada" }, setComprasFacturas);
+    // Restaura la cuenta real (Banco/Efectivo/Mercado Pago) para que vuelva a contar
+    // en su balance — por si venía de marcarCompraPendiente, que la había vaciado.
+    // Los gastos viejos que todavía tienen el formaPago plano "eCheq" (de antes de
+    // anidarlo bajo Banco) cuentan igual a la balanza de Banco.
+    const cuenta = factura.formaPago === "eCheq" ? "Banco" : factura.formaPago;
+    updateRecord("compras_facturas", factura.id, { estado: "Pagada", cuenta }, setComprasFacturas);
+  }
+  // Corrige un gasto cargado como "Pagada" por error (o que en realidad todavía se
+  // debe): vuelve a "Pendiente" y deja de contar en el saldo de la cuenta hasta que
+  // se vuelva a saldar — salvo el eCheq, que ya cuenta al Banco desde que se libra.
+  function marcarCompraPendiente(factura) {
+    if (!window.confirm(`¿Marcar "${factura.proveedor}" (${fmtARS(factura.monto)}) como Pendiente? Deja de contar en el saldo de la cuenta hasta que se vuelva a marcar como pagada.`)) return;
+    const esECheq = factura.medioBancario === "eCheq" || factura.formaPago === "eCheq";
+    const cuenta = esECheq ? "Banco" : null;
+    updateRecord("compras_facturas", factura.id, { estado: "Pendiente", cuenta }, setComprasFacturas);
   }
   const esCuentaCorriente = (c) => c.formaPago === "Cuenta corriente" || c.medioBancario === "Cuenta corriente";
   // "Cuenta corriente" no es un canal real de pago — recién al saldarla se sabe si
@@ -5191,6 +5228,20 @@ export default function ConcretarApp() {
     const medioBancario = medio === "Transferencia" ? "Débito/Transferencia" : null;
     updateRecord("compras_facturas", factura.id, { estado: "Pagada", cuenta, medioBancario }, setComprasFacturas);
     setMarcandoPagoCCId(null);
+  }
+  // Toggle genérico del badge Estado en Movimientos: para compras que no son cuenta
+  // corriente alterna directo entre Pendiente/Pagada; una cuenta corriente pendiente
+  // en cambio abre el mismo selector de medio (Efectivo/Transferencia) que en Gastos.
+  function toggleEstadoMovimientoCompra(m) {
+    const factura = comprasFacturas.find((c) => c.id === m.origenId);
+    if (!factura) return;
+    if (factura.estado === "Pagada") {
+      marcarCompraPendiente(factura);
+    } else if (esCuentaCorriente(factura)) {
+      setMarcandoPagoCCId(factura.id);
+    } else {
+      marcarFacturaPagada(factura);
+    }
   }
   // Un eCheq queda "Pendiente" hasta su fecha de pago; llegado ese día se acredita solo,
   // sin que nadie tenga que entrar a marcarlo a mano.
@@ -10739,7 +10790,15 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Movimientos — {nombreMesCuentas(mesActualClave)}</h3>
-              <TablaMovimientos items={movimientosMesActual} obras={obras} onEditar={(m) => setEditandoMovimiento({ origen: m.origen, origenId: m.origenId })} />
+              <TablaMovimientos
+                items={movimientosMesActual}
+                obras={obras}
+                onEditar={(m) => setEditandoMovimiento({ origen: m.origen, origenId: m.origenId })}
+                onToggleEstado={toggleEstadoMovimientoCompra}
+                marcandoPagoCCId={marcandoPagoCCId}
+                onConfirmarPagoCC={(m, medio) => marcarCuentaCorrientePagada({ id: m.origenId }, medio)}
+                onCancelarPagoCC={() => setMarcandoPagoCCId(null)}
+              />
             </div>
 
             {gruposMovimientosAnteriores.map((g) => (
@@ -10748,7 +10807,15 @@ export default function ConcretarApp() {
                   {nombreMesCuentas(g.clave)} <span className="font-normal text-slate-400">({g.items.length})</span>
                 </summary>
                 <div className="border-t border-stone-100 p-3">
-                  <TablaMovimientos items={g.items} obras={obras} onEditar={(m) => setEditandoMovimiento({ origen: m.origen, origenId: m.origenId })} />
+                  <TablaMovimientos
+                    items={g.items}
+                    obras={obras}
+                    onEditar={(m) => setEditandoMovimiento({ origen: m.origen, origenId: m.origenId })}
+                    onToggleEstado={toggleEstadoMovimientoCompra}
+                    marcandoPagoCCId={marcandoPagoCCId}
+                    onConfirmarPagoCC={(m, medio) => marcarCuentaCorrientePagada({ id: m.origenId }, medio)}
+                    onCancelarPagoCC={() => setMarcandoPagoCCId(null)}
+                  />
                 </div>
               </details>
             ))}
