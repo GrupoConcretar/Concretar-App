@@ -4807,8 +4807,12 @@ export default function ConcretarApp() {
   }
   const cuentasCorrientesPorProveedor = (() => {
     const grupos = {};
+    // Cualquier gasto "Pendiente" es plata que le debemos a ese proveedor, sea cual
+    // sea su forma de pago original (Cuenta corriente, o un Efectivo/Banco corregido
+    // a mano desde Movimientos porque en realidad todavía no se pagó) — el eCheq es
+    // la única excepción, porque ya tiene su propio seguimiento en "Cheques (eCheqs)".
     comprasFacturas
-      .filter((c) => (c.medioBancario === "Cuenta corriente" || c.formaPago === "Cuenta corriente") && c.estado === "Pendiente" && !obraIdsPapelera.has(c.obraId))
+      .filter((c) => c.estado === "Pendiente" && c.medioBancario !== "eCheq" && c.formaPago !== "eCheq" && !obraIdsPapelera.has(c.obraId))
       .forEach((c) => {
         if (!grupos[c.proveedor]) grupos[c.proveedor] = { proveedor: c.proveedor, monto: 0, cantidad: 0, fechaMasProxima: null };
         grupos[c.proveedor].monto += c.monto || 0;
@@ -10949,13 +10953,11 @@ export default function ConcretarApp() {
                     </div>
                     {gruposMesesProximosConAcumulado.map((m) => {
                       const totalMes = m.ingresos - m.egresos;
-                      const clickable = m.clave !== "sin-fecha";
                       return (
                         <button
                           key={m.clave}
-                          onClick={() => clickable && setMesProximosSeleccionado(m.clave)}
-                          disabled={!clickable}
-                          className={`w-full rounded-lg border border-stone-200 bg-white p-2.5 text-left text-xs shadow-sm ${clickable ? "hover:border-amber-300" : ""}`}
+                          onClick={() => setMesProximosSeleccionado(m.clave)}
+                          className="w-full rounded-lg border border-stone-200 bg-white p-2.5 text-left text-xs shadow-sm hover:border-amber-300"
                         >
                           <div className="font-semibold text-slate-900">{m.clave === "sin-fecha" ? "Sin fecha estimada" : nombreMesCuentas(m.clave)}</div>
                           <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5">
@@ -10996,12 +10998,11 @@ export default function ConcretarApp() {
                         </tr>
                         {gruposMesesProximosConAcumulado.map((m) => {
                           const totalMes = m.ingresos - m.egresos;
-                          const clickable = m.clave !== "sin-fecha";
                           return (
                             <tr
                               key={m.clave}
-                              onClick={() => clickable && setMesProximosSeleccionado(m.clave)}
-                              className={`border-t border-stone-100 ${clickable ? "cursor-pointer hover:bg-stone-50" : ""}`}
+                              onClick={() => setMesProximosSeleccionado(m.clave)}
+                              className="cursor-pointer border-t border-stone-100 hover:bg-stone-50"
                             >
                               <td className="px-4 py-2 font-medium text-slate-900">{m.clave === "sin-fecha" ? "Sin fecha estimada" : nombreMesCuentas(m.clave)}</td>
                               <td className="px-4 py-2 text-right font-mono text-emerald-700">{fmtARS(m.ingresos)}</td>
@@ -11109,9 +11110,9 @@ export default function ConcretarApp() {
                       </div>
 
                       <div>
-                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Obras (cuenta corriente con proveedores)</div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Deuda con proveedores</div>
                         {cuentasCorrientesDelMes.length === 0 ? (
-                          <div className="text-xs text-slate-400">No hay saldo de cuenta corriente venciendo este mes.</div>
+                          <div className="text-xs text-slate-400">No hay deuda con proveedores para este período.</div>
                         ) : (
                           <div className="space-y-1.5">
                             {cuentasCorrientesDelMes.map((g) => {
@@ -11610,10 +11611,21 @@ export default function ConcretarApp() {
                             {p.numeroCuenta && <span>Cuenta: <span className="font-mono text-slate-700">{p.numeroCuenta}</span></span>}
                           </div>
                           {facturasPendientes.length > 0 && (
-                            <div className="mt-3 space-y-1 border-t border-stone-100 pt-2">
+                            <div className="mt-3 space-y-1.5 border-t border-stone-100 pt-2">
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Deudas pendientes</div>
                               {facturasPendientes.map((f) => (
-                                <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                                  <span className="text-slate-600">{fmtFecha(f.fecha)} — {f.comprobante || "sin comprobante"} — <span className="font-mono">{fmtARS(f.monto)}</span></span>
+                                <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-100 bg-stone-50/60 px-2 py-1.5 text-xs">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="text-slate-600">{fmtFecha(f.fecha)} — {f.comprobante || "sin comprobante"} — <span className="font-mono font-semibold">{fmtARS(f.monto)}</span></span>
+                                    <span className="flex items-center gap-1 text-slate-500"><CuentaIcon cuenta={f.cuenta || "Banco"} />{f.formaPago || f.cuenta || "—"}{f.medioBancario ? ` · ${f.medioBancario}` : ""}</span>
+                                    <Badge estado={f.estado} />
+                                    {(f.medioBancario === "eCheq" || f.formaPago === "eCheq") && f.fechaPagoEcheq && (
+                                      <span className="text-[10px] text-slate-400">Cobra el {fmtFecha(f.fechaPagoEcheq)}</span>
+                                    )}
+                                    {esCuentaCorriente(f) && f.fechaVencimientoCC && (
+                                      <span className="text-[10px] text-slate-400">Vence el {fmtFecha(f.fechaVencimientoCC)}</span>
+                                    )}
+                                  </div>
                                   {esCuentaCorriente(f) ? (
                                     marcandoPagoCCId === f.id ? (
                                       <span className="flex flex-wrap items-center gap-1">
