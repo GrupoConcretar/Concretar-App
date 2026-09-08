@@ -866,6 +866,48 @@ function TablaGananciasAnual({ items, onActualizarReal }) {
   );
 }
 
+// Ingresos Brutos mes a mes (Cuentas → IVA y Ganancias): a diferencia de IVA, la app
+// no puede calcular sola cuánto corresponde (depende de la alícuota de la actividad),
+// así que se carga el real que informa el contador y los meses sin ese dato todavía
+// se proyectan con la alícuota efectiva del último mes real cargado.
+function TablaIibbMensual({ items, onActualizarReal }) {
+  if (items.length === 0) {
+    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos con factura cargados.</div>;
+  }
+  return (
+    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="px-2 py-1.5">Mes</th>
+            <th className="px-2 py-1.5 text-right">Ingresos gravables</th>
+            <th className="px-2 py-1.5 text-right">Alícuota usada</th>
+            <th className="px-2 py-1.5 text-right">Proyectado (app)</th>
+            <th className="px-2 py-1.5 text-right">Ingresos Brutos real (contador)</th>
+            <th className="px-2 py-1.5 text-right">Diferencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((m) => (
+            <tr key={m.clave} className="border-t border-stone-100">
+              <td className="px-2 py-1 font-medium text-slate-900">{nombreMesDeClave(m.clave)}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.ingresos)}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-500">{m.alicuota === null ? "—" : `${(m.alicuota * 100).toFixed(2)}%`}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">{m.proyectado === null ? "—" : fmtARS(m.proyectado)}</td>
+              <td className="px-2 py-1 text-right">
+                <MoneyInput value={m.real ?? 0} onBlur={(v) => onActualizarReal(m.clave, v)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+              </td>
+              <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ---------- Planificación (Gantt de etapas por obra) en la pestaña Obras ----------
 function estadoEtapa(etapa, hoy) {
   const avance = etapa.avance || 0;
@@ -4800,8 +4842,12 @@ export default function ConcretarApp() {
     const disponible = credito + saldoAFavorIvaArrastre;
     const saldoAFavorAnterior = saldoAFavorIvaArrastre;
     const aPagar = Math.max(0, debito - disponible);
-    saldoAFavorIvaArrastre = Math.max(0, disponible - debito);
     const real = ajusteFiscalDe("iva", clave);
+    // En cuanto se carga el IVA real que informa el contador para un mes, el saldo a
+    // favor que se arrastra al mes siguiente sale de ese valor real (no del estimado
+    // de la app) — así los meses venideros quedan proyectados sobre lo que dice el
+    // contador en vez de sobre una estimación que puede haberse desviado.
+    saldoAFavorIvaArrastre = Math.max(0, disponible - (real ?? debito));
     return { clave, debito, credito, saldoAFavorAnterior, aPagar, saldoAFavorNuevo: saldoAFavorIvaArrastre, real, diferencia: real === null ? null : real - aPagar };
   }).reverse();
 
@@ -4818,6 +4864,31 @@ export default function ConcretarApp() {
     const ganancia = gananciasPorAnio[anio].ingresos - gananciasPorAnio[anio].gastos;
     const real = ajusteFiscalDe("ganancia", anio);
     return { anio, ...gananciasPorAnio[anio], ganancia, real, diferencia: real === null ? null : real - ganancia };
+  }).reverse();
+
+  // ---------- Ingresos Brutos ----------
+  // A diferencia de IVA, acá no hay débito/crédito que la app pueda calcular sola —
+  // la alícuota depende de la actividad y la jurisdicción. Por eso se carga el monto
+  // real que informa el contador mes a mes, y los meses que todavía no tienen ese
+  // dato se proyectan con la alícuota efectiva del último mes real cargado (real /
+  // ingresos gravables de ese mes) — a medida que entran más datos reales, la
+  // alícuota se recalcula sola y la proyección de los meses siguientes se ajusta.
+  const ingresosGravablesPorMes = {};
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && conFacturaGravable(i.tipoFactura)).forEach((i) => {
+    const clave = claveMesCuentas(i.fecha);
+    ingresosGravablesPorMes[clave] = (ingresosGravablesPorMes[clave] || 0) + (i.monto || 0);
+  });
+  const clavesIibb = Array.from(new Set([
+    ...Object.keys(ingresosGravablesPorMes),
+    ...ajustesFiscales.filter((a) => a.tipo === "iibb").map((a) => a.clave),
+  ])).sort();
+  let alicuotaIibbEfectiva = null;
+  const iibbMensual = clavesIibb.map((clave) => {
+    const ingresosDelMes = ingresosGravablesPorMes[clave] || 0;
+    const real = ajusteFiscalDe("iibb", clave);
+    if (real !== null && ingresosDelMes > 0) alicuotaIibbEfectiva = real / ingresosDelMes;
+    const proyectado = alicuotaIibbEfectiva !== null ? ingresosDelMes * alicuotaIibbEfectiva : null;
+    return { clave, ingresos: ingresosDelMes, alicuota: alicuotaIibbEfectiva, proyectado, real, diferencia: real === null || proyectado === null ? null : real - proyectado };
   }).reverse();
 
   // ---------- Resumen por obra (balance de cada obra en curso) ----------
@@ -11245,12 +11316,18 @@ export default function ConcretarApp() {
             >
               ← Volver a Cuentas
             </button>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">IVA y Ganancias</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">IVA, Ingresos Brutos y Ganancias</h2>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B. Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Cargá en "IVA real (contador)" lo que informe el contador para comparar contra lo que calcula la app.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B. Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador.</div>
               <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} />
+            </div>
+
+            <div>
+              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ingresos Brutos por mes</h3>
+              <div className="mb-1.5 text-[11px] text-slate-400">La alícuota no la calcula la app — sale sola del último "Ingresos Brutos real (contador)" que cargues (real ÷ ingresos gravables de ese mes), y con eso se proyectan los meses siguientes hasta que llegue el próximo dato real.</div>
+              <TablaIibbMensual items={iibbMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iibb", clave, monto)} />
             </div>
 
             <div>
