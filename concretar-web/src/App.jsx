@@ -4957,8 +4957,14 @@ export default function ConcretarApp() {
     const dd = String(fecha.getDate()).padStart(2, "0");
     return `${fecha.getFullYear()}-${mm}-${dd}`;
   }
+  // Agrupa la deuda con proveedores por proveedor Y por mes de vencimiento — antes se
+  // juntaba todo en un solo renglón por proveedor, así que una compra vencida en
+  // octubre terminaba mostrada en septiembre si el proveedor tenía un "día de pago"
+  // fijo, o si otra compra del mismo proveedor vencía antes. Cada compra pendiente usa
+  // su propia fecha de vencimiento (fechaVencimientoCc); solo si no tiene ninguna
+  // cargada se estima con el día de pago recurrente del proveedor.
   const cuentasCorrientesPorProveedor = (() => {
-    const grupos = {};
+    const porProveedor = {}; // proveedor -> { claveMes -> { fechaVencimiento, monto, cantidad } }
     // Cualquier gasto "Pendiente" es plata que le debemos a ese proveedor, sea cual
     // sea su forma de pago original (Cuenta corriente, o un Efectivo/Banco corregido
     // a mano desde Movimientos porque en realidad todavía no se pagó) — el eCheq es
@@ -4966,38 +4972,52 @@ export default function ConcretarApp() {
     comprasFacturas
       .filter((c) => c.estado === "Pendiente" && c.medioBancario !== "eCheq" && c.formaPago !== "eCheq" && !obraIdsPapelera.has(c.obraId))
       .forEach((c) => {
-        if (!grupos[c.proveedor]) grupos[c.proveedor] = { proveedor: c.proveedor, monto: 0, cantidad: 0, fechaMasProxima: null };
-        grupos[c.proveedor].monto += c.monto || 0;
-        grupos[c.proveedor].cantidad += 1;
-        if (c.fechaVencimientoCc && (!grupos[c.proveedor].fechaMasProxima || fechaLocal(c.fechaVencimientoCc) < fechaLocal(grupos[c.proveedor].fechaMasProxima))) {
-          grupos[c.proveedor].fechaMasProxima = c.fechaVencimientoCc;
+        const prov = proveedores.find((p) => nombreComercial(p) === c.proveedor);
+        const fechaVencimiento = c.fechaVencimientoCc || (prov?.diaPago ? proximaFechaPago(prov.diaPago) : null);
+        const claveMes = fechaVencimiento ? claveMesCuentas(fechaVencimiento) : "sin-fecha";
+        const meses = (porProveedor[c.proveedor] ??= {});
+        const bucket = (meses[claveMes] ??= { fechaVencimiento, monto: 0, cantidad: 0 });
+        bucket.monto += c.monto || 0;
+        bucket.cantidad += 1;
+        if (fechaVencimiento && (!bucket.fechaVencimiento || fechaLocal(fechaVencimiento) < fechaLocal(bucket.fechaVencimiento))) {
+          bucket.fechaVencimiento = fechaVencimiento;
         }
       });
-    // Las notas de crédito por devoluciones restan de la deuda pendiente con ese
-    // proveedor — si la dejan en cero o a favor, deja de contar como "próximo pago".
+    const notasPorProveedor = {};
     notasCredito
       .filter((n) => !obraIdsPapelera.has(n.obraId))
-      .forEach((n) => {
-        if (!grupos[n.proveedor]) grupos[n.proveedor] = { proveedor: n.proveedor, monto: 0, cantidad: 0, fechaMasProxima: null };
-        grupos[n.proveedor].monto -= n.monto || 0;
-      });
-    return Object.values(grupos)
-      .filter((g) => g.monto > 0)
-      .map((g) => {
-        const prov = proveedores.find((p) => nombreComercial(p) === g.proveedor);
-        return {
-          ...g,
-          proveedorId: prov?.id ?? null,
-          diaPago: prov?.diaPago || null,
-          fechaVencimiento: prov?.diaPago ? proximaFechaPago(prov.diaPago) : (g.fechaMasProxima || prov?.fechaVencimientoCc || null),
-        };
-      })
-      .sort((a, b) => {
+      .forEach((n) => { notasPorProveedor[n.proveedor] = (notasPorProveedor[n.proveedor] || 0) + (n.monto || 0); });
+    const resultado = [];
+    Object.entries(porProveedor).forEach(([proveedor, meses]) => {
+      const prov = proveedores.find((p) => nombreComercial(p) === proveedor);
+      const buckets = Object.values(meses).sort((a, b) => {
         if (!a.fechaVencimiento && !b.fechaVencimiento) return 0;
         if (!a.fechaVencimiento) return 1;
         if (!b.fechaVencimiento) return -1;
         return fechaLocal(a.fechaVencimiento) - fechaLocal(b.fechaVencimiento);
       });
+      // Las notas de crédito por devoluciones restan de la deuda pendiente, empezando
+      // por el vencimiento más próximo — si el crédito sobra, sigue restando del
+      // siguiente mes en el que le debemos plata a ese proveedor.
+      let creditoRestante = notasPorProveedor[proveedor] || 0;
+      buckets.forEach((b) => {
+        let monto = b.monto;
+        if (creditoRestante > 0) {
+          const aplicado = Math.min(creditoRestante, monto);
+          monto -= aplicado;
+          creditoRestante -= aplicado;
+        }
+        if (monto > 0) {
+          resultado.push({ proveedor, monto, cantidad: b.cantidad, fechaVencimiento: b.fechaVencimiento, proveedorId: prov?.id ?? null, diaPago: prov?.diaPago || null });
+        }
+      });
+    });
+    return resultado.sort((a, b) => {
+      if (!a.fechaVencimiento && !b.fechaVencimiento) return 0;
+      if (!a.fechaVencimiento) return 1;
+      if (!b.fechaVencimiento) return -1;
+      return fechaLocal(a.fechaVencimiento) - fechaLocal(b.fechaVencimiento);
+    });
   })();
   const ingresosPendientes = ingresos
     .filter((i) => i.estado === "Pendiente" && !obraIdsPapelera.has(i.obraId))
