@@ -56,6 +56,14 @@ function nombreMesDeClave(clave) {
   const nombre = new Date(y, m - 1, 1).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
   return nombre.charAt(0).toUpperCase() + nombre.slice(1);
 }
+// Desplaza una clave "YYYY-MM" n meses hacia adelante — se usa para proyectar el pago
+// de un impuesto que se abona con meses de atraso (ej: IVA/Ingresos Brutos a 3 meses
+// vencidos) en el mes en que realmente sale la plata, no en el mes en que se devengó.
+function sumarMesesAClave(clave, n) {
+  const [anio, mes] = clave.split("-").map(Number);
+  const fecha = new Date(anio, mes - 1 + n, 1);
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-01`;
+}
 // Orden por lo último cargado (no por la fecha que se le puso al registro):
 // así los listados de gastos/ingresos/movimientos siempre muestran arriba lo
 // que se acaba de hacer, sea cual sea la fecha real del gasto — usa el
@@ -4891,6 +4899,19 @@ export default function ConcretarApp() {
     return { clave, ingresos: ingresosDelMes, alicuota: alicuotaIibbEfectiva, proyectado, real, diferencia: real === null || proyectado === null ? null : real - proyectado };
   }).reverse();
 
+  // Esta empresa paga IVA e Ingresos Brutos con 3 meses de atraso (el de junio se paga
+  // en septiembre) — para el flujo de caja de "Próximos pagos" importa cuándo sale
+  // realmente la plata, no el mes en que se devengó, así que cada mes con algo a pagar
+  // (el real que informó el contador, o la estimación de la app si todavía no lo cargó)
+  // se corre a esa fecha de pago. Los meses sin nada que pagar no generan egreso.
+  const MESES_ATRASO_IVA_IIBB = 3;
+  const ivaPagosProyectados = ivaMensual
+    .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA_IIBB), monto: m.real ?? m.aPagar }))
+    .filter((p) => p.monto > 0);
+  const iibbPagosProyectados = iibbMensual
+    .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA_IIBB), monto: m.real ?? m.proyectado }))
+    .filter((p) => p.monto > 0);
+
   // ---------- Resumen por obra (balance de cada obra en curso) ----------
   // Sale de lo que ya tenemos cargado: precio acordado (obra.presupuesto), lo
   // presupuestado por rubro si se importó un Excel de presupuesto (presupuestoGeneral),
@@ -5149,6 +5170,8 @@ export default function ConcretarApp() {
     cuentasCorrientesPorProveedor.forEach((g) => agregar(g.fechaVencimiento, g.monto, "egreso"));
     ingresosPendientes.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
     obrasDisponibleProyectado.forEach((o) => o.meses.forEach((clave) => agregar(`${clave}-01`, o.montoPorMes, "egreso")));
+    ivaPagosProyectados.forEach((p) => agregar(p.fechaPago, p.monto, "egreso"));
+    iibbPagosProyectados.forEach((p) => agregar(p.fechaPago, p.monto, "egreso"));
     return Object.values(grupos).sort((a, b) => (a.clave === "sin-fecha" ? 1 : b.clave === "sin-fecha" ? -1 : a.clave.localeCompare(b.clave)));
   })();
   // El acumulado arranca de la plata que hay hoy en las cuentas (Blanco + Negro) y le va
@@ -11440,6 +11463,8 @@ export default function ConcretarApp() {
                 const cuentasCorrientesDelMes = cuentasCorrientesPorProveedor.filter((g) => perteneceAMesProximos(g.fechaVencimiento, claveMes));
                 const ingresosDelMes = ingresosPendientes.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
                 const obrasDisponibleDelMes = obrasDisponibleProyectado.filter((o) => o.meses.includes(claveMes));
+                const ivaPagosDelMes = ivaPagosProyectados.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
+                const iibbPagosDelMes = iibbPagosProyectados.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
                 return (
                   <>
                     <button onClick={() => setMesProximosSeleccionado(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
@@ -11556,6 +11581,28 @@ export default function ConcretarApp() {
                                 </div>
                               );
                             })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">IVA e Ingresos Brutos (pago a 3 meses vencidos)</div>
+                        {ivaPagosDelMes.length === 0 && iibbPagosDelMes.length === 0 ? (
+                          <div className="text-xs text-slate-400">No hay IVA ni Ingresos Brutos para pagar este período.</div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {ivaPagosDelMes.map((p) => (
+                              <div key={`iva-${p.clave}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                <span className="font-medium text-slate-800">IVA — {nombreMesDeClave(p.clave)}</span>
+                                <span className="font-mono font-semibold text-rose-600">{fmtARS(p.monto)}</span>
+                              </div>
+                            ))}
+                            {iibbPagosDelMes.map((p) => (
+                              <div key={`iibb-${p.clave}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                <span className="font-medium text-slate-800">Ingresos Brutos — {nombreMesDeClave(p.clave)}</span>
+                                <span className="font-mono font-semibold text-rose-600">{fmtARS(p.monto)}</span>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
