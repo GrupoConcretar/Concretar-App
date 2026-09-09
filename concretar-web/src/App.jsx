@@ -11405,6 +11405,7 @@ export default function ConcretarApp() {
                                         {fmtFecha(c.fechaPagoEcheq)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
                                       </span>
                                       <span className="font-mono font-semibold text-rose-600">{fmtARS(c.monto)}</span>
+                                      <button onClick={() => marcarFacturaPagada(c)} className={btnGhost}>Marcar pagado</button>
                                     </div>
                                   );
                                 })}
