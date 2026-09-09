@@ -5141,8 +5141,6 @@ export default function ConcretarApp() {
   });
 
   // ---------- Dinero real (arqueo de caja) ----------
-  // La plata física no distingue blanco de negro, por eso "Dinero real" se compara
-  // contra el Total (Blanco + Negro) de cada cuenta, no contra cada columna por separado.
   function dineroRealDe(cuenta) {
     return dineroReal.find((d) => d.cuenta === cuenta)?.monto ?? null;
   }
@@ -5154,6 +5152,10 @@ export default function ConcretarApp() {
       addRecord("dinero_real_cuentas", { cuenta, monto, actualizado: hoyISO() }, setDineroReal);
     }
   }
+  // Para cada cuenta sin arqueo manual todavía, usamos el calculado como mejor
+  // estimación disponible — así el total refleja la plata real que sabemos que hay.
+  const dineroRealTotalCuentas = CUENTAS.reduce((s, c) => s + (dineroRealDe(c) ?? saldoCuenta(c)), 0);
+  const diferenciaTotalCuentas = dineroRealTotalCuentas - saldoTotalCuentas;
 
   // ---------- Ajuste fiscal (IVA/Ganancias real que informa el contador) ----------
   function ajusteFiscalDe(tipo, clave) {
@@ -11063,6 +11065,14 @@ export default function ConcretarApp() {
                   <span className="font-bold text-slate-900">Total</span>
                   <span className={`font-mono text-base font-bold ${saldoTotalCuentas < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldoTotalCuentas)}</span>
                 </div>
+                <div className="mt-2 flex items-center justify-between gap-2 border-t border-stone-200 pt-2">
+                  <span className="text-xs font-semibold text-slate-600">Dinero real total</span>
+                  <span className={`font-mono text-sm font-bold ${dineroRealTotalCuentas < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(dineroRealTotalCuentas)}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="text-xs text-slate-500">Diferencia</span>
+                  <span className={`text-xs font-semibold ${Math.abs(diferenciaTotalCuentas) < 1 ? "text-slate-400" : "text-rose-600"}`}>{fmtARS(diferenciaTotalCuentas)}</span>
+                </div>
               </div>
             </div>
 
@@ -11096,8 +11106,8 @@ export default function ConcretarApp() {
                   <tr className="border-t-2 border-stone-300 bg-stone-50">
                     <td className="px-4 py-2.5 font-bold text-slate-900">Total</td>
                     <td className={`px-4 py-2.5 text-right font-mono font-bold ${saldoTotalCuentas < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldoTotalCuentas)}</td>
-                    <td className="px-4 py-2.5"></td>
-                    <td className="px-4 py-2.5"></td>
+                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${dineroRealTotalCuentas < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(dineroRealTotalCuentas)}</td>
+                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${Math.abs(diferenciaTotalCuentas) < 1 ? "text-slate-400" : "text-rose-600"}`}>{fmtARS(diferenciaTotalCuentas)}</td>
                   </tr>
                 </tbody>
               </table>
