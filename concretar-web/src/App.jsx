@@ -4514,8 +4514,10 @@ export default function ConcretarApp() {
     const totalIngresos = ingresos
       .filter((i) => i.cuenta === cuenta && i.estado !== "Pendiente" && !obraIdsPapelera.has(i.obraId))
       .reduce((s, i) => s + (i.monto || 0), 0);
+    // Un gasto "Pendiente" (eCheq todavía no cobrado, o cuenta corriente sin saldar)
+    // no resta hasta que se paga de verdad — hasta entonces solo figura en "Próximos pagos".
     const totalEgresos = comprasFacturas
-      .filter((c) => c.cuenta === cuenta && !obraIdsPapelera.has(c.obraId))
+      .filter((c) => c.cuenta === cuenta && c.estado !== "Pendiente" && !obraIdsPapelera.has(c.obraId))
       .reduce((s, c) => s + (c.monto || 0), 0);
     // Cada transferencia manual resta en la cuenta de origen y suma en la de destino.
     const totalManual = movimientosManual
@@ -5468,7 +5470,7 @@ export default function ConcretarApp() {
   }
   // Corrige un gasto cargado como "Pagada" por error (o que en realidad todavía se
   // debe): vuelve a "Pendiente" y deja de contar en el saldo de la cuenta hasta que
-  // se vuelva a saldar — salvo el eCheq, que ya cuenta al Banco desde que se libra.
+  // se vuelva a saldar.
   function marcarCompraPendiente(factura) {
     if (!window.confirm(`¿Marcar "${factura.proveedor}" (${fmtARS(factura.monto)}) como Pendiente? Deja de contar en el saldo de la cuenta hasta que se vuelva a marcar como pagada.`)) return;
     const esECheq = factura.medioBancario === "eCheq" || factura.formaPago === "eCheq";
