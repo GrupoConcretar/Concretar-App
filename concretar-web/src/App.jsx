@@ -219,7 +219,6 @@ const ROLES_FINANZAS = ["Gerente", "Contador"];
 // Precios de pedidos de obra: el capataz arma el pedido a ciegas (sin precios ni proveedor),
 // eso lo ve y lo carga Logística cuando el pedido llega aprobado.
 const ROLES_VEN_PRECIOS_PEDIDO = ["Gerente", "Contador", "Logística"];
-const FORMALIDADES = ["Blanco", "Negro"];
 const CUENTAS = ["Efectivo", "Banco", "Mercado Pago"];
 // "Cuenta corriente" es su propia forma de pago (no es un medio del Banco: es una
 // deuda con el proveedor, todavía no se sabe por qué canal real se va a saldar).
@@ -571,7 +570,6 @@ function TablaMovimientos({ items, obras, onEditar, onToggleEstado, marcandoPago
                 <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${m.tipo === "Ingreso" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : m.tipo === "Ajuste" ? "border-slate-300 bg-slate-50 text-slate-600" : "border-rose-300 bg-rose-50 text-rose-700"}`}>
                   {m.tipo}
                 </span>
-                {m.origen !== "arreglo_caja" && <Badge estado={m.formalidad || "Blanco"} />}
                 <span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span>
                 <span className="flex items-center gap-1"><ObraDot obra={obra} />{obra?.nombre || "General"}</span>
                 <EstadoMovimiento m={m} />
@@ -599,7 +597,7 @@ function TablaMovimientos({ items, obras, onEditar, onToggleEstado, marcandoPago
           <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Tipo</th><th className="px-2 py-1.5">Obra</th>
-              <th className="px-2 py-1.5">Detalle</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th>
+              <th className="px-2 py-1.5">Detalle</th><th className="px-2 py-1.5">Cuenta</th>
               <th className="px-2 py-1.5 text-right">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5"></th>
             </tr>
           </thead>
@@ -616,7 +614,6 @@ function TablaMovimientos({ items, obras, onEditar, onToggleEstado, marcandoPago
                   </td>
                   <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1.5"><ObraDot obra={obra} />{obra?.nombre || "General"}</span></td>
                   <td className="px-2 py-1 font-medium text-slate-900">{m.detalle}</td>
-                  <td className="px-2 py-1">{m.origen !== "arreglo_caja" && <Badge estado={m.formalidad || "Blanco"} />}</td>
                   <td className="px-2 py-1 text-slate-600"><span className="flex items-center gap-1"><CuentaIcon cuenta={m.cuenta} />{m.cuenta || "—"}</span></td>
                   <td className={`px-2 py-1 text-right font-mono font-semibold ${m.monto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(m.monto)}</td>
                   <td className="px-2 py-1"><EstadoMovimiento m={m} /></td>
@@ -1632,7 +1629,7 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
 }
 
 // Modal para corregir un préstamo ya cargado (fecha, acreedor, capital, tasa,
-// cuenta, formalidad, fecha estimada de devolución) por si se cometió un error al alta.
+// cuenta, fecha estimada de devolución) por si se cometió un error al alta.
 function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
   const [form, setForm] = useState(prestamo || {});
   if (!prestamo) return null;
@@ -1645,7 +1642,6 @@ function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
       capital: Number(form.capital) || 0,
       tasaAnualPct: Number(form.tasaAnualPct) || 0,
       cuenta: form.cuenta,
-      formalidad: form.formalidad,
       fechaEstimadaDevolucion: form.fechaEstimadaDevolucion || null,
     });
   }
@@ -1679,11 +1675,6 @@ function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
           <Field label="Cuenta donde entró">
             <select value={form.cuenta} onChange={(e) => setForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
               {CUENTAS.map((c) => <option key={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Formalidad">
-            <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-              {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
             </select>
           </Field>
           <Field label="Fecha estimada de devolución">
@@ -1818,7 +1809,6 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         categoria: form.categoria,
         descripcion: form.descripcion || "",
         monto: Number(form.monto) || 0,
-        formalidad: form.formalidad,
         tipoFactura: form.tipoFactura,
         formaPago: form.formaPago,
         medioBancario: form.medioBancario || null,
@@ -1837,7 +1827,6 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         monto: Number(form.monto) || 0,
         cuenta: form.cuenta,
         medioBancario: form.cuenta === "Banco" ? form.medioBancario : null,
-        formalidad: form.formalidad,
         tipoFactura: form.tipoFactura,
         archivo: form.archivo,
         nombreArchivo: form.nombreArchivo,
@@ -1849,7 +1838,6 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         obraId: form.obraId,
         concepto: form.concepto,
         monto: Number(form.monto) || 0,
-        formalidad: form.formalidad,
         tipoFactura: form.tipoFactura,
         cuenta: form.cuenta,
         medioBancario: form.cuenta === "Banco" ? form.medioBancario : null,
@@ -1863,7 +1851,6 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
       onGuardarManual(editando.origenId, {
         fecha: form.fecha,
         detalle: form.detalle || "",
-        formalidad: form.formalidad,
         cuentaOrigen: form.cuentaOrigen,
         cuentaDestino: form.cuentaDestino,
         monto: Number(form.monto) || 0,
@@ -1918,11 +1905,6 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               </Field>
               <Field label="Precio final ($)">
                 <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} className={inputCls} />
-              </Field>
-              <Field label="Formalidad">
-                <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-                  {FORMALIDADES.map((x) => <option key={x}>{x}</option>)}
-                </select>
               </Field>
               <Field label="Factura">
                 <select value={form.tipoFactura || "Sin factura"} onChange={(e) => setForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
@@ -2057,11 +2039,6 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                   </select>
                 </Field>
               )}
-              <Field label="Formalidad">
-                <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-                  {FORMALIDADES.map((x) => <option key={x}>{x}</option>)}
-                </select>
-              </Field>
               <Field label="Factura">
                 <select value={form.tipoFactura || "Sin factura"} onChange={(e) => setForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
                   {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
@@ -2099,11 +2076,6 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                   </select>
                 </Field>
               )}
-              <Field label="Formalidad">
-                <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-                  {FORMALIDADES.map((x) => <option key={x}>{x}</option>)}
-                </select>
-              </Field>
               <Field label="Factura">
                 <select value={form.tipoFactura || "Sin factura"} onChange={(e) => setForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
                   {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
@@ -2129,11 +2101,6 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               </Field>
               <Field label="Detalle">
                 <input value={form.detalle || ""} onChange={(e) => setForm((f) => ({ ...f, detalle: e.target.value }))} placeholder="Ej: Pase de efectivo a banco" className={inputCls} />
-              </Field>
-              <Field label="Formalidad">
-                <select value={form.formalidad} onChange={(e) => setForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-                  {FORMALIDADES.map((x) => <option key={x}>{x}</option>)}
-                </select>
               </Field>
               <Field label="Monto ($)">
                 <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} className={inputCls} />
@@ -2710,40 +2677,40 @@ export default function ConcretarApp() {
     { id: 3, fecha: "2026-08-10", obraId: 2, proveedor: "Corralón San Martín", item: "Bloques cerámicos x1000", montoEstimado: 1500000, estado: "Pendiente" },
   ];
   const DEMO_FACTURAS = [
-    { id: 1, fecha: "2026-02-15", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 5200000, comprobante: "A-0001-00012345", estado: "Pagada", formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco" },
-    { id: 2, fecha: "2026-03-18", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 4800000, comprobante: "A-0001-00012400", estado: "Pagada", formalidad: "Negro", tipoFactura: "Sin factura", cuenta: "Efectivo" },
-    { id: 3, fecha: "2026-04-20", obraId: 1, ordenCompraId: null, proveedor: "Hierros del Sur", categoria: "Materiales", monto: 6100000, comprobante: "A-0002-00003321", estado: "Pagada", formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco" },
-    { id: 4, fecha: "2026-05-22", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 5300000, comprobante: "A-0001-00012551", estado: "Pagada", formalidad: "Negro", tipoFactura: "Sin factura", cuenta: "Efectivo" },
-    { id: 5, fecha: "2026-06-19", obraId: 1, ordenCompraId: 1, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 4200000, comprobante: "A-0003-00009087", estado: "Pagada", formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco" },
-    { id: 6, fecha: "2026-07-25", obraId: 1, ordenCompraId: 2, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 6800000, comprobante: "B-0001-00000442", estado: "Pendiente", formalidad: "Blanco", tipoFactura: "B", cuenta: "Banco" },
-    { id: 7, fecha: "2026-05-10", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 3800000, comprobante: "A-0001-00012470", estado: "Pagada", formalidad: "Blanco", tipoFactura: "A", cuenta: "Mercado Pago" },
-    { id: 8, fecha: "2026-06-14", obraId: 2, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 2600000, comprobante: "A-0001-00012600", estado: "Pagada", formalidad: "Negro", tipoFactura: "Sin factura", cuenta: "Efectivo" },
-    { id: 9, fecha: "2026-07-15", obraId: 2, ordenCompraId: 3, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 1500000, comprobante: "A-0004-00001180", estado: "Pendiente", formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco" },
-    { id: 10, fecha: "2026-08-20", obraId: 1, ordenCompraId: null, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 2000000, estado: "Pendiente", formalidad: "Blanco", tipoFactura: "B", formaPago: "eCheq", fechaPagoEcheq: "2026-10-15", cuenta: "Banco" },
-    { id: 11, fecha: "2026-08-10", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 900000, estado: "Pendiente", formalidad: "Blanco", tipoFactura: "C", formaPago: "Cuenta corriente", cuenta: null },
-    { id: 12, fecha: "2026-08-22", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 350000, estado: "Pendiente", formalidad: "Blanco", tipoFactura: "Sin factura", formaPago: "Cuenta corriente", cuenta: null },
+    { id: 1, fecha: "2026-02-15", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 5200000, comprobante: "A-0001-00012345", estado: "Pagada", tipoFactura: "A", cuenta: "Banco" },
+    { id: 2, fecha: "2026-03-18", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 4800000, comprobante: "A-0001-00012400", estado: "Pagada", tipoFactura: "Sin factura", cuenta: "Efectivo" },
+    { id: 3, fecha: "2026-04-20", obraId: 1, ordenCompraId: null, proveedor: "Hierros del Sur", categoria: "Materiales", monto: 6100000, comprobante: "A-0002-00003321", estado: "Pagada", tipoFactura: "A", cuenta: "Banco" },
+    { id: 4, fecha: "2026-05-22", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 5300000, comprobante: "A-0001-00012551", estado: "Pagada", tipoFactura: "Sin factura", cuenta: "Efectivo" },
+    { id: 5, fecha: "2026-06-19", obraId: 1, ordenCompraId: 1, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 4200000, comprobante: "A-0003-00009087", estado: "Pagada", tipoFactura: "A", cuenta: "Banco" },
+    { id: 6, fecha: "2026-07-25", obraId: 1, ordenCompraId: 2, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 6800000, comprobante: "B-0001-00000442", estado: "Pendiente", tipoFactura: "B", cuenta: "Banco" },
+    { id: 7, fecha: "2026-05-10", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 3800000, comprobante: "A-0001-00012470", estado: "Pagada", tipoFactura: "A", cuenta: "Mercado Pago" },
+    { id: 8, fecha: "2026-06-14", obraId: 2, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 2600000, comprobante: "A-0001-00012600", estado: "Pagada", tipoFactura: "Sin factura", cuenta: "Efectivo" },
+    { id: 9, fecha: "2026-07-15", obraId: 2, ordenCompraId: 3, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 1500000, comprobante: "A-0004-00001180", estado: "Pendiente", tipoFactura: "A", cuenta: "Banco" },
+    { id: 10, fecha: "2026-08-20", obraId: 1, ordenCompraId: null, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 2000000, estado: "Pendiente", tipoFactura: "B", formaPago: "eCheq", fechaPagoEcheq: "2026-10-15", cuenta: "Banco" },
+    { id: 11, fecha: "2026-08-10", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 900000, estado: "Pendiente", tipoFactura: "C", formaPago: "Cuenta corriente", cuenta: null },
+    { id: 12, fecha: "2026-08-22", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 350000, estado: "Pendiente", tipoFactura: "Sin factura", formaPago: "Cuenta corriente", cuenta: null },
   ];
 
   const DEMO_INGRESOS = [
-    { id: 1, fecha: "2026-02-05", obraId: 1, concepto: "Anticipo certificado 1", monto: 20000000, formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco", estado: "Cobrado" },
-    { id: 2, fecha: "2026-04-10", obraId: 1, concepto: "Certificado de avance 2", monto: 18000000, formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco", estado: "Cobrado" },
-    { id: 3, fecha: "2026-05-15", obraId: 1, concepto: "Adicional acordado con el cliente", monto: 6000000, formalidad: "Negro", tipoFactura: "Sin factura", cuenta: "Efectivo", estado: "Cobrado" },
-    { id: 4, fecha: "2026-05-01", obraId: 2, concepto: "Anticipo Fam. Ledesma", monto: 12000000, formalidad: "Blanco", tipoFactura: "B", cuenta: "Mercado Pago", estado: "Cobrado" },
-    { id: 5, fecha: "2026-06-20", obraId: 2, concepto: "Pago en mano acordado", monto: 4000000, formalidad: "Negro", tipoFactura: "Sin factura", cuenta: "Efectivo", estado: "Cobrado" },
-    { id: 6, fecha: "2026-09-20", obraId: 1, concepto: "Certificado de avance 3", monto: 15000000, formalidad: "Blanco", tipoFactura: "A", cuenta: "Banco", medioBancario: "eCheq", estado: "Pendiente", fechaCobroEstimada: "2026-10-05" },
+    { id: 1, fecha: "2026-02-05", obraId: 1, concepto: "Anticipo certificado 1", monto: 20000000, tipoFactura: "A", cuenta: "Banco", estado: "Cobrado" },
+    { id: 2, fecha: "2026-04-10", obraId: 1, concepto: "Certificado de avance 2", monto: 18000000, tipoFactura: "A", cuenta: "Banco", estado: "Cobrado" },
+    { id: 3, fecha: "2026-05-15", obraId: 1, concepto: "Adicional acordado con el cliente", monto: 6000000, tipoFactura: "Sin factura", cuenta: "Efectivo", estado: "Cobrado" },
+    { id: 4, fecha: "2026-05-01", obraId: 2, concepto: "Anticipo Fam. Ledesma", monto: 12000000, tipoFactura: "B", cuenta: "Mercado Pago", estado: "Cobrado" },
+    { id: 5, fecha: "2026-06-20", obraId: 2, concepto: "Pago en mano acordado", monto: 4000000, tipoFactura: "Sin factura", cuenta: "Efectivo", estado: "Cobrado" },
+    { id: 6, fecha: "2026-09-20", obraId: 1, concepto: "Certificado de avance 3", monto: 15000000, tipoFactura: "A", cuenta: "Banco", medioBancario: "eCheq", estado: "Pendiente", fechaCobroEstimada: "2026-10-05" },
   ];
 
   const DEMO_PRESTAMOS = [
-    { id: 1, fecha: "2026-06-01", acreedor: "Inversor Juan Pérez", capital: 5000000, tasaAnualPct: 60, cuenta: "Banco", formalidad: "Blanco", fechaEstimadaDevolucion: "2026-12-01", estado: "Vigente", fechaPago: null, montoPagado: null },
-    { id: 2, fecha: "2026-01-15", acreedor: "Banco San Juan", capital: 2000000, tasaAnualPct: 40, cuenta: "Banco", formalidad: "Blanco", fechaEstimadaDevolucion: "2026-04-15", estado: "Pagado", fechaPago: "2026-04-10", montoPagado: 2186301.37 },
+    { id: 1, fecha: "2026-06-01", acreedor: "Inversor Juan Pérez", capital: 5000000, tasaAnualPct: 60, cuenta: "Banco", fechaEstimadaDevolucion: "2026-12-01", estado: "Vigente", fechaPago: null, montoPagado: null },
+    { id: 2, fecha: "2026-01-15", acreedor: "Banco San Juan", capital: 2000000, tasaAnualPct: 40, cuenta: "Banco", fechaEstimadaDevolucion: "2026-04-15", estado: "Pagado", fechaPago: "2026-04-10", montoPagado: 2186301.37 },
   ];
   const DEMO_PRESTAMOS_PAGOS = [
     { id: 1, prestamoId: 1, fecha: "2026-07-15", monto: 1000000, cuenta: "Banco" },
   ];
 
   const DEMO_COBROS_SOCIOS = [
-    { id: 1, fecha: "2026-07-15", socio: "Ricardo", monto: 1500000, cuenta: "Banco", medioBancario: "Transferencia", formalidad: "Blanco", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" },
-    { id: 2, fecha: "2026-08-01", socio: "Pablo", monto: 1200000, cuenta: "Efectivo", medioBancario: null, formalidad: "Negro", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" },
+    { id: 1, fecha: "2026-07-15", socio: "Ricardo", monto: 1500000, cuenta: "Banco", medioBancario: "Transferencia", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" },
+    { id: 2, fecha: "2026-08-01", socio: "Pablo", monto: 1200000, cuenta: "Efectivo", medioBancario: null, archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" },
   ];
 
   const DEMO_NOTAS_CREDITO = [
@@ -2751,11 +2718,11 @@ export default function ConcretarApp() {
   ];
 
   const DEMO_TANTEROS = [
-    { id: 1, nombreGrupo: "Mario Electricista", obraId: 1, integrantes: [7, 8], precioTotal: 12000000, formalidad: "Blanco" },
+    { id: 1, nombreGrupo: "Mario Electricista", obraId: 1, integrantes: [7, 8], precioTotal: 12000000 },
   ];
   const DEMO_AVANCES_TANTEROS = [
-    { id: 1, tanteroId: 1, fecha: "2026-06-01", monto: 4000000, descripcion: "1er avance — cableado planta baja", cuenta: "Banco", formalidad: "Blanco" },
-    { id: 2, tanteroId: 1, fecha: "2026-07-10", monto: 3000000, descripcion: "2do avance — tablero principal", cuenta: "Banco", formalidad: "Blanco" },
+    { id: 1, tanteroId: 1, fecha: "2026-06-01", monto: 4000000, descripcion: "1er avance — cableado planta baja", cuenta: "Banco" },
+    { id: 2, tanteroId: 1, fecha: "2026-07-10", monto: 3000000, descripcion: "2do avance — tablero principal", cuenta: "Banco" },
   ];
 
   const [obras, setObras] = useState(isSupabaseConfigured ? [] : DEMO_OBRAS);
@@ -2821,7 +2788,7 @@ export default function ConcretarApp() {
   // aparecer salvo que cambie lo que las generó (ver alertaDescartada más abajo).
   const [alertasDescartadas, setAlertasDescartadas] = useState([]);
   // Plata extra que se le da a alguien junto con su pago (ej: combustible) —
-  // queda anotada acá (quién, cuánto, en qué formalidad/medio, para verla
+  // queda anotada acá (quién, cuánto, en qué medio, para verla
   // junto al pago en Pendientes/Historial) y además genera un gasto real en
   // Gastos y Facturas (categoría "Varios"), así sí impacta en la cuenta y en
   // los reportes como cualquier otro gasto.
@@ -2988,7 +2955,6 @@ export default function ConcretarApp() {
       monto: impuesto,
       comprobante: "",
       tipoFactura: "Sin factura",
-      formalidad: "Blanco",
       formaPago: "Banco",
       medioBancario: "Débito/Transferencia",
       fechaPagoEcheq: null,
@@ -3832,16 +3798,16 @@ export default function ConcretarApp() {
       doc.text("Gastos y Facturas", 14, y);
       autoTable(doc, {
         startY: y + 4,
-        head: [["Fecha", "Proveedor", "Categoría", "Obra", "Forma de pago", "Formalidad", "Monto", "Estado"]],
+        head: [["Fecha", "Proveedor", "Categoría", "Obra", "Forma de pago", "Monto", "Estado"]],
         body: gastosDelMes.map((c) => {
           const obra = obras.find((o) => o.id === c.obraId);
           return [
             fmtFecha(c.fecha), c.proveedor, c.categoria, obra?.nombre || "General",
             (c.formaPago || "—") + (c.medioBancario ? ` (${c.medioBancario})` : ""),
-            c.formalidad, fmtARS(c.monto), c.estado,
+            fmtARS(c.monto), c.estado,
           ];
         }),
-        foot: [["", "", "", "", "", "TOTAL", fmtARS(totalGastos), ""]],
+        foot: [["", "", "", "", "TOTAL", fmtARS(totalGastos), ""]],
         headStyles: { fillColor: [2, 29, 52] },
         footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
         styles: { fontSize: 8 },
@@ -3855,12 +3821,12 @@ export default function ConcretarApp() {
       doc.text("Cobros Ricardo y Pablo", 14, y);
       autoTable(doc, {
         startY: y + 4,
-        head: [["Fecha", "Socio", "Cuenta", "Formalidad", "Monto", "Comprobante", "Observaciones"]],
+        head: [["Fecha", "Socio", "Cuenta", "Monto", "Comprobante", "Observaciones"]],
         body: cobrosDelMes.map((c) => [
           fmtFecha(c.fecha), c.socio, c.cuenta + (c.medioBancario ? ` (${c.medioBancario})` : ""),
-          c.formalidad, fmtARS(c.monto), c.archivo ? "Sí" : "No", c.observaciones || "",
+          fmtARS(c.monto), c.archivo ? "Sí" : "No", c.observaciones || "",
         ]),
-        foot: [["", "", "", "TOTAL", fmtARS(totalCobros), "", ""]],
+        foot: [["", "", "TOTAL", fmtARS(totalCobros), "", ""]],
         headStyles: { fillColor: [2, 29, 52] },
         footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
         styles: { fontSize: 8 },
@@ -4199,7 +4165,6 @@ export default function ConcretarApp() {
           monto: info.monto,
           comprobante: "",
           tipoFactura: "Sin factura",
-          formalidad: "Negro",
           formaPago: "Efectivo",
           medioBancario: null,
           fechaPagoEcheq: null,
@@ -4216,7 +4181,7 @@ export default function ConcretarApp() {
   }
 
   // "+" en Pendientes de pago: anota plata extra que se le da a alguien junto
-  // con su pago (ej: combustible), con su propia formalidad y medio, y de paso
+  // con su pago (ej: combustible), con su propio medio, y de paso
   // genera el gasto real correspondiente en Gastos y Facturas (categoría
   // "Varios") para que impacte en la cuenta como cualquier otro gasto. El id
   // de ese gasto se guarda en la anotación para poder borrar los dos juntos.
@@ -4239,7 +4204,6 @@ export default function ConcretarApp() {
       monto,
       comprobante: "",
       tipoFactura: "Sin factura",
-      formalidad: datos.formalidad,
       formaPago: datos.medio,
       medioBancario: datos.medio === "Banco" ? "Débito/Transferencia" : null,
       fechaPagoEcheq: null,
@@ -4257,7 +4221,6 @@ export default function ConcretarApp() {
       nombre,
       descripcion: datos.descripcion,
       monto,
-      formalidad: datos.formalidad,
       medio: datos.medio,
       creadoPor: currentRole,
       compraFacturaId: gasto?.id ?? null,
@@ -4463,14 +4426,13 @@ export default function ConcretarApp() {
 
   // ---------- Tanteros (mano de obra por precio cerrado) ----------
   const [showTanteroForm, setShowTanteroForm] = useState(false);
-  const emptyTanteroForm = { nombreGrupo: "", obraId: obras[0]?.id ?? "", precioTotal: "", integrantes: [], formalidad: FORMALIDADES[0] };
+  const emptyTanteroForm = { nombreGrupo: "", obraId: obras[0]?.id ?? "", precioTotal: "", integrantes: [] };
   const [tanteroForm, setTanteroForm] = useState(emptyTanteroForm);
   const [avanceAbiertoId, setAvanceAbiertoId] = useState(null);
   const [editandoAvanceId, setEditandoAvanceId] = useState(null);
   // La cuenta arranca vacía a propósito: si no se elige, el avance queda "sin
   // asignar" y no se descuenta de ningún saldo — mejor eso que adivinar mal de
-  // dónde salió la plata. La formalidad no se elige acá: la define el grupo de
-  // tanteros (un tantero es en blanco o en negro siempre, no pago por pago).
+  // dónde salió la plata.
   const emptyAvanceForm = { fecha: hoyISO(), monto: "", descripcion: "", cuenta: "" };
   const [avanceForm, setAvanceForm] = useState(emptyAvanceForm);
 
@@ -4494,7 +4456,6 @@ export default function ConcretarApp() {
       obraId: Number(tanteroForm.obraId),
       precioTotal: Number(tanteroForm.precioTotal) || 0,
       integrantes: tanteroForm.integrantes,
-      formalidad: tanteroForm.formalidad,
     }, setTanteros);
     setTanteroForm(emptyTanteroForm);
     setShowTanteroForm(false);
@@ -4517,14 +4478,11 @@ export default function ConcretarApp() {
 
   function submitAvanceForm(e, tanteroId) {
     e.preventDefault();
-    // La formalidad siempre es la del grupo — no se re-elige pago por pago.
-    const formalidadGrupo = tanteros.find((t) => t.id === tanteroId)?.formalidad || null;
     const patch = {
       fecha: avanceForm.fecha,
       monto: Number(avanceForm.monto) || 0,
       descripcion: avanceForm.descripcion,
       cuenta: avanceForm.cuenta || null,
-      formalidad: formalidadGrupo,
     };
     if (editandoAvanceId) {
       updateRecord("avances_tanteros", editandoAvanceId, patch, setAvancesTanteros);
@@ -4546,49 +4504,46 @@ export default function ConcretarApp() {
     setAvanceAbiertoId(avance.tanteroId);
   }
 
-  // ---------- Resumen de Cuentas (blanco/negro x efectivo/banco/MP) ----------
+  // ---------- Resumen de Cuentas (Efectivo/Banco/Mercado Pago) ----------
   const canVerFinanzas = ROLES_FINANZAS.includes(currentRole);
   // El capataz arma el pedido de obra sin ver precios ni proveedor — eso es cosa de Logística.
   const canVerPreciosPedido = ROLES_VEN_PRECIOS_PEDIDO.includes(currentRole);
 
-  function saldoCuenta(cuenta, formalidad) {
+  function saldoCuenta(cuenta) {
     // Un ingreso "Pendiente" (todavía no cobrado) no suma al saldo hasta que se cobra.
     const totalIngresos = ingresos
-      .filter((i) => i.cuenta === cuenta && i.formalidad === formalidad && i.estado !== "Pendiente" && !obraIdsPapelera.has(i.obraId))
+      .filter((i) => i.cuenta === cuenta && i.estado !== "Pendiente" && !obraIdsPapelera.has(i.obraId))
       .reduce((s, i) => s + (i.monto || 0), 0);
     const totalEgresos = comprasFacturas
-      .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad && !obraIdsPapelera.has(c.obraId))
+      .filter((c) => c.cuenta === cuenta && !obraIdsPapelera.has(c.obraId))
       .reduce((s, c) => s + (c.monto || 0), 0);
-    // Cada transferencia manual resta en la cuenta de origen y suma en la de destino,
-    // siempre dentro de la misma formalidad (blanco y negro nunca se mezclan).
+    // Cada transferencia manual resta en la cuenta de origen y suma en la de destino.
     const totalManual = movimientosManual
-      .filter((m) => m.formalidad === formalidad)
       .reduce((s, m) => s + (m.cuentaOrigen === cuenta ? -(m.monto || 0) : 0) + (m.cuentaDestino === cuenta ? (m.monto || 0) : 0), 0);
     // El capital de un préstamo entra a la cuenta como plata real (no es ganancia,
     // pero sí caja); cada devolución (parcial o la final) sale de la cuenta que se
     // eligió en ese pago — no necesariamente la misma en la que entró el capital.
     const totalPrestamos = prestamos
-      .filter((p) => p.cuenta === cuenta && p.formalidad === formalidad)
+      .filter((p) => p.cuenta === cuenta)
       .reduce((s, p) => s + (p.capital || 0), 0);
     const totalPagosPrestamos = prestamosPagos
-      .filter((pg) => pg.cuenta === cuenta && prestamos.find((p) => p.id === pg.prestamoId)?.formalidad === formalidad)
+      .filter((pg) => pg.cuenta === cuenta)
       .reduce((s, pg) => s + (pg.monto || 0), 0);
     // Un cobro de Ricardo o Pablo es plata real que sale de la caja de la empresa.
     const totalCobrosSocios = cobrosSocios
-      .filter((c) => c.cuenta === cuenta && c.formalidad === formalidad)
+      .filter((c) => c.cuenta === cuenta)
       .reduce((s, c) => s + (c.monto || 0), 0);
     // Un avance pagado a un tantero es plata real que sale de la cuenta elegida.
     const totalAvancesTanteros = avancesTanteros
-      .filter((a) => a.cuenta === cuenta && a.formalidad === formalidad)
+      .filter((a) => a.cuenta === cuenta)
       .reduce((s, a) => s + (a.monto || 0), 0);
     return totalIngresos - totalEgresos + totalManual + totalPrestamos - totalPagosPrestamos - totalCobrosSocios - totalAvancesTanteros;
   }
 
-  const totalBlanco = FORMALIDADES[0] && CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Blanco"), 0);
-  const totalNegro = CUENTAS.reduce((s, c) => s + saldoCuenta(c, "Negro"), 0);
+  const saldoTotalCuentas = CUENTAS.reduce((s, c) => s + saldoCuenta(c), 0);
 
   // ---------- Préstamos (inversores/banco) ----------
-  const emptyPrestamoForm = { fecha: hoyISO(), acreedor: "", capital: 0, tasaAnualPct: "", cuenta: CUENTAS[0], formalidad: FORMALIDADES[0], fechaEstimadaDevolucion: "" };
+  const emptyPrestamoForm = { fecha: hoyISO(), acreedor: "", capital: 0, tasaAnualPct: "", cuenta: CUENTAS[0], fechaEstimadaDevolucion: "" };
   const [prestamoForm, setPrestamoForm] = useState(emptyPrestamoForm);
   const [showPrestamoForm, setShowPrestamoForm] = useState(false);
   function submitPrestamoForm(e) {
@@ -4640,7 +4595,7 @@ export default function ConcretarApp() {
 
   // ---------- Cobros Ricardo y Pablo (retiros de los socios) ----------
   const SOCIOS = ["Ricardo", "Pablo"];
-  const emptyCobroSocioForm = { fecha: hoyISO(), socio: SOCIOS[0], monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", formalidad: FORMALIDADES[0], tipoFactura: "Sin factura", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" };
+  const emptyCobroSocioForm = { fecha: hoyISO(), socio: SOCIOS[0], monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", tipoFactura: "Sin factura", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" };
   const [cobroSocioForm, setCobroSocioForm] = useState(emptyCobroSocioForm);
   const [showCobroSocioForm, setShowCobroSocioForm] = useState(false);
   const [filtroSocio, setFiltroSocio] = useState("Todos");
@@ -4667,7 +4622,7 @@ export default function ConcretarApp() {
   // cada socio le factura a Concretar por separado.
   const emptyFacturaSocio = { tipoFactura: "Sin factura", archivo: null, nombreArchivo: null, tipoArchivo: null };
   const emptyCobroJuntosForm = {
-    fecha: hoyISO(), monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", formalidad: FORMALIDADES[0], observaciones: "",
+    fecha: hoyISO(), monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", observaciones: "",
     facturas: { Ricardo: { ...emptyFacturaSocio }, Pablo: { ...emptyFacturaSocio } },
   };
   const [cobroJuntosForm, setCobroJuntosForm] = useState(emptyCobroJuntosForm);
@@ -4686,7 +4641,6 @@ export default function ConcretarApp() {
         monto: mitad,
         cuenta: cobroJuntosForm.cuenta,
         medioBancario: cobroJuntosForm.cuenta === "Banco" ? cobroJuntosForm.medioBancario : null,
-        formalidad: cobroJuntosForm.formalidad,
         observaciones: cobroJuntosForm.observaciones,
         socio,
         tipoFactura: factura.tipoFactura,
@@ -4738,8 +4692,8 @@ export default function ConcretarApp() {
   }
   const [showMovimientoForm, setShowMovimientoForm] = useState(false);
   // Un movimiento por cada ingreso (+), compra/factura (-) y cada lado de una
-  // transferencia manual (- en origen, + en destino); sumados por cuenta y
-  // formalidad dan exactamente los saldos de arriba.
+  // transferencia manual (- en origen, + en destino); sumados por cuenta dan
+  // exactamente los saldos de arriba.
   // Las filas que generó "Arreglo de caja" (arreglarCaja) se marcan con un
   // run-id compartido en el detalle ("Arreglo de caja #<runId>") — acá se
   // separan del resto de las transferencias manuales para mostrarlas como un
@@ -4768,41 +4722,41 @@ export default function ConcretarApp() {
   };
   const movimientosCuentas = [
     ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
-      id: `ing-${i.id}`, fecha: i.estado === "Pendiente" && i.fechaCobroEstimada ? i.fechaCobroEstimada : i.fecha, creadoEn: i.creadoEn, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, formalidad: i.formalidad, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
+      id: `ing-${i.id}`, fecha: i.estado === "Pendiente" && i.fechaCobroEstimada ? i.fechaCobroEstimada : i.fecha, creadoEn: i.creadoEn, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
       origen: "ingresos", origenId: i.id, tipoFactura: i.tipoFactura,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
-      id: `egr-${c.id}`, fecha: fechaEfectivaMovimiento(c), creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
+      id: `egr-${c.id}`, fecha: fechaEfectivaMovimiento(c), creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
       origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura, formaPago: c.formaPago, medioBancario: c.medioBancario,
     })),
     ...movimientosManualNormales.flatMap((m) => [
-      { id: `man-${m.id}-sale`, fecha: m.fecha, creadoEn: m.creadoEn, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, formalidad: m.formalidad, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null, origen: "movimientos_cuenta", origenId: m.id },
-      { id: `man-${m.id}-recibe`, fecha: m.fecha, creadoEn: m.creadoEn, tipo: "Ingreso", obraId: null, detalle: m.detalle || `Pase desde ${m.cuentaOrigen}`, formalidad: m.formalidad, cuenta: m.cuentaDestino, monto: m.monto || 0, estado: null, origen: "movimientos_cuenta", origenId: m.id },
+      { id: `man-${m.id}-sale`, fecha: m.fecha, creadoEn: m.creadoEn, tipo: "Egreso", obraId: null, detalle: m.detalle || `Pase a ${m.cuentaDestino}`, cuenta: m.cuentaOrigen, monto: -(m.monto || 0), estado: null, origen: "movimientos_cuenta", origenId: m.id },
+      { id: `man-${m.id}-recibe`, fecha: m.fecha, creadoEn: m.creadoEn, tipo: "Ingreso", obraId: null, detalle: m.detalle || `Pase desde ${m.cuentaOrigen}`, cuenta: m.cuentaDestino, monto: m.monto || 0, estado: null, origen: "movimientos_cuenta", origenId: m.id },
     ]),
     ...Object.entries(arreglosPorRun).map(([runId, filas]) => ({
-      id: `arreglo-${runId}`, fecha: filas[0].fecha, creadoEn: filas[0].creadoEn, tipo: "Ajuste", obraId: null, detalle: "Arreglo de caja", formalidad: null, cuenta: null,
+      id: `arreglo-${runId}`, fecha: filas[0].fecha, creadoEn: filas[0].creadoEn, tipo: "Ajuste", obraId: null, detalle: "Arreglo de caja", cuenta: null,
       monto: filas.reduce((s, f) => s + (f.monto || 0), 0), estado: null, origen: "arreglo_caja", origenId: runId,
     })),
     ...prestamos.map((p) => ({
-      id: `prestamo-alta-${p.id}`, fecha: p.fecha, creadoEn: p.creadoEn, tipo: "Ingreso", obraId: null, detalle: `Préstamo recibido — ${p.acreedor}`, formalidad: p.formalidad, cuenta: p.cuenta, monto: p.capital || 0, estado: null,
+      id: `prestamo-alta-${p.id}`, fecha: p.fecha, creadoEn: p.creadoEn, tipo: "Ingreso", obraId: null, detalle: `Préstamo recibido — ${p.acreedor}`, cuenta: p.cuenta, monto: p.capital || 0, estado: null,
       origenId: p.id,
     })),
     ...prestamosPagos.map((pg) => {
       const p = prestamos.find((x) => x.id === pg.prestamoId);
       return {
-        id: `prestamo-pago-${pg.id}`, fecha: pg.fecha, creadoEn: pg.creadoEn, tipo: "Egreso", obraId: null, detalle: `Devolución préstamo — ${p?.acreedor || "?"}`, formalidad: p?.formalidad, cuenta: pg.cuenta, monto: -(pg.monto || 0), estado: "Pagada",
+        id: `prestamo-pago-${pg.id}`, fecha: pg.fecha, creadoEn: pg.creadoEn, tipo: "Egreso", obraId: null, detalle: `Devolución préstamo — ${p?.acreedor || "?"}`, cuenta: pg.cuenta, monto: -(pg.monto || 0), estado: "Pagada",
         origenId: pg.id,
       };
     }),
     ...cobrosSocios.map((c) => ({
-      id: `cobro-socio-${c.id}`, fecha: c.fecha, creadoEn: c.creadoEn, tipo: "Egreso", obraId: null, detalle: `Cobro — ${c.socio}`, formalidad: c.formalidad, cuenta: c.cuenta, monto: -(c.monto || 0), estado: "Pagada",
+      id: `cobro-socio-${c.id}`, fecha: c.fecha, creadoEn: c.creadoEn, tipo: "Egreso", obraId: null, detalle: `Cobro — ${c.socio}`, cuenta: c.cuenta, monto: -(c.monto || 0), estado: "Pagada",
       origen: "cobros_socios", origenId: c.id, tipoFactura: c.tipoFactura,
     })),
     ...avancesTanteros.flatMap((a) => {
       const t = tanteros.find((x) => x.id === a.tanteroId);
       if (!t || obraIdsPapelera.has(t.obraId)) return [];
       return [{
-        id: `avance-tantero-${a.id}`, fecha: a.fecha, creadoEn: a.creadoEn, tipo: "Egreso", obraId: t.obraId, detalle: `Avance tantero — ${t.nombreGrupo}`, formalidad: a.formalidad, cuenta: a.cuenta, monto: -(a.monto || 0), estado: "Pagada",
+        id: `avance-tantero-${a.id}`, fecha: a.fecha, creadoEn: a.creadoEn, tipo: "Egreso", obraId: t.obraId, detalle: `Avance tantero — ${t.nombreGrupo}`, cuenta: a.cuenta, monto: -(a.monto || 0), estado: "Pagada",
         origenId: a.id,
       }];
     }),
@@ -5178,7 +5132,7 @@ export default function ConcretarApp() {
   // sumando el total (ingreso - egreso) de cada mes en orden — así se ve en qué mes, si
   // se cumplen estas fechas estimadas, la empresa se quedaría sin plata (acumulado en rojo).
   // Lo "sin fecha" no entra en la cuenta porque no se sabe cuándo va a pasar.
-  const saldoActualTotal = totalBlanco + totalNegro;
+  const saldoActualTotal = saldoTotalCuentas;
   let acumuladoProximosRunning = saldoActualTotal;
   const gruposMesesProximosConAcumulado = gruposMesesProximos.map((m) => {
     if (m.clave === "sin-fecha") return { ...m, acumulado: null };
@@ -5216,9 +5170,7 @@ export default function ConcretarApp() {
   // Un "Error de cálculo" nunca es transferencia real entre nuestras cuentas: usamos
   // "Ajuste" como cuenta puente (no forma parte de CUENTAS, así que no aparece en el
   // resumen) solo para poder reutilizar el mecanismo de movimientos y que la cuenta
-  // real quede en el número contado a mano. Banco y Mercado Pago son siempre blancos
-  // (no hay plata en negro ahí); en Efectivo, que mezcla las dos, el error se carga
-  // como negro.
+  // real quede en el número contado a mano.
   async function arreglarCaja() {
     let corregidas = 0;
     // Mismo run-id (timestamp) en el detalle de todas las filas que genera esta
@@ -5228,14 +5180,12 @@ export default function ConcretarApp() {
     for (const cuenta of CUENTAS) {
       const real = dineroRealDe(cuenta);
       if (real === null) continue;
-      const calculado = saldoCuenta(cuenta, "Blanco") + saldoCuenta(cuenta, "Negro");
+      const calculado = saldoCuenta(cuenta);
       const diferencia = real - calculado;
       if (Math.abs(diferencia) < 1) continue;
-      const formalidadAjuste = cuenta === "Banco" || cuenta === "Mercado Pago" ? "Blanco" : "Negro";
       await addRecord("movimientos_cuenta", {
         fecha: hoyISO(),
         detalle: `Arreglo de caja #${runId}`,
-        formalidad: formalidadAjuste,
         cuentaOrigen: diferencia > 0 ? "Ajuste" : cuenta,
         cuentaDestino: diferencia > 0 ? cuenta : "Ajuste",
         monto: Math.abs(diferencia),
@@ -5694,7 +5644,6 @@ export default function ConcretarApp() {
           monto: cantidadAObra * precio,
           comprobante: pedido?.comprobante || "",
           estado: "Pendiente",
-          formalidad: "Blanco",
           cuenta: "Banco",
         }, setComprasFacturas);
       }
@@ -5708,7 +5657,6 @@ export default function ConcretarApp() {
           monto: cantidadAStock * precio,
           comprobante: pedido?.comprobante || "",
           estado: "Pendiente",
-          formalidad: "Blanco",
           cuenta: "Banco",
         }, setComprasFacturas);
         const loteExistente = stockMateriales.find((s) => s.material.toLowerCase() === it.material.toLowerCase() && s.categoria === it.categoria && s.precioUnitario === precio);
@@ -5753,7 +5701,6 @@ export default function ConcretarApp() {
       monto,
       comprobante: "Reasignado desde stock",
       estado: "Pendiente",
-      formalidad: "Blanco",
       cuenta: "Banco",
     }, setComprasFacturas);
     setAsignandoStockId(null);
@@ -6081,7 +6028,6 @@ export default function ConcretarApp() {
       monto: pedido.total,
       comprobante: "",
       estado: "Pendiente",
-      formalidad: "Blanco",
       cuenta: "Banco",
     }, setComprasFacturas);
     // Actualiza el "último proveedor" de cada material del catálogo, para que la próxima sugerencia de consolidación sea más precisa.
@@ -6113,7 +6059,7 @@ export default function ConcretarApp() {
       const facturaGeneral = await addRecord("compras_facturas", {
         fecha: hoyISO(), obraId: null, ordenCompraId: null, proveedor: pedido.proveedor || "Sin especificar",
         categoria: it.categoria, monto: (Number(it.cantidad) || 0) * precio, comprobante: pedido.comprobante || "",
-        estado: "Pendiente", formalidad: "Blanco", cuenta: "Banco",
+        estado: "Pendiente", cuenta: "Banco",
       }, setComprasFacturas);
       const loteExistente = stockMateriales.find((s) => s.material.toLowerCase() === it.material.toLowerCase() && s.categoria === it.categoria && s.precioUnitario === precio);
       if (loteExistente) {
@@ -6143,7 +6089,7 @@ export default function ConcretarApp() {
     }
     await addRecord("compras_facturas", {
       fecha: hoyISO(), obraId, ordenCompraId: null, proveedor: "Depósito interno", categoria: lote.categoria,
-      monto, comprobante: "Pedido desde depósito", estado: "Pendiente", formalidad: "Blanco", cuenta: "Banco",
+      monto, comprobante: "Pedido desde depósito", estado: "Pendiente", cuenta: "Banco",
     }, setComprasFacturas);
   }
 
@@ -7264,7 +7210,6 @@ export default function ConcretarApp() {
                             obraId: obraSel.id,
                             concepto: f.get("concepto"),
                             monto: Number(f.get("monto")) || 0,
-                            formalidad: f.get("formalidad"),
                             tipoFactura: f.get("tipoFactura"),
                             cuenta: f.get("cuenta"),
                             medioBancario: f.get("cuenta") === "Banco" ? f.get("medioBancario") : null,
@@ -7293,9 +7238,6 @@ export default function ConcretarApp() {
                               <Check size={14} />
                             </button>
                           </div>
-                        </Field>
-                        <Field label="Formalidad">
-                          <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
                         </Field>
                         <Field label="Factura">
                           <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
@@ -8237,11 +8179,6 @@ export default function ConcretarApp() {
                       <Field label="Precio cerrado (ARS)">
                         <MoneyInput value={tanteroForm.precioTotal} onChange={(v) => setTanteroForm((f) => ({ ...f, precioTotal: v }))} className={inputCls} />
                       </Field>
-                      <Field label="Formalidad del grupo">
-                        <select value={tanteroForm.formalidad} onChange={(e) => setTanteroForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-                          {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
-                        </select>
-                      </Field>
                       <div className="md:col-span-3">
                         <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Integrantes del grupo</div>
                         {tanterosDisponibles.length === 0 ? (
@@ -8342,17 +8279,6 @@ export default function ConcretarApp() {
                             <div>
                               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Saldo</div>
                               <div className={`font-mono font-semibold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
-                            </div>
-                            <div>
-                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Formalidad del grupo</div>
-                              <select
-                                value={t.formalidad || ""}
-                                onChange={(e) => updateRecord("tanteros", t.id, { formalidad: e.target.value }, setTanteros)}
-                                className={`${inputCls} ${!t.formalidad ? "border-amber-400" : ""}`}
-                              >
-                                <option value="" disabled>Elegir…</option>
-                                {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
-                              </select>
                             </div>
                           </div>
 
@@ -8465,7 +8391,7 @@ export default function ConcretarApp() {
                                       Reabrir
                                     </button>
                                   </div>
-                                  <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                                     <div>
                                       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Precio cerrado</div>
                                       <div className="font-mono font-semibold text-slate-900">{fmtARS(t.precioTotal)}</div>
@@ -8473,10 +8399,6 @@ export default function ConcretarApp() {
                                     <div>
                                       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pagado</div>
                                       <div className="font-mono font-semibold text-emerald-700">{fmtARS(pagado)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Formalidad</div>
-                                      <div className="text-slate-700">{t.formalidad || "—"}</div>
                                     </div>
                                   </div>
                                 </div>
@@ -8559,7 +8481,7 @@ export default function ConcretarApp() {
                               <div className="space-y-1">
                                 {extrasSemana.map((ex) => (
                                   <div key={ex.id} className="flex items-center justify-between text-sm">
-                                    <span className="text-slate-700">{ex.nombre} <span className="text-xs text-slate-400">({ex.descripcion} · {ex.formalidad} · {ex.medio})</span></span>
+                                    <span className="text-slate-700">{ex.nombre} <span className="text-xs text-slate-400">({ex.descripcion} · {ex.medio})</span></span>
                                     <span className="font-mono text-slate-800">{fmtARS(ex.monto)}</span>
                                   </div>
                                 ))}
@@ -8835,7 +8757,6 @@ export default function ConcretarApp() {
                   agregarExtraPago({
                     descripcion: f.get("descripcion"),
                     monto: f.get("monto"),
-                    formalidad: f.get("formalidad"),
                     medio: f.get("medio"),
                   });
                 }}
@@ -8845,9 +8766,6 @@ export default function ConcretarApp() {
                 </Field>
                 <Field label="Monto ($)">
                   <MoneyInput name="monto" className={inputCls} />
-                </Field>
-                <Field label="Formalidad">
-                  <select name="formalidad" defaultValue="Negro" className={inputCls}>{FORMALIDADES.map((x) => <option key={x}>{x}</option>)}</select>
                 </Field>
                 <Field label="Medio">
                   <select name="medio" defaultValue="Efectivo" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
@@ -10567,7 +10485,6 @@ export default function ConcretarApp() {
                       monto: Number(f.get("monto")) || 0,
                       comprobante: "",
                       tipoFactura: "Sin factura",
-                      formalidad: f.get("formalidad"),
                       formaPago,
                       medioBancario,
                       fechaPagoEcheq,
@@ -10597,9 +10514,6 @@ export default function ConcretarApp() {
                     </Field>
                   )}
                   <Field label="Monto ($)"><MoneyInput name="monto" className={inputCls} /></Field>
-                  <Field label="Formalidad">
-                    <select name="formalidad" defaultValue="Blanco" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
-                  </Field>
                   <Field label="Forma de pago">
                     {/* Sin "Cuenta corriente": los gastos mensuales fijos son gastos propios
                         recurrentes (alquiler, seguros, etc.), no compras a cuenta corriente con
@@ -10668,7 +10582,6 @@ export default function ConcretarApp() {
                       monto: Number(f.get("monto")) || 0,
                       comprobante: "",
                       tipoFactura: f.get("tipoFactura"),
-                      formalidad: f.get("formalidad"),
                       formaPago,
                       medioBancario: medioBancarioFinal,
                       fechaPagoEcheq,
@@ -10714,9 +10627,6 @@ export default function ConcretarApp() {
                   <Field label="Precio final ($)">
                     <MoneyInput name="monto" className={inputCls} />
                     <div className="mt-1 text-[11px] text-slate-400">Con IVA incluido.</div>
-                  </Field>
-                  <Field label="Formalidad">
-                    <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
                   </Field>
                   <Field label="Factura">
                     <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
@@ -10795,7 +10705,7 @@ export default function ConcretarApp() {
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-[11px] leading-tight">
                 <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-1.5 py-1">Fecha</th><th className="px-1.5 py-1">Obra</th><th className="px-1.5 py-1">Proveedor</th><th className="px-1.5 py-1">Categoría</th><th className="px-1.5 py-1">Descripción</th><th className="px-1.5 py-1">Formalidad</th><th className="px-1.5 py-1">Forma de pago</th><th className="px-1.5 py-1">Factura</th><th className="px-1.5 py-1">Monto</th><th className="px-1.5 py-1">Estado</th><th className="px-1.5 py-1"></th></tr>
+                  <tr><th className="px-1.5 py-1">Fecha</th><th className="px-1.5 py-1">Obra</th><th className="px-1.5 py-1">Proveedor</th><th className="px-1.5 py-1">Categoría</th><th className="px-1.5 py-1">Descripción</th><th className="px-1.5 py-1">Forma de pago</th><th className="px-1.5 py-1">Factura</th><th className="px-1.5 py-1">Monto</th><th className="px-1.5 py-1">Estado</th><th className="px-1.5 py-1"></th></tr>
                 </thead>
                 <tbody>
                   {comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).sort(porCargado).map((c) => {
@@ -10807,7 +10717,6 @@ export default function ConcretarApp() {
                         <td className="px-1.5 py-0.5 font-medium text-slate-900">{c.proveedor}</td>
                         <td className="px-1.5 py-0.5 text-slate-600">{c.categoria}</td>
                         <td className="px-1.5 py-0.5 text-slate-500">{c.descripcion || "—"}</td>
-                        <td className="px-1.5 py-0.5"><Badge estado={c.formalidad || "Blanco"} /></td>
                         <td className="px-1.5 py-0.5 text-slate-600">
                           <span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta || "Banco"} />{c.formaPago || c.cuenta || "—"}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
                           {(c.medioBancario === "eCheq" || c.formaPago === "eCheq") && c.estado === "Pendiente" && (
@@ -10896,7 +10805,6 @@ export default function ConcretarApp() {
                     )}
                   </span>
                 </td>
-                <td className="px-2 py-1"><Badge estado={i.formalidad || "Blanco"} /></td>
                 <td className="px-2 py-1 text-slate-600">
                   <span className="flex items-center gap-1"><CuentaIcon cuenta={i.cuenta} />{i.cuenta || "—"}{i.medioBancario ? ` · ${i.medioBancario}` : ""}</span>
                 </td>
@@ -10929,7 +10837,7 @@ export default function ConcretarApp() {
             <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
               <table className="w-full text-left text-xs">
                 <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Concepto</th><th className="px-2 py-1.5">Formalidad</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
+                  <tr><th className="px-2 py-1.5">Fecha</th><th className="px-2 py-1.5">Obra</th><th className="px-2 py-1.5">Concepto</th><th className="px-2 py-1.5">Cuenta</th><th className="px-2 py-1.5">Factura</th><th className="px-2 py-1.5">Monto</th><th className="px-2 py-1.5">Estado</th><th className="px-2 py-1.5"></th></tr>
                 </thead>
                 <tbody>{items.map(renderFilaIngreso)}</tbody>
               </table>
@@ -10956,7 +10864,6 @@ export default function ConcretarApp() {
                       obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
                       concepto: f.get("concepto"),
                       monto: Number(f.get("monto")) || 0,
-                      formalidad: f.get("formalidad"),
                       tipoFactura: f.get("tipoFactura"),
                       cuenta: f.get("cuenta"),
                       medioBancario: f.get("cuenta") === "Banco" ? f.get("medioBancario") : null,
@@ -10985,9 +10892,6 @@ export default function ConcretarApp() {
                   </Field>
                   <Field label="Concepto"><input name="concepto" required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
                   <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
-                  <Field label="Formalidad">
-                    <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
-                  </Field>
                   <Field label="Factura">
                     <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
                   </Field>
@@ -11096,7 +11000,7 @@ export default function ConcretarApp() {
 
             {showMovimientoForm && (
               <Panel title="Agregar movimiento" action={<button onClick={() => setShowMovimientoForm(false)}><X size={16} /></button>}>
-                <div className="mb-3 text-xs text-slate-500">Pase de dinero entre cuentas (ej: sacar efectivo y depositarlo en el banco). Siempre dentro de la misma formalidad — blanco y negro nunca se mezclan.</div>
+                <div className="mb-3 text-xs text-slate-500">Pase de dinero entre cuentas (ej: sacar efectivo y depositarlo en el banco).</div>
                 <form
                   className="grid grid-cols-1 gap-4 md:grid-cols-3"
                   onSubmit={(e) => {
@@ -11108,7 +11012,6 @@ export default function ConcretarApp() {
                     addRecord("movimientos_cuenta", {
                       fecha: f.get("fecha"),
                       detalle: f.get("detalle"),
-                      formalidad: f.get("formalidad"),
                       cuentaOrigen,
                       cuentaDestino,
                       monto: Number(f.get("monto")) || 0,
@@ -11119,9 +11022,6 @@ export default function ConcretarApp() {
                 >
                   <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
                   <Field label="Detalle"><input name="detalle" required placeholder="Ej: Pase de efectivo a banco" className={inputCls} /></Field>
-                  <Field label="Formalidad">
-                    <select name="formalidad" className={inputCls}>{FORMALIDADES.map((f) => <option key={f}>{f}</option>)}</select>
-                  </Field>
                   <Field label="Cuenta donde sale">
                     <select name="cuentaOrigen" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
                   </Field>
@@ -11137,9 +11037,7 @@ export default function ConcretarApp() {
             {/* Celular: tarjetas apiladas, sin scroll horizontal. */}
             <div className="space-y-2 sm:hidden">
               {CUENTAS.map((cuenta) => {
-                const saldoBlanco = saldoCuenta(cuenta, "Blanco");
-                const saldoNegro = saldoCuenta(cuenta, "Negro");
-                const total = saldoBlanco + saldoNegro;
+                const total = saldoCuenta(cuenta);
                 const real = dineroRealDe(cuenta);
                 const diferencia = real === null ? null : real - total;
                 return (
@@ -11147,10 +11045,6 @@ export default function ConcretarApp() {
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex items-center gap-1.5 font-semibold text-slate-800"><CuentaIcon cuenta={cuenta} size={15} />{cuenta}</span>
                       <span className={`font-mono text-base font-bold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</span>
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
-                      <span>Blanco: <span className="font-mono text-slate-700">{fmtARS(saldoBlanco)}</span></span>
-                      <span>Negro: <span className="font-mono text-slate-700">{fmtARS(saldoNegro)}</span></span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2 border-t border-stone-100 pt-2">
                       <div className="flex items-center gap-1.5">
@@ -11167,11 +11061,7 @@ export default function ConcretarApp() {
               <div className="rounded-lg border-2 border-stone-300 bg-stone-50 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold text-slate-900">Total</span>
-                  <span className={`font-mono text-base font-bold ${(totalBlanco + totalNegro) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalBlanco + totalNegro)}</span>
-                </div>
-                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
-                  <span>Blanco: <span className="font-mono text-slate-700">{fmtARS(totalBlanco)}</span></span>
-                  <span>Negro: <span className="font-mono text-slate-700">{fmtARS(totalNegro)}</span></span>
+                  <span className={`font-mono text-base font-bold ${saldoTotalCuentas < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldoTotalCuentas)}</span>
                 </div>
               </div>
             </div>
@@ -11181,22 +11071,18 @@ export default function ConcretarApp() {
               <table className="text-left text-sm">
                 <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th className="px-4 py-2">Cuenta</th><th className="px-4 py-2 text-right">Blanco</th><th className="px-4 py-2 text-right">Negro</th>
+                    <th className="px-4 py-2">Cuenta</th>
                     <th className="px-4 py-2 text-right">Total</th><th className="px-4 py-2 text-right">Dinero real</th><th className="px-4 py-2 text-right">Diferencia</th>
                   </tr>
                 </thead>
                 <tbody>
                   {CUENTAS.map((cuenta) => {
-                    const saldoBlanco = saldoCuenta(cuenta, "Blanco");
-                    const saldoNegro = saldoCuenta(cuenta, "Negro");
-                    const total = saldoBlanco + saldoNegro;
+                    const total = saldoCuenta(cuenta);
                     const real = dineroRealDe(cuenta);
                     const diferencia = real === null ? null : real - total;
                     return (
                       <tr key={cuenta} className="border-t border-stone-100">
                         <td className="px-4 py-2"><span className="flex items-center gap-2 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={16} />{cuenta}</span></td>
-                        <td className={`px-4 py-2 text-right font-mono ${saldoBlanco < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoBlanco)}</td>
-                        <td className={`px-4 py-2 text-right font-mono ${saldoNegro < 0 ? "text-rose-600" : "text-slate-700"}`}>{fmtARS(saldoNegro)}</td>
                         <td className={`px-4 py-2 text-right font-mono font-semibold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</td>
                         <td className="px-4 py-2 text-right">
                           <MoneyInput value={real ?? 0} onBlur={(v) => actualizarDineroReal(cuenta, v)} className="w-32 rounded-md border border-stone-300 px-2 py-1 text-right text-sm" />
@@ -11209,9 +11095,7 @@ export default function ConcretarApp() {
                   })}
                   <tr className="border-t-2 border-stone-300 bg-stone-50">
                     <td className="px-4 py-2.5 font-bold text-slate-900">Total</td>
-                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${totalBlanco < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalBlanco)}</td>
-                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${totalNegro < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(totalNegro)}</td>
-                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${(totalBlanco + totalNegro) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalBlanco + totalNegro)}</td>
+                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${saldoTotalCuentas < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldoTotalCuentas)}</td>
                     <td className="px-4 py-2.5"></td>
                     <td className="px-4 py-2.5"></td>
                   </tr>
@@ -11301,11 +11185,6 @@ export default function ConcretarApp() {
                   <Field label="Cuenta donde entra">
                     <select value={prestamoForm.cuenta} onChange={(e) => setPrestamoForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
                       {CUENTAS.map((c) => <option key={c}>{c}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Formalidad">
-                    <select value={prestamoForm.formalidad} onChange={(e) => setPrestamoForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-                      {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
                     </select>
                   </Field>
                   <Field label="Fecha estimada de devolución">
@@ -11710,11 +11589,6 @@ export default function ConcretarApp() {
                       </select>
                     </Field>
                   )}
-                  <Field label="Formalidad">
-                    <select value={cobroJuntosForm.formalidad} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-                      {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
-                    </select>
-                  </Field>
                   <Field label="Observaciones">
                     <input value={cobroJuntosForm.observaciones} onChange={(e) => setCobroJuntosForm((f) => ({ ...f, observaciones: e.target.value }))} placeholder="Opcional" className={inputCls} />
                   </Field>
@@ -11772,11 +11646,6 @@ export default function ConcretarApp() {
                       </select>
                     </Field>
                   )}
-                  <Field label="Formalidad">
-                    <select value={cobroSocioForm.formalidad} onChange={(e) => setCobroSocioForm((f) => ({ ...f, formalidad: e.target.value }))} className={inputCls}>
-                      {FORMALIDADES.map((f) => <option key={f}>{f}</option>)}
-                    </select>
-                  </Field>
                   <Field label="Factura">
                     <select value={cobroSocioForm.tipoFactura} onChange={(e) => setCobroSocioForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
                       {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
@@ -11820,7 +11689,6 @@ export default function ConcretarApp() {
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-slate-900">{c.socio}</span>
                         <span className="text-xs text-slate-500">{fmtFecha(c.fecha)}</span>
-                        <Badge estado={c.formalidad || "Blanco"} />
                         {(!c.tipoFactura || c.tipoFactura === "Sin factura") ? (
                           <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
                         ) : (
