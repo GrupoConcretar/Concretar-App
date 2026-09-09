@@ -4728,7 +4728,7 @@ export default function ConcretarApp() {
       origen: "ingresos", origenId: i.id, tipoFactura: i.tipoFactura,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
-      id: `egr-${c.id}`, fecha: fechaEfectivaMovimiento(c), creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: c.proveedor, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
+      id: `egr-${c.id}`, fecha: fechaEfectivaMovimiento(c), creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: c.descripcion ? `${c.proveedor} — ${c.descripcion}` : c.proveedor, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
       origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura, formaPago: c.formaPago, medioBancario: c.medioBancario,
     })),
     ...movimientosManualNormales.flatMap((m) => [
