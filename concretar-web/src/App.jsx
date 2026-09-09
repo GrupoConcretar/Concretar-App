@@ -302,7 +302,7 @@ const BADGE_STYLES = {
   Roto: "border-rose-600 text-rose-700",
   Perdido: "border-rose-600 text-rose-700",
   Devuelto: "border-slate-400 text-slate-500",
-  Pendiente: "border-slate-400 text-slate-500",
+  Pendiente: "border-amber-500 text-amber-700",
   Solicitado: "border-sky-600 text-sky-700",
   Aprobado: "border-emerald-600 text-emerald-700",
   Rechazado: "border-rose-600 text-rose-700",
@@ -5024,9 +5024,10 @@ export default function ConcretarApp() {
         const fechaVencimiento = c.fechaVencimientoCc || (prov?.diaPago ? proximaFechaPago(prov.diaPago) : null);
         const claveMes = fechaVencimiento ? claveMesCuentas(fechaVencimiento) : "sin-fecha";
         const meses = (porProveedor[c.proveedor] ??= {});
-        const bucket = (meses[claveMes] ??= { fechaVencimiento, monto: 0, cantidad: 0 });
+        const bucket = (meses[claveMes] ??= { fechaVencimiento, monto: 0, cantidad: 0, facturas: [] });
         bucket.monto += c.monto || 0;
         bucket.cantidad += 1;
+        bucket.facturas.push(c);
         if (fechaVencimiento && (!bucket.fechaVencimiento || fechaLocal(fechaVencimiento) < fechaLocal(bucket.fechaVencimiento))) {
           bucket.fechaVencimiento = fechaVencimiento;
         }
@@ -5056,7 +5057,7 @@ export default function ConcretarApp() {
           creditoRestante -= aplicado;
         }
         if (monto > 0) {
-          resultado.push({ proveedor, monto, cantidad: b.cantidad, fechaVencimiento: b.fechaVencimiento, proveedorId: prov?.id ?? null, diaPago: prov?.diaPago || null });
+          resultado.push({ proveedor, monto, cantidad: b.cantidad, facturas: b.facturas, fechaVencimiento: b.fechaVencimiento, proveedorId: prov?.id ?? null, diaPago: prov?.diaPago || null });
         }
       });
     });
@@ -11447,29 +11448,39 @@ export default function ConcretarApp() {
                             {cuentasCorrientesDelMes.map((g) => {
                               const dias = g.fechaVencimiento ? diasHasta(g.fechaVencimiento) : null;
                               return (
-                                <div key={g.proveedor} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
-                                  <span className="font-medium text-slate-800">{g.proveedor} <span className="font-normal text-slate-400">({g.cantidad} compra{g.cantidad > 1 ? "s" : ""})</span></span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-slate-500">Día de pago (de cada mes):</span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max="31"
-                                      value={g.diaPago || ""}
-                                      onChange={(e) => actualizarDiaPago(g.proveedorId, e.target.value)}
-                                      disabled={!g.proveedorId}
-                                      className="w-16 rounded-md border border-stone-300 px-2 py-1 text-xs"
-                                    />
-                                    {g.fechaVencimiento && (
-                                      <span className="text-xs text-slate-500">({fmtFecha(g.fechaVencimiento)})</span>
-                                    )}
-                                    {dias !== null && (
-                                      <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
-                                        {dias < 0 ? `vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? "hoy" : `en ${dias} día(s)`}
-                                      </span>
-                                    )}
+                                <div key={g.proveedor} className="rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="font-medium text-slate-800">{g.proveedor} <span className="font-normal text-slate-400">({g.cantidad} compra{g.cantidad > 1 ? "s" : ""})</span></span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-slate-500">Día de pago (de cada mes):</span>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        max="31"
+                                        value={g.diaPago || ""}
+                                        onChange={(e) => actualizarDiaPago(g.proveedorId, e.target.value)}
+                                        disabled={!g.proveedorId}
+                                        className="w-16 rounded-md border border-stone-300 px-2 py-1 text-xs"
+                                      />
+                                      {g.fechaVencimiento && (
+                                        <span className="text-xs text-slate-500">({fmtFecha(g.fechaVencimiento)})</span>
+                                      )}
+                                      {dias !== null && (
+                                        <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                          {dias < 0 ? `vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? "hoy" : `en ${dias} día(s)`}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="font-mono font-semibold text-rose-600">{fmtARS(g.monto)}</span>
                                   </div>
-                                  <span className="font-mono font-semibold text-rose-600">{fmtARS(g.monto)}</span>
+                                  <div className="mt-1.5 space-y-1 border-t border-stone-100 pt-1.5">
+                                    {g.facturas.map((f) => (
+                                      <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                                        <span>{fmtFecha(f.fecha)} — {f.descripcion || f.categoria || "Sin descripción"}</span>
+                                        <span className="font-mono">{fmtARS(f.monto)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               );
                             })}
