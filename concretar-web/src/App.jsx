@@ -8,7 +8,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, Percent
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, Percent, History
 } from "lucide-react";
 
 // Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
@@ -5472,6 +5472,12 @@ export default function ConcretarApp() {
   // Id del proveedor cuyo formulario de "Agregar nota de crédito" está abierto
   // (uno solo a la vez, como el de edición).
   const [agregandoNotaCreditoId, setAgregandoNotaCreditoId] = useState(null);
+  // Id del proveedor cuyo "Historial de compras" está desplegado, con sus
+  // filtros por fecha y por obra (uno solo a la vez, como el de arriba).
+  const [historialProveedorId, setHistorialProveedorId] = useState(null);
+  const [historialFiltroDesde, setHistorialFiltroDesde] = useState("");
+  const [historialFiltroHasta, setHistorialFiltroHasta] = useState("");
+  const [historialFiltroObraId, setHistorialFiltroObraId] = useState("");
   const talleres = proveedores.filter((p) => p.esTaller === "Sí");
 
   function submitProveedorForm(e) {
@@ -5518,6 +5524,7 @@ export default function ConcretarApp() {
       totalFacturado, totalPagado, totalNotasCredito, notasDeEsteProveedor,
       saldo: totalFacturado - totalPagado - totalNotasCredito,
       facturasPendientes: facturas.filter((c) => c.estado !== "Pagada"),
+      historialCompras: [...facturas].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)),
     };
   }
   function agregarNotaCredito(proveedor, datos) {
@@ -12013,7 +12020,7 @@ export default function ConcretarApp() {
                 ) : (
                   <div className="space-y-3">
                     {proveedores.map((p) => {
-                      const { totalFacturado, totalPagado, saldo, facturasPendientes, totalNotasCredito, notasDeEsteProveedor } = balanceProveedor(p);
+                      const { totalFacturado, totalPagado, saldo, facturasPendientes, totalNotasCredito, notasDeEsteProveedor, historialCompras } = balanceProveedor(p);
                       return (
                         <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -12033,6 +12040,17 @@ export default function ConcretarApp() {
                               </div>
                               <button onClick={() => setAgregandoNotaCreditoId((id) => (id === p.id ? null : p.id))} className={btnGhost}>
                                 <span className="flex items-center gap-1"><Plus size={13} /> Nota de crédito</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setHistorialProveedorId((id) => (id === p.id ? null : p.id));
+                                  setHistorialFiltroDesde("");
+                                  setHistorialFiltroHasta("");
+                                  setHistorialFiltroObraId("");
+                                }}
+                                className={btnGhost}
+                              >
+                                <span className="flex items-center gap-1"><History size={13} /> Historial de compras</span>
                               </button>
                               <button onClick={() => editarProveedor(p)} className={btnGhost}>
                                 <span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span>
@@ -12123,6 +12141,64 @@ export default function ConcretarApp() {
                                   )}
                                 </div>
                               ))}
+                            </div>
+                          )}
+                          {historialProveedorId === p.id && (
+                            <div className="mt-3 space-y-2 border-t border-stone-100 pt-2">
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Historial de compras</div>
+                              <div className="flex flex-wrap items-end gap-2">
+                                <Field label="Desde">
+                                  <input type="date" value={historialFiltroDesde} onChange={(e) => setHistorialFiltroDesde(e.target.value)} className={inputCls} />
+                                </Field>
+                                <Field label="Hasta">
+                                  <input type="date" value={historialFiltroHasta} onChange={(e) => setHistorialFiltroHasta(e.target.value)} className={inputCls} />
+                                </Field>
+                                <Field label="Obra">
+                                  <select value={historialFiltroObraId} onChange={(e) => setHistorialFiltroObraId(e.target.value)} className={inputCls}>
+                                    <option value="">Todas las obras</option>
+                                    {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                                  </select>
+                                </Field>
+                                {(historialFiltroDesde || historialFiltroHasta || historialFiltroObraId) && (
+                                  <button type="button" onClick={() => { setHistorialFiltroDesde(""); setHistorialFiltroHasta(""); setHistorialFiltroObraId(""); }} className={btnGhost}>Quitar filtros</button>
+                                )}
+                              </div>
+                              {(() => {
+                                const filtradas = historialCompras.filter((c) => {
+                                  if (historialFiltroDesde && fechaLocal(c.fecha) < fechaLocal(historialFiltroDesde)) return false;
+                                  if (historialFiltroHasta && fechaLocal(c.fecha) > fechaLocal(historialFiltroHasta)) return false;
+                                  if (historialFiltroObraId && String(c.obraId) !== historialFiltroObraId) return false;
+                                  return true;
+                                });
+                                if (filtradas.length === 0) {
+                                  return <div className="text-xs text-slate-400">No hay compras que coincidan con el filtro.</div>;
+                                }
+                                const totalFiltrado = filtradas.reduce((s, c) => s + (c.monto || 0), 0);
+                                return (
+                                  <>
+                                    <div className="max-h-72 space-y-1 overflow-y-auto">
+                                      {filtradas.map((c) => {
+                                        const obra = obras.find((o) => o.id === c.obraId);
+                                        return (
+                                          <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-100 bg-stone-50/60 px-2 py-1.5 text-xs">
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                              <span className="text-slate-600">{fmtFecha(c.fecha)}</span>
+                                              <span className="flex items-center gap-1 text-slate-500"><ObraDot obra={obra} />{obra?.nombre || "General"}</span>
+                                              <span className="text-slate-600">{c.categoria}{c.descripcion ? ` — ${c.descripcion}` : ""}</span>
+                                              <Badge estado={c.estado} />
+                                            </div>
+                                            <span className="font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    <div className="flex items-center justify-between border-t border-stone-200 pt-1.5 text-xs font-semibold text-slate-700">
+                                      <span>Total ({filtradas.length} compra{filtradas.length > 1 ? "s" : ""})</span>
+                                      <span className="font-mono">{fmtARS(totalFiltrado)}</span>
+                                    </div>
+                                  </>
+                                );
+                              })()}
                             </div>
                           )}
                         </div>
