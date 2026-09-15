@@ -12169,11 +12169,11 @@ export default function ConcretarApp() {
                 return 0;
               });
               const thOrdenable = (campo, label, right) => (
-                <th className={`px-2 py-1.5 ${right ? "text-right" : ""}`}>
+                <th className={`px-1.5 py-1 ${right ? "text-right" : ""}`}>
                   <button
                     type="button"
                     onClick={() => ordenarProveedorClick(campo)}
-                    className={`inline-flex items-center gap-1 hover:text-slate-800 ${proveedoresOrden.campo === campo ? "text-slate-800" : ""}`}
+                    className={`inline-flex items-center gap-0.5 hover:text-slate-800 ${proveedoresOrden.campo === campo ? "text-slate-800" : ""}`}
                   >
                     {label}
                     <span className="text-[9px]">{proveedoresOrden.campo === campo ? (proveedoresOrden.asc ? "▲" : "▼") : ""}</span>
@@ -12262,39 +12262,39 @@ export default function ConcretarApp() {
                             {thOrdenable("facturado", "Facturado", true)}
                             {thOrdenable("pagado", "Pagado", true)}
                             {thOrdenable("diaPago", "Día de pago")}
-                            <th className="px-2 py-1.5"></th>
+                            <th className="px-1.5 py-1"></th>
                           </tr>
                         </thead>
                         <tbody>
                           {balancesOrdenados.map(({ p, b }) => (
                             <tr key={p.id} onClick={() => abrirProveedor(p)} className="cursor-pointer border-t border-stone-100 hover:bg-amber-50/50">
-                              <td className="px-2 py-1.5 font-medium text-slate-900 whitespace-nowrap">
+                              <td className="px-1.5 py-1 font-medium text-slate-900 whitespace-nowrap">
                                 {nombreComercial(p)}
-                                {p.esTaller === "Sí" && <span className="ml-1.5"><Badge estado="En Reparación" /></span>}
+                                {p.esTaller === "Sí" && <span className="ml-1"><Badge estado="En Reparación" /></span>}
                                 {b.facturasPendientes.length > 0 && (
-                                  <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
-                                    {b.facturasPendientes.length} pendiente{b.facturasPendientes.length > 1 ? "s" : ""}
+                                  <span className="ml-1 rounded-full bg-amber-100 px-1 py-0.5 text-[9px] font-semibold text-amber-800">
+                                    {b.facturasPendientes.length} pend.
                                   </span>
                                 )}
                               </td>
-                              <td className={`px-2 py-1.5 text-right font-mono font-bold whitespace-nowrap ${b.saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(b.saldo)}</td>
-                              <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{p.contacto}{p.contacto && p.telefono ? " · " : ""}{p.telefono}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(b.totalFacturado)}</td>
-                              <td className="px-2 py-1.5 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(b.totalPagado)}</td>
-                              <td className="px-2 py-1.5 text-slate-600 whitespace-nowrap">{p.diaPago ? `${p.diaPago} de c/mes` : "—"}</td>
-                              <td className="px-2 py-1.5 text-right">
-                                <button onClick={(e) => { e.stopPropagation(); abrirProveedor(p); }} className={btnGhost}>Ver detalle</button>
+                              <td className={`px-1.5 py-1 text-right font-mono font-bold whitespace-nowrap ${b.saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(b.saldo)}</td>
+                              <td className="px-1.5 py-1 text-slate-500 whitespace-nowrap">{p.contacto}{p.contacto && p.telefono ? " · " : ""}{p.telefono}</td>
+                              <td className="px-1.5 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(b.totalFacturado)}</td>
+                              <td className="px-1.5 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(b.totalPagado)}</td>
+                              <td className="px-1.5 py-1 text-slate-600 whitespace-nowrap">{p.diaPago ? `${p.diaPago} de c/mes` : "—"}</td>
+                              <td className="px-1.5 py-1 text-right">
+                                <button onClick={(e) => { e.stopPropagation(); abrirProveedor(p); }} className="rounded-md border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-stone-100 whitespace-nowrap">Ver detalle</button>
                               </td>
                             </tr>
                           ))}
                         </tbody>
                         <tfoot>
                           <tr className="border-t-2 border-stone-300 bg-stone-50">
-                            <td className="px-2 py-1.5 font-bold text-slate-900">Total</td>
-                            <td className={`px-2 py-1.5 text-right font-mono font-bold whitespace-nowrap ${totalSaldoGeneral > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalSaldoGeneral)}</td>
+                            <td className="px-1.5 py-1 font-bold text-slate-900">Total</td>
+                            <td className={`px-1.5 py-1 text-right font-mono font-bold whitespace-nowrap ${totalSaldoGeneral > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalSaldoGeneral)}</td>
                             <td></td>
-                            <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">{fmtARS(totalFacturadoGeneral)}</td>
-                            <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">{fmtARS(totalPagadoGeneral)}</td>
+                            <td className="px-1.5 py-1 text-right font-mono font-bold text-slate-900 whitespace-nowrap">{fmtARS(totalFacturadoGeneral)}</td>
+                            <td className="px-1.5 py-1 text-right font-mono font-bold text-slate-900 whitespace-nowrap">{fmtARS(totalPagadoGeneral)}</td>
                             <td colSpan={2}></td>
                           </tr>
                         </tfoot>
