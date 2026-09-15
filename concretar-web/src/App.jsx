@@ -1565,8 +1565,10 @@ function TablaTotalesPrestamista({ items }) {
 
 function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar }) {
   if (items.length === 0) {
-    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay préstamos cargados.</div>;
+    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay préstamos vigentes.</div>;
   }
+  const totalInteresAcumulado = items.reduce((s, p) => s + calcularEstadoPrestamo(p, pagos).interesAcumulado, 0);
+  const totalADevolverSum = items.reduce((s, p) => s + calcularEstadoPrestamo(p, pagos).totalADevolver, 0);
   return (
     <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
       <table className="w-full text-left text-xs">
@@ -1623,6 +1625,76 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
             );
           })}
         </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-stone-300 bg-stone-50">
+            <td className="px-2 py-1.5 font-bold text-slate-900" colSpan={6}>Total</td>
+            <td className="px-2 py-1.5 text-right font-mono font-bold text-amber-700 whitespace-nowrap">{fmtARS(totalInteresAcumulado)}</td>
+            <td className="px-2 py-1.5 text-right font-mono font-bold text-rose-600 whitespace-nowrap">{fmtARS(totalADevolverSum)}</td>
+            <td className="px-2 py-1.5" colSpan={4}></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+// Préstamos ya devueltos por completo: se muestran aparte (misma info que la
+// tabla de vigentes, más la fecha real en que se devolvieron) para no mezclar
+// deuda viva con historial ya saldado.
+function TablaPrestamosDevueltos({ items, onEditar, onEliminar }) {
+  if (items.length === 0) return null;
+  // Usamos el montoPagado que quedó guardado en el préstamo al saldarse (no
+  // recalculamos desde los pagos): es el registro real de lo que se devolvió,
+  // sin depender de que todavía existan las filas de pago que lo generaron.
+  const totalInteresPagado = items.reduce((s, p) => s + ((p.montoPagado || 0) - (p.capital || 0)), 0);
+  const totalDevueltoSum = items.reduce((s, p) => s + (p.montoPagado || 0), 0);
+  return (
+    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="px-2 py-1.5">Acreedor</th>
+            <th className="px-2 py-1.5 text-right">Capital</th>
+            <th className="px-2 py-1.5 text-right">Tasa anual</th>
+            <th className="px-2 py-1.5 text-right">Interés pagado</th>
+            <th className="px-2 py-1.5 text-right">Total devuelto</th>
+            <th className="px-2 py-1.5">Fecha de alta</th>
+            <th className="px-2 py-1.5">Fecha de devolución</th>
+            <th className="px-2 py-1.5"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((p) => {
+            const interesPagado = (p.montoPagado || 0) - (p.capital || 0);
+            return (
+              <tr key={p.id} className="border-t border-stone-100">
+                <td className="px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{p.acreedor}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(p.capital)}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{p.tasaAnualPct}%</td>
+                <td className="px-2 py-1 text-right font-mono text-amber-700 whitespace-nowrap">{fmtARS(interesPagado)}</td>
+                <td className="px-2 py-1 text-right font-mono font-semibold text-emerald-700 whitespace-nowrap">{fmtARS(p.montoPagado || 0)}</td>
+                <td className="px-2 py-1 text-slate-600 whitespace-nowrap">{fmtFecha(p.fecha)}</td>
+                <td className="px-2 py-1 text-slate-600 whitespace-nowrap">{fmtFecha(p.fechaPago)}</td>
+                <td className="px-2 py-1">
+                  <div className="flex flex-nowrap items-center justify-end gap-1">
+                    <button type="button" onClick={() => onEditar(p)} title="Editar préstamo" className="rounded-md border border-transparent p-1 text-slate-400 hover:border-stone-300 hover:bg-stone-100 hover:text-slate-700">
+                      <Pencil size={14} />
+                    </button>
+                    <BotonEliminar onClick={() => onEliminar(p)} title="Eliminar préstamo" />
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-stone-300 bg-stone-50">
+            <td className="px-2 py-1.5 font-bold text-slate-900" colSpan={3}>Total</td>
+            <td className="px-2 py-1.5 text-right font-mono font-bold text-amber-700 whitespace-nowrap">{fmtARS(totalInteresPagado)}</td>
+            <td className="px-2 py-1.5 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">{fmtARS(totalDevueltoSum)}</td>
+            <td className="px-2 py-1.5" colSpan={3}></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
@@ -11214,12 +11286,23 @@ export default function ConcretarApp() {
             </div>
 
             <TablaPrestamos
-              items={prestamos}
+              items={prestamos.filter((p) => p.estado !== "Pagado")}
               pagos={prestamosPagos}
               onEditar={(p) => setEditandoPrestamoId(p.id)}
               onRegistrarPago={(p) => setPagandoPrestamoId(p.id)}
               onEliminar={(p) => moverAPapelera("prestamos", p.id, setPrestamos, p.acreedor)}
             />
+
+            {prestamos.some((p) => p.estado === "Pagado") && (
+              <div>
+                <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Préstamos devueltos</h3>
+                <TablaPrestamosDevueltos
+                  items={prestamos.filter((p) => p.estado === "Pagado")}
+                  onEditar={(p) => setEditandoPrestamoId(p.id)}
+                  onEliminar={(p) => moverAPapelera("prestamos", p.id, setPrestamos, p.acreedor)}
+                />
+              </div>
+            )}
           </div>
         )}
 
