@@ -5472,12 +5472,20 @@ export default function ConcretarApp() {
   // Id del proveedor cuyo formulario de "Agregar nota de crédito" está abierto
   // (uno solo a la vez, como el de edición).
   const [agregandoNotaCreditoId, setAgregandoNotaCreditoId] = useState(null);
-  // Id del proveedor cuyo "Historial de compras" está desplegado, con sus
-  // filtros por fecha y por obra (uno solo a la vez, como el de arriba).
-  const [historialProveedorId, setHistorialProveedorId] = useState(null);
+  // Proveedor abierto en la vista de detalle (lista de proveedores tipo
+  // planilla -> click en una fila -> entra acá, con su historial de compras
+  // filtrable por fecha y por obra).
+  const [viewingProveedorId, setViewingProveedorId] = useState(null);
   const [historialFiltroDesde, setHistorialFiltroDesde] = useState("");
   const [historialFiltroHasta, setHistorialFiltroHasta] = useState("");
   const [historialFiltroObraId, setHistorialFiltroObraId] = useState("");
+  function abrirProveedor(p) {
+    setViewingProveedorId(p.id);
+    setAgregandoNotaCreditoId(null);
+    setHistorialFiltroDesde("");
+    setHistorialFiltroHasta("");
+    setHistorialFiltroObraId("");
+  }
   const talleres = proveedores.filter((p) => p.esTaller === "Sí");
 
   function submitProveedorForm(e) {
@@ -5508,6 +5516,7 @@ export default function ConcretarApp() {
     });
     setEditandoProveedorId(p.id);
     setShowProveedorForm(true);
+    setViewingProveedorId(null);
   }
   // El nombre de fantasía es el que se usa para elegir el proveedor en Compras y en
   // Órdenes de Compra; si todavía no se cargó, se usa la razón social.
@@ -11947,267 +11956,316 @@ export default function ConcretarApp() {
               </>
             )}
 
-            {vistaClientesProveedores === "proveedores" && (
-              <>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-xs text-slate-500">Los talleres de reparación también se cargan acá — así aparecen como destino posible en los remitos de Herramientas. El saldo es lo facturado menos lo ya pagado.</div>
-                  <button
-                    onClick={() => {
-                      if (showProveedorForm) { setShowProveedorForm(false); return; }
-                      setProveedorForm(emptyProveedorForm);
-                      setEditandoProveedorId(null);
-                      setShowProveedorForm(true);
-                    }}
-                    className={btnPrimary}
-                  >
-                    <Plus size={16} /> Nuevo proveedor
-                  </button>
-                </div>
+            {vistaClientesProveedores === "proveedores" && (() => {
+              const proveedorSel = viewingProveedorId ? proveedores.find((p) => p.id === viewingProveedorId) : null;
 
-                {showProveedorForm && (
-                  <Panel title={editandoProveedorId ? "Modificar proveedor" : "Añadir proveedor"} action={<button onClick={() => { setShowProveedorForm(false); setEditandoProveedorId(null); }}><X size={16} /></button>}>
-                    <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitProveedorForm}>
-                      <Field label="Razón social">
-                        <input value={proveedorForm.razonSocial} onChange={(e) => setProveedorForm((f) => ({ ...f, razonSocial: e.target.value }))} required className={inputCls} />
-                      </Field>
-                      <Field label="Nombre de fantasía">
-                        <input value={proveedorForm.nombreFantasia} onChange={(e) => setProveedorForm((f) => ({ ...f, nombreFantasia: e.target.value }))} placeholder="Con este nombre se elige en Compras" className={inputCls} />
-                      </Field>
-                      <Field label="CUIT">
-                        <input value={proveedorForm.cuit} onChange={(e) => setProveedorForm((f) => ({ ...f, cuit: e.target.value }))} placeholder="30-12345678-9" className={inputCls} />
-                      </Field>
-                      <Field label="Domicilio">
-                        <input value={proveedorForm.domicilio} onChange={(e) => setProveedorForm((f) => ({ ...f, domicilio: e.target.value }))} className={inputCls} />
-                      </Field>
-                      <Field label="Contacto">
-                        <input value={proveedorForm.contacto} onChange={(e) => setProveedorForm((f) => ({ ...f, contacto: e.target.value }))} className={inputCls} />
-                      </Field>
-                      <Field label="Teléfono">
-                        <input value={proveedorForm.telefono} onChange={(e) => setProveedorForm((f) => ({ ...f, telefono: e.target.value }))} className={inputCls} />
-                      </Field>
-                      <Field label="Email">
-                        <input type="email" value={proveedorForm.email} onChange={(e) => setProveedorForm((f) => ({ ...f, email: e.target.value }))} className={inputCls} />
-                      </Field>
-                      <Field label="CBU">
-                        <input value={proveedorForm.cbu} onChange={(e) => setProveedorForm((f) => ({ ...f, cbu: e.target.value }))} placeholder="22 dígitos" className={inputCls} />
-                      </Field>
-                      <Field label="Número de cuenta">
-                        <input value={proveedorForm.numeroCuenta} onChange={(e) => setProveedorForm((f) => ({ ...f, numeroCuenta: e.target.value }))} className={inputCls} />
-                      </Field>
-                      <Field label="Día de pago (de cada mes)">
-                        <input
-                          type="number"
-                          min="1"
-                          max="31"
-                          placeholder="Ej: 10"
-                          value={proveedorForm.diaPago}
-                          onChange={(e) => setProveedorForm((f) => ({ ...f, diaPago: e.target.value }))}
-                          className={inputCls}
-                        />
-                      </Field>
-                      <Field label="¿Es taller de reparación?">
-                        <select value={proveedorForm.esTaller} onChange={(e) => setProveedorForm((f) => ({ ...f, esTaller: e.target.value }))} className={inputCls}>
-                          {SI_NO.map((s) => <option key={s}>{s}</option>)}
-                        </select>
-                      </Field>
-                      <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
-                    </form>
-                  </Panel>
-                )}
-
-                {proveedores.length === 0 ? (
-                  <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay proveedores cargados.</div>
-                ) : (
-                  <div className="space-y-3">
-                    {proveedores.map((p) => {
-                      const { totalFacturado, totalPagado, saldo, facturasPendientes, totalNotasCredito, notasDeEsteProveedor, historialCompras } = balanceProveedor(p);
-                      return (
-                        <div key={p.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <span className="font-semibold text-slate-900">{nombreComercial(p)}</span>
-                              {p.esTaller === "Sí" && <span className="ml-2"><Badge estado="En Reparación" /></span>}
-                              {p.nombreFantasia && p.nombreFantasia.trim() && p.nombreFantasia.trim() !== p.razonSocial && (
-                                <div className="text-xs text-slate-400">Razón social: {p.razonSocial}</div>
-                              )}
-                              <div className="text-xs text-slate-500">{p.contacto}{p.contacto && p.telefono ? " · " : ""}{p.telefono}</div>
-                              {p.email && <div className="text-xs text-slate-500">{p.email}</div>}
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <div className="text-right">
-                                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Saldo — le debés</div>
-                                <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
-                              </div>
-                              <button onClick={() => setAgregandoNotaCreditoId((id) => (id === p.id ? null : p.id))} className={btnGhost}>
-                                <span className="flex items-center gap-1"><Plus size={13} /> Nota de crédito</span>
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setHistorialProveedorId((id) => (id === p.id ? null : p.id));
-                                  setHistorialFiltroDesde("");
-                                  setHistorialFiltroHasta("");
-                                  setHistorialFiltroObraId("");
-                                }}
-                                className={btnGhost}
-                              >
-                                <span className="flex items-center gap-1"><History size={13} /> Historial de compras</span>
-                              </button>
-                              <button onClick={() => editarProveedor(p)} className={btnGhost}>
-                                <span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span>
-                              </button>
-                              <BotonEliminar onClick={() => moverAPapelera("proveedores", p.id, setProveedores, nombreComercial(p))} title="Eliminar proveedor" />
-                            </div>
+              if (proveedorSel) {
+                const p = proveedorSel;
+                const { totalFacturado, totalPagado, saldo, facturasPendientes, totalNotasCredito, notasDeEsteProveedor, historialCompras } = balanceProveedor(p);
+                const historialFiltrado = historialCompras.filter((c) => {
+                  if (historialFiltroDesde && fechaLocal(c.fecha) < fechaLocal(historialFiltroDesde)) return false;
+                  if (historialFiltroHasta && fechaLocal(c.fecha) > fechaLocal(historialFiltroHasta)) return false;
+                  if (historialFiltroObraId && String(c.obraId) !== historialFiltroObraId) return false;
+                  return true;
+                });
+                const totalHistorialFiltrado = historialFiltrado.reduce((s, c) => s + (c.monto || 0), 0);
+                return (
+                  <div className="space-y-4">
+                    <button onClick={() => setViewingProveedorId(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
+                      ← Volver a Proveedores
+                    </button>
+                    <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h2 className="text-xl font-bold text-slate-900">
+                            {nombreComercial(p)}
+                            {p.esTaller === "Sí" && <span className="ml-2"><Badge estado="En Reparación" /></span>}
+                          </h2>
+                          {p.nombreFantasia && p.nombreFantasia.trim() && p.nombreFantasia.trim() !== p.razonSocial && (
+                            <div className="text-xs text-slate-400">Razón social: {p.razonSocial}</div>
+                          )}
+                          <div className="text-xs text-slate-500">{p.contacto}{p.contacto && p.telefono ? " · " : ""}{p.telefono}</div>
+                          {p.email && <div className="text-xs text-slate-500">{p.email}</div>}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Saldo — le debés</div>
+                            <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
-                            <span>Facturado: <span className="font-mono text-slate-700">{fmtARS(totalFacturado)}</span></span>
-                            <span>Pagado: <span className="font-mono text-slate-700">{fmtARS(totalPagado)}</span></span>
-                            {totalNotasCredito > 0 && <span>Notas de crédito: <span className="font-mono text-emerald-700">-{fmtARS(totalNotasCredito)}</span></span>}
-                            <span>Día de pago: <span className="font-mono text-slate-700">{p.diaPago ? `${p.diaPago} de cada mes` : "sin definir"}</span></span>
-                            {p.cbu && <span>CBU: <span className="font-mono text-slate-700">{p.cbu}</span></span>}
-                            {p.numeroCuenta && <span>Cuenta: <span className="font-mono text-slate-700">{p.numeroCuenta}</span></span>}
+                          <button onClick={() => setAgregandoNotaCreditoId((id) => (id === p.id ? null : p.id))} className={btnGhost}>
+                            <span className="flex items-center gap-1"><Plus size={13} /> Nota de crédito</span>
+                          </button>
+                          <button onClick={() => editarProveedor(p)} className={btnGhost}>
+                            <span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span>
+                          </button>
+                          <BotonEliminar onClick={() => { moverAPapelera("proveedores", p.id, setProveedores, nombreComercial(p)); setViewingProveedorId(null); }} title="Eliminar proveedor" />
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
+                        <span>Facturado: <span className="font-mono text-slate-700">{fmtARS(totalFacturado)}</span></span>
+                        <span>Pagado: <span className="font-mono text-slate-700">{fmtARS(totalPagado)}</span></span>
+                        {totalNotasCredito > 0 && <span>Notas de crédito: <span className="font-mono text-emerald-700">-{fmtARS(totalNotasCredito)}</span></span>}
+                        <span>Día de pago: <span className="font-mono text-slate-700">{p.diaPago ? `${p.diaPago} de cada mes` : "sin definir"}</span></span>
+                        {p.cbu && <span>CBU: <span className="font-mono text-slate-700">{p.cbu}</span></span>}
+                        {p.numeroCuenta && <span>Cuenta: <span className="font-mono text-slate-700">{p.numeroCuenta}</span></span>}
+                      </div>
+                      {agregandoNotaCreditoId === p.id && (
+                        <form
+                          className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 md:grid-cols-4"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const f = new FormData(e.target);
+                            agregarNotaCredito(p, {
+                              fecha: f.get("fecha"),
+                              obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
+                              monto: Number(f.get("monto")) || 0,
+                              motivo: f.get("motivo"),
+                            });
+                          }}
+                        >
+                          <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
+                          <Field label="Obra (opcional)">
+                            <select name="obraId" className={inputCls}>
+                              <option value="">General (sin obra específica)</option>
+                              {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                            </select>
+                          </Field>
+                          <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
+                          <Field label="Motivo"><input name="motivo" required placeholder="Ej: devolución de cemento en mal estado" className={inputCls} /></Field>
+                          <div className="flex items-end gap-2 md:col-span-4">
+                            <button type="submit" className={btnPrimary}>Guardar</button>
+                            <button type="button" onClick={() => setAgregandoNotaCreditoId(null)} className={btnGhost}>Cancelar</button>
                           </div>
-                          {agregandoNotaCreditoId === p.id && (
-                            <form
-                              className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 md:grid-cols-4"
-                              onSubmit={(e) => {
-                                e.preventDefault();
-                                const f = new FormData(e.target);
-                                agregarNotaCredito(p, {
-                                  fecha: f.get("fecha"),
-                                  obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
-                                  monto: Number(f.get("monto")) || 0,
-                                  motivo: f.get("motivo"),
-                                });
-                              }}
-                            >
-                              <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
-                              <Field label="Obra (opcional)">
-                                <select name="obraId" className={inputCls}>
-                                  <option value="">General (sin obra específica)</option>
-                                  {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                                </select>
-                              </Field>
-                              <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
-                              <Field label="Motivo"><input name="motivo" required placeholder="Ej: devolución de cemento en mal estado" className={inputCls} /></Field>
-                              <div className="flex items-end gap-2 md:col-span-4">
-                                <button type="submit" className={btnPrimary}>Guardar</button>
-                                <button type="button" onClick={() => setAgregandoNotaCreditoId(null)} className={btnGhost}>Cancelar</button>
-                              </div>
-                            </form>
-                          )}
-                          {notasDeEsteProveedor.length > 0 && (
-                            <div className="mt-3 space-y-1.5 border-t border-stone-100 pt-2">
-                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Notas de crédito</div>
-                              {notasDeEsteProveedor.map((n) => (
-                                <div key={n.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-100 bg-emerald-50/40 px-2 py-1.5 text-xs">
-                                  <span className="text-slate-600">
-                                    {fmtFecha(n.fecha)} — {n.motivo || "sin motivo"} — <span className="font-mono font-semibold text-emerald-700">-{fmtARS(n.monto)}</span>
-                                    {n.obraId && <span className="ml-1 text-slate-400">({obras.find((o) => o.id === n.obraId)?.nombre || "obra eliminada"})</span>}
-                                  </span>
-                                  <BotonEliminar onClick={() => moverAPapelera("notas_credito", n.id, setNotasCredito, `Nota de crédito — ${fmtARS(n.monto)}`)} title="Eliminar nota de crédito" />
-                                </div>
-                              ))}
+                        </form>
+                      )}
+                      {notasDeEsteProveedor.length > 0 && (
+                        <div className="mt-3 space-y-1.5 border-t border-stone-100 pt-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Notas de crédito</div>
+                          {notasDeEsteProveedor.map((n) => (
+                            <div key={n.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-100 bg-emerald-50/40 px-2 py-1.5 text-xs">
+                              <span className="text-slate-600">
+                                {fmtFecha(n.fecha)} — {n.motivo || "sin motivo"} — <span className="font-mono font-semibold text-emerald-700">-{fmtARS(n.monto)}</span>
+                                {n.obraId && <span className="ml-1 text-slate-400">({obras.find((o) => o.id === n.obraId)?.nombre || "obra eliminada"})</span>}
+                              </span>
+                              <BotonEliminar onClick={() => moverAPapelera("notas_credito", n.id, setNotasCredito, `Nota de crédito — ${fmtARS(n.monto)}`)} title="Eliminar nota de crédito" />
                             </div>
-                          )}
-                          {facturasPendientes.length > 0 && (
-                            <div className="mt-3 space-y-1.5 border-t border-stone-100 pt-2">
-                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Deudas pendientes</div>
-                              {facturasPendientes.map((f) => (
-                                <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-100 bg-stone-50/60 px-2 py-1.5 text-xs">
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="text-slate-600">{fmtFecha(f.fecha)} — {f.comprobante || "sin comprobante"} — <span className="font-mono font-semibold">{fmtARS(f.monto)}</span></span>
-                                    <span className="flex items-center gap-1 text-slate-500"><CuentaIcon cuenta={f.cuenta || "Banco"} />{f.formaPago || f.cuenta || "—"}{f.medioBancario ? ` · ${f.medioBancario}` : ""}</span>
-                                    <Badge estado={f.estado} />
-                                    {(f.medioBancario === "eCheq" || f.formaPago === "eCheq") && f.fechaPagoEcheq && (
-                                      <span className="text-[10px] text-slate-400">Cobra el {fmtFecha(f.fechaPagoEcheq)}</span>
-                                    )}
-                                    {esCuentaCorriente(f) && f.fechaVencimientoCc && (
-                                      <span className="text-[10px] text-slate-400">Vence el {fmtFecha(f.fechaVencimientoCc)}</span>
-                                    )}
-                                  </div>
-                                  {esCuentaCorriente(f) ? (
-                                    marcandoPagoCCId === f.id ? (
-                                      <span className="flex flex-wrap items-center gap-1">
-                                        <span className="text-[11px] text-slate-500">¿Con qué se pagó?</span>
-                                        <button onClick={() => marcarCuentaCorrientePagada(f, "Efectivo")} className={btnGhost}>Efectivo</button>
-                                        <button onClick={() => marcarCuentaCorrientePagada(f, "Transferencia")} className={btnGhost}>Transferencia</button>
-                                        <button onClick={() => setMarcandoPagoCCId(null)} className={btnGhost}><X size={12} /></button>
-                                      </span>
-                                    ) : (
-                                      <button onClick={() => setMarcandoPagoCCId(f.id)} className={btnGhost}>Marcar pagada</button>
-                                    )
-                                  ) : (
-                                    <button onClick={() => marcarFacturaPagada(f)} className={btnGhost}>Marcar pagada</button>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {historialProveedorId === p.id && (
-                            <div className="mt-3 space-y-2 border-t border-stone-100 pt-2">
-                              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Historial de compras</div>
-                              <div className="flex flex-wrap items-end gap-2">
-                                <Field label="Desde">
-                                  <input type="date" value={historialFiltroDesde} onChange={(e) => setHistorialFiltroDesde(e.target.value)} className={inputCls} />
-                                </Field>
-                                <Field label="Hasta">
-                                  <input type="date" value={historialFiltroHasta} onChange={(e) => setHistorialFiltroHasta(e.target.value)} className={inputCls} />
-                                </Field>
-                                <Field label="Obra">
-                                  <select value={historialFiltroObraId} onChange={(e) => setHistorialFiltroObraId(e.target.value)} className={inputCls}>
-                                    <option value="">Todas las obras</option>
-                                    {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                                  </select>
-                                </Field>
-                                {(historialFiltroDesde || historialFiltroHasta || historialFiltroObraId) && (
-                                  <button type="button" onClick={() => { setHistorialFiltroDesde(""); setHistorialFiltroHasta(""); setHistorialFiltroObraId(""); }} className={btnGhost}>Quitar filtros</button>
+                          ))}
+                        </div>
+                      )}
+                      {facturasPendientes.length > 0 && (
+                        <div className="mt-3 space-y-1.5 border-t border-stone-100 pt-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Deudas pendientes</div>
+                          {facturasPendientes.map((f) => (
+                            <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-100 bg-stone-50/60 px-2 py-1.5 text-xs">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-slate-600">{fmtFecha(f.fecha)} — {f.comprobante || "sin comprobante"} — <span className="font-mono font-semibold">{fmtARS(f.monto)}</span></span>
+                                <span className="flex items-center gap-1 text-slate-500"><CuentaIcon cuenta={f.cuenta || "Banco"} />{f.formaPago || f.cuenta || "—"}{f.medioBancario ? ` · ${f.medioBancario}` : ""}</span>
+                                <Badge estado={f.estado} />
+                                {(f.medioBancario === "eCheq" || f.formaPago === "eCheq") && f.fechaPagoEcheq && (
+                                  <span className="text-[10px] text-slate-400">Cobra el {fmtFecha(f.fechaPagoEcheq)}</span>
+                                )}
+                                {esCuentaCorriente(f) && f.fechaVencimientoCc && (
+                                  <span className="text-[10px] text-slate-400">Vence el {fmtFecha(f.fechaVencimientoCc)}</span>
                                 )}
                               </div>
-                              {(() => {
-                                const filtradas = historialCompras.filter((c) => {
-                                  if (historialFiltroDesde && fechaLocal(c.fecha) < fechaLocal(historialFiltroDesde)) return false;
-                                  if (historialFiltroHasta && fechaLocal(c.fecha) > fechaLocal(historialFiltroHasta)) return false;
-                                  if (historialFiltroObraId && String(c.obraId) !== historialFiltroObraId) return false;
-                                  return true;
-                                });
-                                if (filtradas.length === 0) {
-                                  return <div className="text-xs text-slate-400">No hay compras que coincidan con el filtro.</div>;
-                                }
-                                const totalFiltrado = filtradas.reduce((s, c) => s + (c.monto || 0), 0);
-                                return (
-                                  <>
-                                    <div className="max-h-72 space-y-1 overflow-y-auto">
-                                      {filtradas.map((c) => {
-                                        const obra = obras.find((o) => o.id === c.obraId);
-                                        return (
-                                          <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-100 bg-stone-50/60 px-2 py-1.5 text-xs">
-                                            <div className="flex flex-wrap items-center gap-1.5">
-                                              <span className="text-slate-600">{fmtFecha(c.fecha)}</span>
-                                              <span className="flex items-center gap-1 text-slate-500"><ObraDot obra={obra} />{obra?.nombre || "General"}</span>
-                                              <span className="text-slate-600">{c.categoria}{c.descripcion ? ` — ${c.descripcion}` : ""}</span>
-                                              <Badge estado={c.estado} />
-                                            </div>
-                                            <span className="font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</span>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                    <div className="flex items-center justify-between border-t border-stone-200 pt-1.5 text-xs font-semibold text-slate-700">
-                                      <span>Total ({filtradas.length} compra{filtradas.length > 1 ? "s" : ""})</span>
-                                      <span className="font-mono">{fmtARS(totalFiltrado)}</span>
-                                    </div>
-                                  </>
-                                );
-                              })()}
+                              {esCuentaCorriente(f) ? (
+                                marcandoPagoCCId === f.id ? (
+                                  <span className="flex flex-wrap items-center gap-1">
+                                    <span className="text-[11px] text-slate-500">¿Con qué se pagó?</span>
+                                    <button onClick={() => marcarCuentaCorrientePagada(f, "Efectivo")} className={btnGhost}>Efectivo</button>
+                                    <button onClick={() => marcarCuentaCorrientePagada(f, "Transferencia")} className={btnGhost}>Transferencia</button>
+                                    <button onClick={() => setMarcandoPagoCCId(null)} className={btnGhost}><X size={12} /></button>
+                                  </span>
+                                ) : (
+                                  <button onClick={() => setMarcandoPagoCCId(f.id)} className={btnGhost}>Marcar pagada</button>
+                                )
+                              ) : (
+                                <button onClick={() => marcarFacturaPagada(f)} className={btnGhost}>Marcar pagada</button>
+                              )}
                             </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="mt-3 space-y-2 border-t border-stone-100 pt-2">
+                        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          <History size={12} /> Historial de compras
+                        </div>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <Field label="Desde">
+                            <input type="date" value={historialFiltroDesde} onChange={(e) => setHistorialFiltroDesde(e.target.value)} className={inputCls} />
+                          </Field>
+                          <Field label="Hasta">
+                            <input type="date" value={historialFiltroHasta} onChange={(e) => setHistorialFiltroHasta(e.target.value)} className={inputCls} />
+                          </Field>
+                          <Field label="Obra">
+                            <select value={historialFiltroObraId} onChange={(e) => setHistorialFiltroObraId(e.target.value)} className={inputCls}>
+                              <option value="">Todas las obras</option>
+                              {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                            </select>
+                          </Field>
+                          {(historialFiltroDesde || historialFiltroHasta || historialFiltroObraId) && (
+                            <button type="button" onClick={() => { setHistorialFiltroDesde(""); setHistorialFiltroHasta(""); setHistorialFiltroObraId(""); }} className={btnGhost}>Quitar filtros</button>
                           )}
                         </div>
-                      );
-                    })}
+                        {historialFiltrado.length === 0 ? (
+                          <div className="text-xs text-slate-400">No hay compras que coincidan con el filtro.</div>
+                        ) : (
+                          <>
+                            <div className="max-h-96 space-y-1 overflow-y-auto">
+                              {historialFiltrado.map((c) => {
+                                const obra = obras.find((o) => o.id === c.obraId);
+                                return (
+                                  <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-100 bg-stone-50/60 px-2 py-1.5 text-xs">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="text-slate-600">{fmtFecha(c.fecha)}</span>
+                                      <span className="flex items-center gap-1 text-slate-500"><ObraDot obra={obra} />{obra?.nombre || "General"}</span>
+                                      <span className="text-slate-600">{c.categoria}{c.descripcion ? ` — ${c.descripcion}` : ""}</span>
+                                      <Badge estado={c.estado} />
+                                    </div>
+                                    <span className="font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="flex items-center justify-between border-t border-stone-200 pt-1.5 text-xs font-semibold text-slate-700">
+                              <span>Total ({historialFiltrado.length} compra{historialFiltrado.length > 1 ? "s" : ""})</span>
+                              <span className="font-mono">{fmtARS(totalHistorialFiltrado)}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                )}
-              </>
-            )}
+                );
+              }
+
+              const balances = proveedores.map((p) => ({ p, b: balanceProveedor(p) }));
+              const totalFacturadoGeneral = balances.reduce((s, { b }) => s + b.totalFacturado, 0);
+              const totalPagadoGeneral = balances.reduce((s, { b }) => s + b.totalPagado, 0);
+              const totalSaldoGeneral = balances.reduce((s, { b }) => s + b.saldo, 0);
+
+              return (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs text-slate-500">Los talleres de reparación también se cargan acá — así aparecen como destino posible en los remitos de Herramientas. El saldo es lo facturado menos lo ya pagado. Hacé clic en un proveedor para ver el detalle.</div>
+                    <button
+                      onClick={() => {
+                        if (showProveedorForm) { setShowProveedorForm(false); return; }
+                        setProveedorForm(emptyProveedorForm);
+                        setEditandoProveedorId(null);
+                        setShowProveedorForm(true);
+                      }}
+                      className={btnPrimary}
+                    >
+                      <Plus size={16} /> Nuevo proveedor
+                    </button>
+                  </div>
+
+                  {showProveedorForm && (
+                    <Panel title={editandoProveedorId ? "Modificar proveedor" : "Añadir proveedor"} action={<button onClick={() => { setShowProveedorForm(false); setEditandoProveedorId(null); }}><X size={16} /></button>}>
+                      <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitProveedorForm}>
+                        <Field label="Razón social">
+                          <input value={proveedorForm.razonSocial} onChange={(e) => setProveedorForm((f) => ({ ...f, razonSocial: e.target.value }))} required className={inputCls} />
+                        </Field>
+                        <Field label="Nombre de fantasía">
+                          <input value={proveedorForm.nombreFantasia} onChange={(e) => setProveedorForm((f) => ({ ...f, nombreFantasia: e.target.value }))} placeholder="Con este nombre se elige en Compras" className={inputCls} />
+                        </Field>
+                        <Field label="CUIT">
+                          <input value={proveedorForm.cuit} onChange={(e) => setProveedorForm((f) => ({ ...f, cuit: e.target.value }))} placeholder="30-12345678-9" className={inputCls} />
+                        </Field>
+                        <Field label="Domicilio">
+                          <input value={proveedorForm.domicilio} onChange={(e) => setProveedorForm((f) => ({ ...f, domicilio: e.target.value }))} className={inputCls} />
+                        </Field>
+                        <Field label="Contacto">
+                          <input value={proveedorForm.contacto} onChange={(e) => setProveedorForm((f) => ({ ...f, contacto: e.target.value }))} className={inputCls} />
+                        </Field>
+                        <Field label="Teléfono">
+                          <input value={proveedorForm.telefono} onChange={(e) => setProveedorForm((f) => ({ ...f, telefono: e.target.value }))} className={inputCls} />
+                        </Field>
+                        <Field label="Email">
+                          <input type="email" value={proveedorForm.email} onChange={(e) => setProveedorForm((f) => ({ ...f, email: e.target.value }))} className={inputCls} />
+                        </Field>
+                        <Field label="CBU">
+                          <input value={proveedorForm.cbu} onChange={(e) => setProveedorForm((f) => ({ ...f, cbu: e.target.value }))} placeholder="22 dígitos" className={inputCls} />
+                        </Field>
+                        <Field label="Número de cuenta">
+                          <input value={proveedorForm.numeroCuenta} onChange={(e) => setProveedorForm((f) => ({ ...f, numeroCuenta: e.target.value }))} className={inputCls} />
+                        </Field>
+                        <Field label="Día de pago (de cada mes)">
+                          <input
+                            type="number"
+                            min="1"
+                            max="31"
+                            placeholder="Ej: 10"
+                            value={proveedorForm.diaPago}
+                            onChange={(e) => setProveedorForm((f) => ({ ...f, diaPago: e.target.value }))}
+                            className={inputCls}
+                          />
+                        </Field>
+                        <Field label="¿Es taller de reparación?">
+                          <select value={proveedorForm.esTaller} onChange={(e) => setProveedorForm((f) => ({ ...f, esTaller: e.target.value }))} className={inputCls}>
+                            {SI_NO.map((s) => <option key={s}>{s}</option>)}
+                          </select>
+                        </Field>
+                        <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+                      </form>
+                    </Panel>
+                  )}
+
+                  {proveedores.length === 0 ? (
+                    <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay proveedores cargados.</div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-2 py-1.5">Proveedor</th>
+                            <th className="px-2 py-1.5">Contacto</th>
+                            <th className="px-2 py-1.5 text-right">Facturado</th>
+                            <th className="px-2 py-1.5 text-right">Pagado</th>
+                            <th className="px-2 py-1.5 text-right">Saldo</th>
+                            <th className="px-2 py-1.5">Día de pago</th>
+                            <th className="px-2 py-1.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {balances.map(({ p, b }) => (
+                            <tr key={p.id} onClick={() => abrirProveedor(p)} className="cursor-pointer border-t border-stone-100 hover:bg-amber-50/50">
+                              <td className="px-2 py-1.5 font-medium text-slate-900 whitespace-nowrap">
+                                {nombreComercial(p)}
+                                {p.esTaller === "Sí" && <span className="ml-1.5"><Badge estado="En Reparación" /></span>}
+                                {b.facturasPendientes.length > 0 && (
+                                  <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                                    {b.facturasPendientes.length} pendiente{b.facturasPendientes.length > 1 ? "s" : ""}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{p.contacto}{p.contacto && p.telefono ? " · " : ""}{p.telefono}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(b.totalFacturado)}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(b.totalPagado)}</td>
+                              <td className={`px-2 py-1.5 text-right font-mono font-bold whitespace-nowrap ${b.saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(b.saldo)}</td>
+                              <td className="px-2 py-1.5 text-slate-600 whitespace-nowrap">{p.diaPago ? `${p.diaPago} de c/mes` : "—"}</td>
+                              <td className="px-2 py-1.5 text-right">
+                                <button onClick={(e) => { e.stopPropagation(); abrirProveedor(p); }} className={btnGhost}>Ver detalle</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="border-t-2 border-stone-300 bg-stone-50">
+                            <td className="px-2 py-1.5 font-bold text-slate-900" colSpan={2}>Total</td>
+                            <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">{fmtARS(totalFacturadoGeneral)}</td>
+                            <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">{fmtARS(totalPagadoGeneral)}</td>
+                            <td className={`px-2 py-1.5 text-right font-mono font-bold whitespace-nowrap ${totalSaldoGeneral > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalSaldoGeneral)}</td>
+                            <td colSpan={2}></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 
