@@ -5486,6 +5486,14 @@ export default function ConcretarApp() {
     setHistorialFiltroHasta("");
     setHistorialFiltroObraId("");
   }
+  // Orden de la planilla de proveedores: por defecto el que más le debemos
+  // primero. Un click en el mismo encabezado invierte el sentido; un click en
+  // otro arranca descendente para números (para ver el más alto primero) y
+  // ascendente para texto (A-Z).
+  const [proveedoresOrden, setProveedoresOrden] = useState({ campo: "saldo", asc: false });
+  function ordenarProveedorClick(campo) {
+    setProveedoresOrden((o) => (o.campo === campo ? { campo, asc: !o.asc } : { campo, asc: campo === "proveedor" || campo === "contacto" }));
+  }
   const talleres = proveedores.filter((p) => p.esTaller === "Sí");
 
   function submitProveedorForm(e) {
@@ -12143,6 +12151,35 @@ export default function ConcretarApp() {
               const totalFacturadoGeneral = balances.reduce((s, { b }) => s + b.totalFacturado, 0);
               const totalPagadoGeneral = balances.reduce((s, { b }) => s + b.totalPagado, 0);
               const totalSaldoGeneral = balances.reduce((s, { b }) => s + b.saldo, 0);
+              const valorOrdenProveedor = ({ p, b }, campo) => {
+                switch (campo) {
+                  case "proveedor": return nombreComercial(p).toLowerCase();
+                  case "contacto": return (p.contacto || "").toLowerCase();
+                  case "facturado": return b.totalFacturado;
+                  case "pagado": return b.totalPagado;
+                  case "diaPago": return p.diaPago || 0;
+                  case "saldo": default: return b.saldo;
+                }
+              };
+              const balancesOrdenados = [...balances].sort((x, y) => {
+                const vx = valorOrdenProveedor(x, proveedoresOrden.campo);
+                const vy = valorOrdenProveedor(y, proveedoresOrden.campo);
+                if (vx < vy) return proveedoresOrden.asc ? -1 : 1;
+                if (vx > vy) return proveedoresOrden.asc ? 1 : -1;
+                return 0;
+              });
+              const thOrdenable = (campo, label, right) => (
+                <th className={`px-2 py-1.5 ${right ? "text-right" : ""}`}>
+                  <button
+                    type="button"
+                    onClick={() => ordenarProveedorClick(campo)}
+                    className={`inline-flex items-center gap-1 hover:text-slate-800 ${proveedoresOrden.campo === campo ? "text-slate-800" : ""}`}
+                  >
+                    {label}
+                    <span className="text-[9px]">{proveedoresOrden.campo === campo ? (proveedoresOrden.asc ? "▲" : "▼") : ""}</span>
+                  </button>
+                </th>
+              );
 
               return (
                 <>
@@ -12219,17 +12256,17 @@ export default function ConcretarApp() {
                       <table className="w-full text-left text-xs">
                         <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                           <tr>
-                            <th className="px-2 py-1.5">Proveedor</th>
-                            <th className="px-2 py-1.5">Contacto</th>
-                            <th className="px-2 py-1.5 text-right">Facturado</th>
-                            <th className="px-2 py-1.5 text-right">Pagado</th>
-                            <th className="px-2 py-1.5 text-right">Saldo</th>
-                            <th className="px-2 py-1.5">Día de pago</th>
+                            {thOrdenable("proveedor", "Proveedor")}
+                            {thOrdenable("saldo", "Saldo", true)}
+                            {thOrdenable("contacto", "Contacto")}
+                            {thOrdenable("facturado", "Facturado", true)}
+                            {thOrdenable("pagado", "Pagado", true)}
+                            {thOrdenable("diaPago", "Día de pago")}
                             <th className="px-2 py-1.5"></th>
                           </tr>
                         </thead>
                         <tbody>
-                          {balances.map(({ p, b }) => (
+                          {balancesOrdenados.map(({ p, b }) => (
                             <tr key={p.id} onClick={() => abrirProveedor(p)} className="cursor-pointer border-t border-stone-100 hover:bg-amber-50/50">
                               <td className="px-2 py-1.5 font-medium text-slate-900 whitespace-nowrap">
                                 {nombreComercial(p)}
@@ -12240,10 +12277,10 @@ export default function ConcretarApp() {
                                   </span>
                                 )}
                               </td>
+                              <td className={`px-2 py-1.5 text-right font-mono font-bold whitespace-nowrap ${b.saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(b.saldo)}</td>
                               <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{p.contacto}{p.contacto && p.telefono ? " · " : ""}{p.telefono}</td>
                               <td className="px-2 py-1.5 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(b.totalFacturado)}</td>
                               <td className="px-2 py-1.5 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(b.totalPagado)}</td>
-                              <td className={`px-2 py-1.5 text-right font-mono font-bold whitespace-nowrap ${b.saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(b.saldo)}</td>
                               <td className="px-2 py-1.5 text-slate-600 whitespace-nowrap">{p.diaPago ? `${p.diaPago} de c/mes` : "—"}</td>
                               <td className="px-2 py-1.5 text-right">
                                 <button onClick={(e) => { e.stopPropagation(); abrirProveedor(p); }} className={btnGhost}>Ver detalle</button>
@@ -12253,10 +12290,11 @@ export default function ConcretarApp() {
                         </tbody>
                         <tfoot>
                           <tr className="border-t-2 border-stone-300 bg-stone-50">
-                            <td className="px-2 py-1.5 font-bold text-slate-900" colSpan={2}>Total</td>
+                            <td className="px-2 py-1.5 font-bold text-slate-900">Total</td>
+                            <td className={`px-2 py-1.5 text-right font-mono font-bold whitespace-nowrap ${totalSaldoGeneral > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalSaldoGeneral)}</td>
+                            <td></td>
                             <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">{fmtARS(totalFacturadoGeneral)}</td>
                             <td className="px-2 py-1.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">{fmtARS(totalPagadoGeneral)}</td>
-                            <td className={`px-2 py-1.5 text-right font-mono font-bold whitespace-nowrap ${totalSaldoGeneral > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalSaldoGeneral)}</td>
                             <td colSpan={2}></td>
                           </tr>
                         </tfoot>
