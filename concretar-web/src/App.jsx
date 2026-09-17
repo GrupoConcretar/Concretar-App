@@ -1909,6 +1909,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
       });
     } else if (editando.origen === "ingresos") {
       onGuardarIngreso(editando.origenId, {
+        fecha: form.fecha,
         obraId: form.obraId,
         concepto: form.concepto,
         monto: Number(form.monto) || 0,
@@ -2134,6 +2135,15 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
           )}
           {editando.origen === "ingresos" && (
             <>
+              <Field label="Fecha de la factura">
+                <input
+                  type="date"
+                  value={form.fecha || ""}
+                  onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
+                  required
+                  className={inputCls}
+                />
+              </Field>
               <Field label="Obra">
                 <select value={form.obraId ?? ""} onChange={(e) => setForm((f) => ({ ...f, obraId: e.target.value ? Number(e.target.value) : null }))} className={inputCls}>
                   <option value="">General (sin obra específica)</option>
@@ -7419,7 +7429,7 @@ export default function ConcretarApp() {
                           e.preventDefault();
                           const f = new FormData(e.target);
                           addRecord("ingresos", {
-                            fecha: hoyISO(),
+                            fecha: f.get("fecha"),
                             obraId: obraSel.id,
                             concepto: f.get("concepto"),
                             monto: Number(f.get("monto")) || 0,
@@ -7437,6 +7447,10 @@ export default function ConcretarApp() {
                           setShowCobroObraForm(false);
                         }}
                       >
+                        <Field label="Fecha de la factura">
+                          <input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} />
+                          <div className="mt-1 text-[11px] text-slate-400">La fecha en que se emitió, para que el IVA se acomode en el mes que corresponde.</div>
+                        </Field>
                         <Field label="Día posible de cobro"><input name="fechaCobroEstimada" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
                         <Field label="Concepto"><input name="concepto" required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
                         <Field label="Monto (ARS)">
