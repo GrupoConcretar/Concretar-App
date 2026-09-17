@@ -873,7 +873,7 @@ function TablaGananciasAnual({ items, onActualizarReal }) {
 }
 
 // Campo de "real (contador)" con un botón +/- al lado para poder cargar un
-// saldo a favor (negativo) además de un monto a pagar (positivo) — MoneyInput
+// saldo a favor (positivo) además de un monto a pagar (negativo) — MoneyInput
 // no admite el signo "-" al tipear, así que el signo se maneja aparte y el
 // campo de monto siempre trabaja con el valor absoluto.
 function CampoRealConSigno({ value, onGuardar, className }) {
@@ -884,8 +884,8 @@ function CampoRealConSigno({ value, onGuardar, className }) {
       <button
         type="button"
         onClick={() => onGuardar(-val)}
-        title={negativo ? "A favor (negativo) — clic para pasar a pagar" : "A pagar (positivo) — clic para pasar a favor"}
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs font-bold ${negativo ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-white text-slate-500"}`}
+        title={negativo ? "A pagar (negativo) — clic para pasar a favor" : "A favor (positivo) — clic para pasar a pagar"}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs font-bold ${negativo ? "border-rose-300 bg-rose-50 text-rose-700" : "border-emerald-300 bg-emerald-50 text-emerald-700"}`}
       >
         {negativo ? "−" : "+"}
       </button>
@@ -4942,13 +4942,17 @@ export default function ConcretarApp() {
     const disponible = credito + saldoAFavorIvaArrastre;
     const saldoAFavorAnterior = saldoAFavorIvaArrastre;
     const aPagar = Math.max(0, debito - disponible);
+    // "real" queda cargado en la convención positivo = a favor, negativo = a pagar
+    // (al revés del monto a pagar "de toda la vida"), así que para arrastrar el saldo
+    // a favor al mes siguiente hay que invertirle el signo primero.
     const real = ajusteFiscalDe("iva", clave);
+    const realAPagar = real === null ? null : -real;
     // En cuanto se carga el IVA real que informa el contador para un mes, el saldo a
     // favor que se arrastra al mes siguiente sale de ese valor real (no del estimado
     // de la app) — así los meses venideros quedan proyectados sobre lo que dice el
     // contador en vez de sobre una estimación que puede haberse desviado.
-    saldoAFavorIvaArrastre = Math.max(0, disponible - (real ?? debito));
-    return { clave, debito, credito, saldoAFavorAnterior, aPagar, saldoAFavorNuevo: saldoAFavorIvaArrastre, real, diferencia: real === null ? null : real - aPagar };
+    saldoAFavorIvaArrastre = Math.max(0, disponible - (realAPagar ?? debito));
+    return { clave, debito, credito, saldoAFavorAnterior, aPagar, saldoAFavorNuevo: saldoAFavorIvaArrastre, real, diferencia: real === null ? null : aPagar + real };
   }).reverse();
 
   const gananciasPorAnio = {};
@@ -11447,7 +11451,7 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B. Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. Usá el botón +/- si el contador informa un saldo a favor (negativo) en vez de un monto a pagar.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B. Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−).</div>
               <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} />
             </div>
 
