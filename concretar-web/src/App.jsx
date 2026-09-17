@@ -5233,7 +5233,9 @@ export default function ConcretarApp() {
       if (!grupos[clave]) grupos[clave] = { clave, ingresos: 0, egresos: 0 };
       grupos[clave][flujo === "ingreso" ? "ingresos" : "egresos"] += monto || 0;
     };
-    prestamosPorDevolver.forEach((p) => agregar(p.fechaEstimadaDevolucion, calcularEstadoPrestamo(p, prestamosPagos).totalADevolver, "egreso"));
+    // Se proyecta el interés hasta la fecha estimada de devolución (no "a hoy"),
+    // así el monto que figura acá es lo que realmente habría que devolver ese día.
+    prestamosPorDevolver.forEach((p) => agregar(p.fechaEstimadaDevolucion, calcularEstadoPrestamo(p, prestamosPagos, p.fechaEstimadaDevolucion).totalADevolver, "egreso"));
     echeqsSalida.forEach((c) => agregar(c.fechaPagoEcheq, c.monto, "egreso"));
     echeqsEntrada.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
     cuentasCorrientesPorProveedor.forEach((g) => agregar(g.fechaVencimiento, g.monto, "egreso"));
@@ -11582,7 +11584,7 @@ export default function ConcretarApp() {
                           <div className="space-y-1.5">
                             {prestamosDelMes.map((p) => {
                               const dias = p.fechaEstimadaDevolucion ? diasHasta(p.fechaEstimadaDevolucion) : null;
-                              const total = calcularEstadoPrestamo(p, prestamosPagos).totalADevolver;
+                              const total = calcularEstadoPrestamo(p, prestamosPagos, p.fechaEstimadaDevolucion).totalADevolver;
                               return (
                                 <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
                                   <span className="font-medium text-slate-800">{p.acreedor}</span>
