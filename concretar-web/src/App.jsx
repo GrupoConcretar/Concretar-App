@@ -12124,7 +12124,25 @@ export default function ConcretarApp() {
                                               <input type="checkbox" checked={!!facturasPendientesSeleccionadas[f.id]} onChange={() => toggleFacturaPendienteSeleccionada(f.id)} />
                                             </td>
                                             <td className="px-1.5 py-1 whitespace-nowrap text-slate-600">{fmtFecha(f.fecha)}</td>
-                                            <td className="px-1.5 py-1 whitespace-nowrap text-slate-500">{f.comprobante || "sin comprobante"}</td>
+                                            <td className="px-1.5 py-1 whitespace-nowrap text-slate-500">
+                                              <span className="flex items-center gap-1">
+                                                {f.comprobante || "sin comprobante"}
+                                                {f.archivo ? (
+                                                  <a href={f.archivo} target="_blank" rel="noreferrer" title={f.nombreArchivo || "Ver comprobante"} className="text-slate-400 hover:text-slate-700">
+                                                    <FileDown size={12} />
+                                                  </a>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setEditandoMovimiento({ origen: "compras_facturas", origenId: f.id })}
+                                                    title="Subir factura / comprobante"
+                                                    className="flex items-center gap-0.5 rounded border border-amber-300 bg-amber-50 px-1 py-px text-[9px] font-semibold text-amber-700 hover:bg-amber-100"
+                                                  >
+                                                    <Upload size={10} /> Subir
+                                                  </button>
+                                                )}
+                                              </span>
+                                            </td>
                                             <td className="px-1.5 py-1 text-right font-mono font-semibold whitespace-nowrap">{fmtARS(f.monto)}</td>
                                             <td className="px-1.5 py-1 whitespace-nowrap text-slate-500">
                                               <span className="flex items-center gap-1"><CuentaIcon cuenta={f.cuenta || "Banco"} />{f.formaPago || f.cuenta || "—"}{f.medioBancario ? ` · ${f.medioBancario}` : ""}</span>
