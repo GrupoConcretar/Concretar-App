@@ -7484,6 +7484,9 @@ export default function ConcretarApp() {
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
+                              <button onClick={() => setEditandoMovimiento({ origen: "ingresos", origenId: i.id })} className={btnGhostSm} title="Modificar fecha y monto">
+                                <Pencil size={11} />
+                              </button>
                               <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
                             </div>
                           </div>
