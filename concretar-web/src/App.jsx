@@ -2797,13 +2797,15 @@ export default function ConcretarApp() {
     { id: 1, proveedorId: 1, mes: "2026-08", archivo: "data:application/pdf;base64,JVBERi0xLjcKJYGBgYEKCjYgMCBvYmoKPDwKL0ZpbHRlciAvRmxhdGVEZWNvZGUKL0xlbmd0aCAxODYKPj4Kc3RyZWFtCnicdY7NSkQxDIX3eYquBTF/PWlBBnTuvbhwI/QFREZRxsWI+PymgxtBCc1pyUnPd6LbQVxmfbzQ1d3h+HX4fH16vAzuzRtH60W8jGfS7PckZ6sU5aKVy3inawcEFh41FKIMR8WCTVkXZTdsoXOCPTasytXynuoLJCeOPl9nryDSnX/NbVObB7sy3mhc0DrogU7/8fZwRdOKVkT/5tUf3mVyzAy7yVw30TVzzDw14Sx0b836r9xv1X1AagplbmRzdHJlYW0KZW5kb2JqCgo3IDAgb2JqCjw8Ci9GaWx0ZXIgL0ZsYXRlRGVjb2RlCi9UeXBlIC9PYmpTdG0KL04gNQovRmlyc3QgMjYKL0xlbmd0aCAzNzQKPj4Kc3RyZWFtCnic1VLfS8MwEH7PX3GP+iC5plnTyhjsVxVkKJugKD50bRiVkUibyfzvvWs3xx7EZwlHcnffJd/lvggQFGgNMZgUNAxiBQMwcQbDoZCPXx8W5EOxsa2Qd3XVwithEJbwJuTU71yASIxG4oSdFqHY+o3oiyBi8BHx0PhqV9oGhvk8zxENIiaaLEFUM9qnZBmZIp9yKqUzmdEHo5iJEeMx5fLeEtPXcL7DDg71c9oJmzBm1mN12vs/7/Jb8/4O9RefbCTkwlezIli4mF0rVAlmkYlihRpfLuk7GlsE/3+b6/jX3v3a4dmcebw85MayBropy6Vt/a4paeyMyz1l+HBrt5821GVxZTBLiadJM9JYV3LKZUarJFWDJD3k6Dn5fL9+t2V3DbvzfbhZBebXBzi2sFVdTPyelIm0tEKgn2F9jp3zgRXbadUFYspectDvWTtMVsjVbh06l4ORkJOitV0bJ55EwpW+qt0G5FPtxq6tjwG+8Ruges0NCmVuZHN0cmVhbQplbmRvYmoKCjggMCBvYmoKPDwKL1NpemUgOQovUm9vdCAyIDAgUgovSW5mbyAzIDAgUgovRmlsdGVyIC9GbGF0ZURlY29kZQovVHlwZSAvWFJlZgovTGVuZ3RoIDQxCi9XIFsgMSAyIDIgXQovSW5kZXggWyAwIDkgXQo+PgpzdHJlYW0KeJwVxMENACAMA7FLisQXif1nZISW+GGg22xISk6Vljgg3Z8fDF0QA04KZW5kc3RyZWFtCmVuZG9iagoKc3RhcnR4cmVmCjc1MQolJUVPRg==", nombreArchivo: "factura_agosto_corralon.pdf", tipoArchivo: "application/pdf", creadoEn: "2026-08-20T12:00:00Z" },
   ];
 
-  // Sueldos de los socios (Ricardo/Pablo) planificados a futuro: solo una fecha
-  // y un monto, para armar el calendario del mes — no mueve plata todavía, eso
-  // recién pasa cuando se marca cobrado y se registra como cobro real.
+  // Sueldos de los socios (Ricardo/Pablo) planificados a futuro: siempre se
+  // cobran juntos y por el mismo monto, así que quedan de a pares (uno por
+  // socio, mitad y mitad) por cada fecha — no mueve plata todavía, eso recién
+  // pasa cuando se marca cobrado y se registra como cobro real.
   const DEMO_SUELDOS_PLANIFICADOS = [
     { id: 1, socio: "Ricardo", fecha: "2026-10-05", monto: 1500000 },
     { id: 2, socio: "Pablo", fecha: "2026-10-05", monto: 1500000 },
     { id: 3, socio: "Ricardo", fecha: "2026-10-20", monto: 1000000 },
+    { id: 4, socio: "Pablo", fecha: "2026-10-20", monto: 1000000 },
   ];
 
   const DEMO_TANTEROS = [
@@ -4767,36 +4769,50 @@ export default function ConcretarApp() {
     .sort(porCargado);
 
   // ---------- Próximos sueldos (planificación de retiros futuros) ----------
-  // Es solo un calendario: fecha + monto por socio, sin cuenta ni factura, para
-  // no confundirlo con un cobro real (ese recién se carga cuando efectivamente
-  // se retira la plata, vía "Marcar cobrado" o "Registrar cobro").
+  // Ricardo y Pablo siempre cobran juntos y por el mismo monto, así que se
+  // carga una sola fecha y un solo total (como en "Registrar juntos") y queda
+  // partido a la mitad en dos planificados, uno por socio — para que "Marcar
+  // cobrado" después pueda generar el cobro real de cada uno por separado.
+  // Es solo un calendario, sin cuenta ni factura: eso se completa recién
+  // cuando se marca cobrado y se carga el cobro real.
   const [showSueldosPlanificados, setShowSueldosPlanificados] = useState(false);
-  const emptySueldoPlanForm = { socio: SOCIOS[0], fecha: hoyISO(), monto: 0 };
+  const emptySueldoPlanForm = { fecha: hoyISO(), monto: 0 };
   const [sueldoPlanForm, setSueldoPlanForm] = useState(emptySueldoPlanForm);
   const [sueldoPlanMontoResetKey, setSueldoPlanMontoResetKey] = useState(0);
-  function submitSueldoPlanForm(e) {
+  async function submitSueldoPlanForm(e) {
     e.preventDefault();
-    addRecord("sueldos_planificados", {
-      socio: sueldoPlanForm.socio,
-      fecha: sueldoPlanForm.fecha,
-      monto: Number(sueldoPlanForm.monto) || 0,
-    }, setSueldosPlanificados);
+    const mitad = (Number(sueldoPlanForm.monto) || 0) / 2;
+    for (const socio of SOCIOS) {
+      await addRecord("sueldos_planificados", { socio, fecha: sueldoPlanForm.fecha, monto: mitad }, setSueldosPlanificados);
+    }
     setSueldoPlanForm(emptySueldoPlanForm);
     setSueldoPlanMontoResetKey((k) => k + 1);
   }
-  function eliminarSueldoPlanificado(id) {
-    deleteRecord("sueldos_planificados", id, setSueldosPlanificados);
+  // Agrupados por fecha para mostrar un solo renglón con el total (en vez de
+  // una fila por socio) — es lo que se cargó de una y lo que hay que cobrar.
+  const sueldosPlanificadosAgrupados = Object.values(
+    sueldosPlanificados.reduce((acc, s) => {
+      (acc[s.fecha] ??= { fecha: s.fecha, total: 0, items: [] }).total += s.monto || 0;
+      acc[s.fecha].items.push(s);
+      return acc;
+    }, {})
+  ).sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+  function eliminarGrupoSueldoPlanificado(grupo) {
+    if (!window.confirm("¿Eliminar este sueldo planificado?")) return;
+    const ids = grupo.items.map((s) => s.id);
+    grupo.items.forEach((s) => { if (isSupabaseConfigured) sbDelete("sueldos_planificados", s.id).catch(() => {}); });
+    setSueldosPlanificados((prev) => prev.filter((x) => !ids.includes(x.id)));
   }
   // Al marcar cobrado no se pide confirmación (no es un "eliminar" de verdad,
-  // es que ese plan ya se cumplió) — se pre-carga el form de "Registrar cobro"
-  // con lo planificado y se saca de la lista de próximos sueldos.
-  function marcarSueldoPlanificadoCobrado(s) {
-    setCobroSocioForm({ ...emptyCobroSocioForm, socio: s.socio, fecha: s.fecha, monto: s.monto });
-    setShowCobroSocioForm(true);
-    setSueldosPlanificados((prev) => prev.filter((x) => x.id !== s.id));
-    if (isSupabaseConfigured) sbDelete("sueldos_planificados", s.id).catch(() => {});
+  // es que ese plan ya se cumplió) — se pre-carga "Registrar juntos" con la
+  // fecha y el total planificados, y se saca de la lista de próximos sueldos.
+  function marcarGrupoSueldoPlanificadoCobrado(grupo) {
+    setCobroJuntosForm({ ...emptyCobroJuntosForm, fecha: grupo.fecha, monto: grupo.total });
+    setShowCobroJuntosForm(true);
+    const ids = grupo.items.map((s) => s.id);
+    grupo.items.forEach((s) => { if (isSupabaseConfigured) sbDelete("sueldos_planificados", s.id).catch(() => {}); });
+    setSueldosPlanificados((prev) => prev.filter((x) => !ids.includes(x.id)));
   }
-  const sueldosPlanificadosOrdenados = [...sueldosPlanificados].sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
 
   // "Registrar juntos": carga un solo total y lo parte a la mitad para cada socio,
   // pero queda guardado como dos cobros separados (uno por socio) en el historial —
@@ -11613,7 +11629,7 @@ export default function ConcretarApp() {
                 const ingresosDelMes = ingresosPendientes.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
                 const obrasDisponibleDelMes = obrasDisponibleProyectado.filter((o) => o.meses.includes(claveMes));
                 const ivaPagosDelMes = ivaPagosProyectados.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
-                const sueldosPlanificadosDelMes = sueldosPlanificados.filter((s) => perteneceAMesProximos(s.fecha, claveMes));
+                const sueldosPlanificadosDelMes = sueldosPlanificadosAgrupados.filter((g) => perteneceAMesProximos(g.fecha, claveMes));
                 return (
                   <>
                     <button onClick={() => setMesProximosSeleccionado(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
@@ -11651,11 +11667,11 @@ export default function ConcretarApp() {
                           <div className="text-xs text-slate-400">No hay sueldos planificados para este mes.</div>
                         ) : (
                           <div className="space-y-1.5">
-                            {sueldosPlanificadosDelMes.map((s) => (
-                              <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
-                                <span className="font-medium text-slate-800">{s.socio}</span>
-                                <span className="text-xs text-slate-500">{fmtFecha(s.fecha)}</span>
-                                <span className="font-mono font-semibold text-rose-600">{fmtARS(s.monto)}</span>
+                            {sueldosPlanificadosDelMes.map((grupo) => (
+                              <div key={grupo.fecha} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                <span className="font-medium text-slate-800">Ricardo y Pablo</span>
+                                <span className="text-xs text-slate-500">{fmtFecha(grupo.fecha)} — {fmtARS(grupo.total / 2)} c/u</span>
+                                <span className="font-mono font-semibold text-rose-600">{fmtARS(grupo.total)}</span>
                               </div>
                             ))}
                           </div>
@@ -11863,35 +11879,30 @@ export default function ConcretarApp() {
 
             {showSueldosPlanificados && (
               <Panel title="Próximos sueldos" action={<button onClick={() => setShowSueldosPlanificados(false)}><X size={16} /></button>}>
-                <div className="mb-3 text-xs text-slate-500">Planificá qué día del mes y cuánto va a cobrar cada uno — es solo un calendario, todavía no mueve plata de ninguna cuenta. Cuando llegue el día, usá "Marcar cobrado" para pasarlo a un cobro real.</div>
-                <form className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-4" onSubmit={submitSueldoPlanForm}>
-                  <Field label="Socio">
-                    <select value={sueldoPlanForm.socio} onChange={(e) => setSueldoPlanForm((f) => ({ ...f, socio: e.target.value }))} className={inputCls}>
-                      {SOCIOS.map((s) => <option key={s}>{s}</option>)}
-                    </select>
-                  </Field>
+                <div className="mb-3 text-xs text-slate-500">Ricardo y Pablo cobran siempre juntos y por el mismo monto: cargá la fecha y el total, y se reparte solo a la mitad para cada uno. Es solo un calendario, todavía no mueve plata de ninguna cuenta. Cuando llegue el día, usá "Marcar cobrado" para pasarlo a un cobro real.</div>
+                <form className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-3" onSubmit={submitSueldoPlanForm}>
                   <Field label="Fecha">
                     <input type="date" value={sueldoPlanForm.fecha} onChange={(e) => setSueldoPlanForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
                   </Field>
-                  <Field label="Monto ($)">
+                  <Field label="Monto total ($)">
                     <MoneyInput key={sueldoPlanMontoResetKey} value={sueldoPlanForm.monto} onChange={(v) => setSueldoPlanForm((f) => ({ ...f, monto: v }))} className={inputCls} />
                   </Field>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Agregar</button></div>
                 </form>
-                {sueldosPlanificadosOrdenados.length === 0 ? (
+                {sueldosPlanificadosAgrupados.length === 0 ? (
                   <div className="text-xs text-slate-400">Todavía no hay sueldos planificados.</div>
                 ) : (
                   <div className="space-y-1.5">
-                    {sueldosPlanificadosOrdenados.map((s) => (
-                      <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 bg-white px-3 py-1.5 text-sm">
+                    {sueldosPlanificadosAgrupados.map((grupo) => (
+                      <div key={grupo.fecha} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 bg-white px-3 py-1.5 text-sm">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-slate-900">{s.socio}</span>
-                          <span className="text-xs text-slate-500">{fmtFecha(s.fecha)}</span>
+                          <span className="font-semibold text-slate-900">Ricardo y Pablo</span>
+                          <span className="text-xs text-slate-500">{fmtFecha(grupo.fecha)} — {fmtARS(grupo.total / 2)} c/u</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-semibold text-slate-800">{fmtARS(s.monto)}</span>
-                          <button onClick={() => marcarSueldoPlanificadoCobrado(s)} className={btnGhost}>Marcar cobrado</button>
-                          <BotonEliminar onClick={() => eliminarSueldoPlanificado(s.id)} title="Eliminar sueldo planificado" />
+                          <span className="font-mono font-semibold text-slate-800">{fmtARS(grupo.total)}</span>
+                          <button onClick={() => marcarGrupoSueldoPlanificadoCobrado(grupo)} className={btnGhost}>Marcar cobrado</button>
+                          <BotonEliminar onClick={() => eliminarGrupoSueldoPlanificado(grupo)} title="Eliminar sueldo planificado" />
                         </div>
                       </div>
                     ))}
