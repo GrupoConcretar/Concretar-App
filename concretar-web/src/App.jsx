@@ -5479,12 +5479,23 @@ export default function ConcretarApp() {
   const [historialFiltroDesde, setHistorialFiltroDesde] = useState("");
   const [historialFiltroHasta, setHistorialFiltroHasta] = useState("");
   const [historialFiltroObraId, setHistorialFiltroObraId] = useState("");
+  // Facturas pendientes tildadas en la ficha del proveedor para ir sumando
+  // cuánto se va a cancelar, sin marcarlas pagadas todavía.
+  const [facturasPendientesSeleccionadas, setFacturasPendientesSeleccionadas] = useState({});
+  function toggleFacturaPendienteSeleccionada(id) {
+    setFacturasPendientesSeleccionadas((s) => {
+      const next = { ...s };
+      if (next[id]) delete next[id]; else next[id] = true;
+      return next;
+    });
+  }
   function abrirProveedor(p) {
     setViewingProveedorId(p.id);
     setAgregandoNotaCreditoId(null);
     setHistorialFiltroDesde("");
     setHistorialFiltroHasta("");
     setHistorialFiltroObraId("");
+    setFacturasPendientesSeleccionadas({});
   }
   // Orden de la planilla de proveedores: por defecto el que más le debemos
   // primero. Un click en el mismo encabezado invierte el sentido; un click en
@@ -12060,40 +12071,100 @@ export default function ConcretarApp() {
                           ))}
                         </div>
                       )}
-                      {facturasPendientes.length > 0 && (
-                        <div className="mt-3 space-y-1.5 border-t border-stone-100 pt-2">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Deudas pendientes</div>
-                          {facturasPendientes.map((f) => (
-                            <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-100 bg-stone-50/60 px-2 py-1.5 text-xs">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-slate-600">{fmtFecha(f.fecha)} — {f.comprobante || "sin comprobante"} — <span className="font-mono font-semibold">{fmtARS(f.monto)}</span></span>
-                                <span className="flex items-center gap-1 text-slate-500"><CuentaIcon cuenta={f.cuenta || "Banco"} />{f.formaPago || f.cuenta || "—"}{f.medioBancario ? ` · ${f.medioBancario}` : ""}</span>
-                                <Badge estado={f.estado} />
-                                {(f.medioBancario === "eCheq" || f.formaPago === "eCheq") && f.fechaPagoEcheq && (
-                                  <span className="text-[10px] text-slate-400">Cobra el {fmtFecha(f.fechaPagoEcheq)}</span>
-                                )}
-                                {esCuentaCorriente(f) && f.fechaVencimientoCc && (
-                                  <span className="text-[10px] text-slate-400">Vence el {fmtFecha(f.fechaVencimientoCc)}</span>
-                                )}
-                              </div>
-                              {esCuentaCorriente(f) ? (
-                                marcandoPagoCCId === f.id ? (
-                                  <span className="flex flex-wrap items-center gap-1">
-                                    <span className="text-[11px] text-slate-500">¿Con qué se pagó?</span>
-                                    <button onClick={() => marcarCuentaCorrientePagada(f, "Efectivo")} className={btnGhost}>Efectivo</button>
-                                    <button onClick={() => marcarCuentaCorrientePagada(f, "Transferencia")} className={btnGhost}>Transferencia</button>
-                                    <button onClick={() => setMarcandoPagoCCId(null)} className={btnGhost}><X size={12} /></button>
-                                  </span>
-                                ) : (
-                                  <button onClick={() => setMarcandoPagoCCId(f.id)} className={btnGhost}>Marcar pagada</button>
-                                )
-                              ) : (
-                                <button onClick={() => marcarFacturaPagada(f)} className={btnGhost}>Marcar pagada</button>
-                              )}
+                      {facturasPendientes.length > 0 && (() => {
+                        const gruposPorMes = {};
+                        facturasPendientes.forEach((f) => {
+                          const clave = claveMesCuentas(fechaEfectivaMovimiento(f));
+                          (gruposPorMes[clave] ??= []).push(f);
+                        });
+                        const mesesOrdenados = Object.keys(gruposPorMes).sort();
+                        const seleccionadas = facturasPendientes.filter((f) => facturasPendientesSeleccionadas[f.id]);
+                        const totalSeleccionado = seleccionadas.reduce((s, f) => s + (f.monto || 0), 0);
+                        return (
+                          <div className="mt-3 space-y-2 border-t border-stone-100 pt-2">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Deudas pendientes</div>
+                            <div className="overflow-x-auto rounded-md border border-stone-200">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                  <tr>
+                                    <th className="w-6 px-1.5 py-1"></th>
+                                    <th className="px-1.5 py-1">Fecha</th>
+                                    <th className="px-1.5 py-1">Comprobante</th>
+                                    <th className="px-1.5 py-1 text-right">Monto</th>
+                                    <th className="px-1.5 py-1">Forma de pago</th>
+                                    <th className="px-1.5 py-1">Vence</th>
+                                    <th className="px-1.5 py-1"></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {mesesOrdenados.map((clave) => {
+                                    const items = gruposPorMes[clave];
+                                    const totalMes = items.reduce((s, f) => s + (f.monto || 0), 0);
+                                    const todasSeleccionadas = items.every((f) => facturasPendientesSeleccionadas[f.id]);
+                                    return (
+                                      <Fragment key={clave}>
+                                        <tr className="border-t border-stone-200 bg-stone-100/80">
+                                          <td className="px-1.5 py-1">
+                                            <input
+                                              type="checkbox"
+                                              checked={todasSeleccionadas}
+                                              onChange={() => setFacturasPendientesSeleccionadas((s) => {
+                                                const next = { ...s };
+                                                items.forEach((f) => { if (todasSeleccionadas) delete next[f.id]; else next[f.id] = true; });
+                                                return next;
+                                              })}
+                                            />
+                                          </td>
+                                          <td className="px-1.5 py-1 font-semibold uppercase tracking-wide text-slate-600" colSpan={4}>{nombreMesCuentas(clave)} · {items.length} factura{items.length > 1 ? "s" : ""}</td>
+                                          <td className="px-1.5 py-1 text-right font-mono font-semibold text-slate-700" colSpan={2}>{fmtARS(totalMes)}</td>
+                                        </tr>
+                                        {items.map((f) => (
+                                          <tr key={f.id} className="border-t border-stone-100">
+                                            <td className="px-1.5 py-1">
+                                              <input type="checkbox" checked={!!facturasPendientesSeleccionadas[f.id]} onChange={() => toggleFacturaPendienteSeleccionada(f.id)} />
+                                            </td>
+                                            <td className="px-1.5 py-1 whitespace-nowrap text-slate-600">{fmtFecha(f.fecha)}</td>
+                                            <td className="px-1.5 py-1 whitespace-nowrap text-slate-500">{f.comprobante || "sin comprobante"}</td>
+                                            <td className="px-1.5 py-1 text-right font-mono font-semibold whitespace-nowrap">{fmtARS(f.monto)}</td>
+                                            <td className="px-1.5 py-1 whitespace-nowrap text-slate-500">
+                                              <span className="flex items-center gap-1"><CuentaIcon cuenta={f.cuenta || "Banco"} />{f.formaPago || f.cuenta || "—"}{f.medioBancario ? ` · ${f.medioBancario}` : ""}</span>
+                                            </td>
+                                            <td className="px-1.5 py-1 whitespace-nowrap text-[10px] text-slate-400">
+                                              {(f.medioBancario === "eCheq" || f.formaPago === "eCheq") && f.fechaPagoEcheq ? fmtFecha(f.fechaPagoEcheq) : esCuentaCorriente(f) && f.fechaVencimientoCc ? fmtFecha(f.fechaVencimientoCc) : "—"}
+                                            </td>
+                                            <td className="px-1.5 py-1 text-right">
+                                              {esCuentaCorriente(f) ? (
+                                                marcandoPagoCCId === f.id ? (
+                                                  <span className="flex flex-wrap items-center justify-end gap-1">
+                                                    <span className="text-[10px] text-slate-500">¿Con qué?</span>
+                                                    <button onClick={() => marcarCuentaCorrientePagada(f, "Efectivo")} className="rounded-md border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-stone-100">Efectivo</button>
+                                                    <button onClick={() => marcarCuentaCorrientePagada(f, "Transferencia")} className="rounded-md border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-stone-100">Transferencia</button>
+                                                    <button onClick={() => setMarcandoPagoCCId(null)} className="text-slate-400 hover:text-slate-700"><X size={12} /></button>
+                                                  </span>
+                                                ) : (
+                                                  <button onClick={() => setMarcandoPagoCCId(f.id)} className="rounded-md border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-stone-100 whitespace-nowrap">Marcar pagada</button>
+                                                )
+                                              ) : (
+                                                <button onClick={() => marcarFacturaPagada(f)} className="rounded-md border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-stone-100 whitespace-nowrap">Marcar pagada</button>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </Fragment>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
                             </div>
-                          ))}
-                        </div>
-                      )}
+                            {seleccionadas.length > 0 && (
+                              <div className="flex items-center justify-between rounded-md border-2 border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-900">
+                                <span>A cancelar: {seleccionadas.length} factura{seleccionadas.length > 1 ? "s" : ""}</span>
+                                <span className="font-mono text-sm">{fmtARS(totalSeleccionado)}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <div className="mt-3 space-y-2 border-t border-stone-100 pt-2">
                         <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                           <History size={12} /> Historial de compras
