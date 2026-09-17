@@ -1876,6 +1876,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
     if (editando.origen === "arreglo_caja") return;
     if (editando.origen === "compras_facturas") {
       onGuardarCompra(editando.origenId, {
+        fecha: form.fecha,
         obraId: form.obraId,
         proveedor: form.proveedor,
         categoria: form.categoria,
@@ -1948,6 +1949,15 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         <form onSubmit={guardar} className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {editando.origen === "compras_facturas" && (
             <>
+              <Field label="Fecha">
+                <input
+                  type="date"
+                  value={form.fecha || ""}
+                  onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
+                  required
+                  className={inputCls}
+                />
+              </Field>
               <Field label="Obra">
                 <select value={form.obraId ?? ""} onChange={(e) => setForm((f) => ({ ...f, obraId: e.target.value ? Number(e.target.value) : null }))} className={inputCls}>
                   <option value="">General (sin obra específica)</option>
