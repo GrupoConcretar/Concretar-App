@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import { PDFDocument } from "pdf-lib";
 import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
@@ -2799,6 +2800,13 @@ export default function ConcretarApp() {
     { id: 1, fecha: "2026-08-05", proveedor: "Corralón San Martín", obraId: 1, monto: 150000, motivo: "Devolución de bolsas de cemento en mal estado", archivo: null, nombreArchivo: null, tipoArchivo: null },
   ];
 
+  // Facturas físicas (PDF o foto) que se suben de a varias juntas para un
+  // proveedor, marcadas con el mes al que corresponden — no están atadas a
+  // un gasto puntual, se usan para sumarlas al PDF mensual del contador.
+  const DEMO_FACTURAS_VARIAS = [
+    { id: 1, proveedorId: 1, mes: "2026-08", archivo: "data:application/pdf;base64,JVBERi0xLjcKJYGBgYEKCjYgMCBvYmoKPDwKL0ZpbHRlciAvRmxhdGVEZWNvZGUKL0xlbmd0aCAxODYKPj4Kc3RyZWFtCnicdY7NSkQxDIX3eYquBTF/PWlBBnTuvbhwI/QFREZRxsWI+PymgxtBCc1pyUnPd6LbQVxmfbzQ1d3h+HX4fH16vAzuzRtH60W8jGfS7PckZ6sU5aKVy3inawcEFh41FKIMR8WCTVkXZTdsoXOCPTasytXynuoLJCeOPl9nryDSnX/NbVObB7sy3mhc0DrogU7/8fZwRdOKVkT/5tUf3mVyzAy7yVw30TVzzDw14Sx0b836r9xv1X1AagplbmRzdHJlYW0KZW5kb2JqCgo3IDAgb2JqCjw8Ci9GaWx0ZXIgL0ZsYXRlRGVjb2RlCi9UeXBlIC9PYmpTdG0KL04gNQovRmlyc3QgMjYKL0xlbmd0aCAzNzQKPj4Kc3RyZWFtCnic1VLfS8MwEH7PX3GP+iC5plnTyhjsVxVkKJugKD50bRiVkUibyfzvvWs3xx7EZwlHcnffJd/lvggQFGgNMZgUNAxiBQMwcQbDoZCPXx8W5EOxsa2Qd3XVwithEJbwJuTU71yASIxG4oSdFqHY+o3oiyBi8BHx0PhqV9oGhvk8zxENIiaaLEFUM9qnZBmZIp9yKqUzmdEHo5iJEeMx5fLeEtPXcL7DDg71c9oJmzBm1mN12vs/7/Jb8/4O9RefbCTkwlezIli4mF0rVAlmkYlihRpfLuk7GlsE/3+b6/jX3v3a4dmcebw85MayBropy6Vt/a4paeyMyz1l+HBrt5821GVxZTBLiadJM9JYV3LKZUarJFWDJD3k6Dn5fL9+t2V3DbvzfbhZBebXBzi2sFVdTPyelIm0tEKgn2F9jp3zgRXbadUFYspectDvWTtMVsjVbh06l4ORkJOitV0bJ55EwpW+qt0G5FPtxq6tjwG+8Ruges0NCmVuZHN0cmVhbQplbmRvYmoKCjggMCBvYmoKPDwKL1NpemUgOQovUm9vdCAyIDAgUgovSW5mbyAzIDAgUgovRmlsdGVyIC9GbGF0ZURlY29kZQovVHlwZSAvWFJlZgovTGVuZ3RoIDQxCi9XIFsgMSAyIDIgXQovSW5kZXggWyAwIDkgXQo+PgpzdHJlYW0KeJwVxMENACAMA7FLisQXif1nZISW+GGg22xISk6Vljgg3Z8fDF0QA04KZW5kc3RyZWFtCmVuZG9iagoKc3RhcnR4cmVmCjc1MQolJUVPRg==", nombreArchivo: "factura_agosto_corralon.pdf", tipoArchivo: "application/pdf", creadoEn: "2026-08-20T12:00:00Z" },
+  ];
+
   const DEMO_TANTEROS = [
     { id: 1, nombreGrupo: "Mario Electricista", obraId: 1, integrantes: [7, 8], precioTotal: 12000000 },
   ];
@@ -2862,6 +2870,7 @@ export default function ConcretarApp() {
   // proveedor nos las reconoce, restan de lo que le debemos (o quedan a favor) sin
   // tocar el gasto/factura original — así se conserva el historial de la compra.
   const [notasCreditoRaw, setNotasCredito] = useState(isSupabaseConfigured ? [] : DEMO_NOTAS_CREDITO);
+  const [facturasVarias, setFacturasVarias] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VARIAS);
   const [tanteros, setTanteros] = useState(isSupabaseConfigured ? [] : DEMO_TANTEROS);
   const [avancesTanteros, setAvancesTanteros] = useState(isSupabaseConfigured ? [] : DEMO_AVANCES_TANTEROS);
   // Etapas de la Planificación (Gantt) de cada obra.
@@ -2921,7 +2930,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -2932,7 +2941,7 @@ export default function ConcretarApp() {
           sbSelect("basicos_convenio"), sbSelect("config_liquidacion"), sbSelect("liquidaciones_formales"), sbSelect("recibos_liquidacion"),
           sbSelect("movimientos_cuenta"), sbSelect("dinero_real_cuentas"), sbSelect("prestamos"), sbSelect("cobros_socios"),
           sbSelect("prestamos_pagos"), sbSelect("etapas_obra"), sbSelect("alertas_descartadas"), sbSelect("extras_pago"),
-          sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"), sbSelect("notas_credito"),
+          sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"), sbSelect("notas_credito"), sbSelect("facturas_varias"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -2974,6 +2983,7 @@ export default function ConcretarApp() {
         setAjustesFiscales(af);
         setAsistenciaEliminadaLog(ael);
         setNotasCredito(nc);
+        setFacturasVarias(fv);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -3849,17 +3859,20 @@ export default function ConcretarApp() {
   const [facturaNombreArchivo, setFacturaNombreArchivo] = useState(null);
   const [facturaTipoArchivo, setFacturaTipoArchivo] = useState(null);
   // ---------- PDF mensual para el contador (Gastos y Facturas + Cobros de socios) ----------
-  const mesReporteContador = hoyISO().slice(0, 7);
-  function generarPdfContadores() {
+  const [mesReporteContador, setMesReporteContador] = useState(hoyISO().slice(0, 7));
+  async function generarPdfContadores() {
     const gastosDelMes = comprasFacturas
       .filter((c) => c.fecha?.slice(0, 7) === mesReporteContador && !obraIdsPapelera.has(c.obraId))
       .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
     const cobrosDelMes = cobrosSocios
       .filter((c) => c.fecha?.slice(0, 7) === mesReporteContador)
       .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+    // Facturas físicas subidas de a varias juntas para un proveedor (no atadas
+    // a un gasto puntual) — se suman como páginas extra al final del PDF.
+    const facturasVariasDelMes = facturasVarias.filter((f) => f.mes === mesReporteContador);
 
-    if (gastosDelMes.length === 0 && cobrosDelMes.length === 0) {
-      alert("No hay gastos ni cobros cargados en ese mes.");
+    if (gastosDelMes.length === 0 && cobrosDelMes.length === 0 && facturasVariasDelMes.length === 0) {
+      alert("No hay gastos, cobros ni facturas sueltas cargadas en ese mes.");
       return;
     }
 
@@ -3923,8 +3936,48 @@ export default function ConcretarApp() {
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
     doc.text("Generado desde Concretar App — Gastos y Facturas.", 14, y + 18);
+    if (facturasVariasDelMes.length > 0) {
+      doc.text(`Se adjuntan a continuación ${facturasVariasDelMes.length} factura(s) suelta(s) de proveedores.`, 14, y + 24);
+    }
 
-    doc.save(`Comprobantes_${mesReporteContador}.pdf`);
+    // Si hay facturas sueltas subidas para el mes, se adjuntan como páginas
+    // extra al final (copiando sus páginas si son PDF, o como una página con
+    // la imagen si son foto) en vez de solo mencionarlas en el resumen.
+    if (facturasVariasDelMes.length === 0) {
+      doc.save(`Comprobantes_${mesReporteContador}.pdf`);
+      return;
+    }
+    const merged = await PDFDocument.load(doc.output("arraybuffer"));
+    for (const f of facturasVariasDelMes) {
+      if (!f.archivo) continue;
+      try {
+        const bytes = await (await fetch(f.archivo)).arrayBuffer();
+        const esPdf = (f.tipoArchivo || "").includes("pdf") || (f.nombreArchivo || "").toLowerCase().endsWith(".pdf");
+        if (esPdf) {
+          const src = await PDFDocument.load(bytes);
+          const paginas = await merged.copyPages(src, src.getPageIndices());
+          paginas.forEach((pagina) => merged.addPage(pagina));
+        } else {
+          const esPng = (f.tipoArchivo || "").includes("png");
+          const imagen = esPng ? await merged.embedPng(bytes) : await merged.embedJpg(bytes);
+          const [anchoPagina, altoPagina] = [595.28, 841.89]; // A4 en puntos
+          const pagina = merged.addPage([anchoPagina, altoPagina]);
+          const escala = Math.min(anchoPagina / imagen.width, altoPagina / imagen.height, 1) * 0.92;
+          const w = imagen.width * escala, h = imagen.height * escala;
+          pagina.drawImage(imagen, { x: (anchoPagina - w) / 2, y: (altoPagina - h) / 2, width: w, height: h });
+        }
+      } catch {
+        // Un archivo dañado o en un formato no soportado no debe frenar el
+        // resto del PDF — se omite y sigue con las demás facturas.
+      }
+    }
+    const finalBytes = await merged.save();
+    const url = URL.createObjectURL(new Blob([finalBytes], { type: "application/pdf" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Comprobantes_${mesReporteContador}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
   const [showIngresoForm, setShowIngresoForm] = useState(false);
   const [ingresoCuenta, setIngresoCuenta] = useState(CUENTAS[0]);
@@ -5499,6 +5552,8 @@ export default function ConcretarApp() {
       return next;
     });
   }
+  const [showSubirFacturasVarias, setShowSubirFacturasVarias] = useState(false);
+  const [subiendoFacturasVarias, setSubiendoFacturasVarias] = useState(false);
   function abrirProveedor(p) {
     setViewingProveedorId(p.id);
     setAgregandoNotaCreditoId(null);
@@ -5506,6 +5561,31 @@ export default function ConcretarApp() {
     setHistorialFiltroHasta("");
     setHistorialFiltroObraId("");
     setFacturasPendientesSeleccionadas({});
+    setShowSubirFacturasVarias(false);
+  }
+  // Sube de una vez varias facturas físicas (PDF o foto) para un proveedor,
+  // todas marcadas con el mismo mes — no quedan atadas a un gasto puntual,
+  // solo se guardan para sumarlas después al PDF mensual del contador.
+  async function subirFacturasVarias(proveedorId, mes, fileList) {
+    const archivos = Array.from(fileList || []);
+    if (archivos.length === 0) return;
+    setSubiendoFacturasVarias(true);
+    try {
+      for (const file of archivos) {
+        const dataUrl = await readFileAsDataURL(file);
+        await addRecord("facturas_varias", {
+          proveedorId, mes, archivo: dataUrl, nombreArchivo: file.name, tipoArchivo: file.type,
+        }, setFacturasVarias);
+      }
+      setShowSubirFacturasVarias(false);
+    } catch {
+      alert("No se pudieron subir una o más facturas.");
+    } finally {
+      setSubiendoFacturasVarias(false);
+    }
+  }
+  function eliminarFacturaVaria(id) {
+    deleteRecord("facturas_varias", id, setFacturasVarias);
   }
   // Orden de la planilla de proveedores: por defecto el que más le debemos
   // primero. Un click en el mismo encabezado invierte el sentido; un click en
@@ -10573,6 +10653,13 @@ export default function ConcretarApp() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Gastos y Facturas</h2>
               <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="month"
+                  value={mesReporteContador}
+                  onChange={(e) => setMesReporteContador(e.target.value)}
+                  title="Mes del PDF para el contador"
+                  className={`${inputCls} w-36`}
+                />
                 <button onClick={generarPdfContadores} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
                   <FileDown size={16} /> PDF para el contador ({nombreMesCuentas(mesReporteContador)})
                 </button>
@@ -12241,6 +12328,61 @@ export default function ConcretarApp() {
                           </>
                         )}
                       </div>
+                      {(() => {
+                        const facturasVariasDelProveedor = facturasVarias
+                          .filter((f) => f.proveedorId === p.id)
+                          .sort((a, b) => (b.mes || "").localeCompare(a.mes || "") || (b.id - a.id));
+                        return (
+                          <div className="mt-3 space-y-2 border-t border-stone-100 pt-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                <FileSpreadsheet size={12} /> Facturas varias (para el contador)
+                              </div>
+                              <button type="button" onClick={() => setShowSubirFacturasVarias((v) => !v)} className={btnGhost}>
+                                <span className="flex items-center gap-1"><Upload size={13} /> Subir facturas</span>
+                              </button>
+                            </div>
+                            {showSubirFacturasVarias && (
+                              <form
+                                className="flex flex-wrap items-end gap-2 rounded-md border border-stone-200 bg-stone-50/60 p-2"
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const f = new FormData(e.target);
+                                  subirFacturasVarias(p.id, f.get("mes"), e.target.elements.archivos.files);
+                                }}
+                              >
+                                <Field label="Mes de esas facturas">
+                                  <input type="month" name="mes" defaultValue={hoyISO().slice(0, 7)} required className={inputCls} />
+                                </Field>
+                                <Field label="Facturas (PDF o foto, se pueden elegir varias)">
+                                  <input type="file" name="archivos" accept="application/pdf,image/*" multiple required className="w-64 text-xs text-slate-600" />
+                                </Field>
+                                <button type="submit" disabled={subiendoFacturasVarias} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+                                  {subiendoFacturasVarias ? "Subiendo..." : "Subir"}
+                                </button>
+                              </form>
+                            )}
+                            {facturasVariasDelProveedor.length === 0 ? (
+                              <div className="text-xs text-slate-400">Todavía no se subió ninguna factura suelta para este proveedor.</div>
+                            ) : (
+                              <div className="divide-y divide-stone-100 rounded-md border border-stone-200">
+                                {facturasVariasDelProveedor.map((f) => (
+                                  <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                                    <span className="flex items-center gap-1.5">
+                                      <span className="rounded-full border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">{nombreMesCuentas(f.mes)}</span>
+                                      <a href={f.archivo} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-slate-600 hover:underline">
+                                        <FileDown size={12} className="text-slate-400" />
+                                        {f.nombreArchivo || "Ver factura"}
+                                      </a>
+                                    </span>
+                                    <BotonEliminar onClick={() => eliminarFacturaVaria(f.id)} title="Eliminar factura" />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
