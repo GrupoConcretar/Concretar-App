@@ -9,7 +9,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, Percent, History
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History
 } from "lucide-react";
 
 // Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
@@ -3860,16 +3860,27 @@ export default function ConcretarApp() {
   const [facturaTipoArchivo, setFacturaTipoArchivo] = useState(null);
   // ---------- PDF mensual para el contador (Gastos y Facturas + Cobros de socios) ----------
   const [mesReporteContador, setMesReporteContador] = useState(hoyISO().slice(0, 7));
-  async function generarPdfContadores() {
+  const [mostrarMenuMesContador, setMostrarMenuMesContador] = useState(false);
+  // Meses para elegir en el desplegable: el actual siempre está, más
+  // cualquier mes anterior (o futuro) que ya tenga algo cargado — así se
+  // puede volver a sacar, por ejemplo, el resumen de un mes ya cerrado.
+  const mesesDisponiblesContador = [...new Set([
+    hoyISO().slice(0, 7),
+    ...comprasFacturas.map((c) => c.fecha?.slice(0, 7)).filter(Boolean),
+    ...cobrosSocios.map((c) => c.fecha?.slice(0, 7)).filter(Boolean),
+    ...facturasVarias.map((f) => f.mes).filter(Boolean),
+  ])].sort((a, b) => b.localeCompare(a));
+  async function generarPdfContadores(mesElegido) {
+    const mes = mesElegido || mesReporteContador;
     const gastosDelMes = comprasFacturas
-      .filter((c) => c.fecha?.slice(0, 7) === mesReporteContador && !obraIdsPapelera.has(c.obraId))
+      .filter((c) => c.fecha?.slice(0, 7) === mes && !obraIdsPapelera.has(c.obraId))
       .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
     const cobrosDelMes = cobrosSocios
-      .filter((c) => c.fecha?.slice(0, 7) === mesReporteContador)
+      .filter((c) => c.fecha?.slice(0, 7) === mes)
       .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
     // Facturas físicas subidas de a varias juntas para un proveedor (no atadas
     // a un gasto puntual) — se suman como páginas extra al final del PDF.
-    const facturasVariasDelMes = facturasVarias.filter((f) => f.mes === mesReporteContador);
+    const facturasVariasDelMes = facturasVarias.filter((f) => f.mes === mes);
 
     if (gastosDelMes.length === 0 && cobrosDelMes.length === 0 && facturasVariasDelMes.length === 0) {
       alert("No hay gastos, cobros ni facturas sueltas cargadas en ese mes.");
@@ -3883,7 +3894,7 @@ export default function ConcretarApp() {
     doc.setFontSize(16);
     doc.text("COMPROBANTES PARA EL CONTADOR", 14, 14);
     doc.setFontSize(10);
-    doc.text(nombreMesCuentas(mesReporteContador), 14, 21);
+    doc.text(nombreMesCuentas(mes), 14, 21);
     doc.setTextColor(20, 20, 20);
 
     let y = 36;
@@ -3944,7 +3955,7 @@ export default function ConcretarApp() {
     // extra al final (copiando sus páginas si son PDF, o como una página con
     // la imagen si son foto) en vez de solo mencionarlas en el resumen.
     if (facturasVariasDelMes.length === 0) {
-      doc.save(`Comprobantes_${mesReporteContador}.pdf`);
+      doc.save(`Comprobantes_${mes}.pdf`);
       return;
     }
     const merged = await PDFDocument.load(doc.output("arraybuffer"));
@@ -3975,7 +3986,7 @@ export default function ConcretarApp() {
     const url = URL.createObjectURL(new Blob([finalBytes], { type: "application/pdf" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Comprobantes_${mesReporteContador}.pdf`;
+    a.download = `Comprobantes_${mes}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -10653,16 +10664,34 @@ export default function ConcretarApp() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Gastos y Facturas</h2>
               <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="month"
-                  value={mesReporteContador}
-                  onChange={(e) => setMesReporteContador(e.target.value)}
-                  title="Mes del PDF para el contador"
-                  className={`${inputCls} w-36`}
-                />
-                <button onClick={generarPdfContadores} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
-                  <FileDown size={16} /> PDF para el contador ({nombreMesCuentas(mesReporteContador)})
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setMostrarMenuMesContador((v) => !v)}
+                    className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
+                  >
+                    <FileDown size={16} /> PDF para el contador ({nombreMesCuentas(mesReporteContador)}) <ChevronDown size={14} />
+                  </button>
+                  {mostrarMenuMesContador && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setMostrarMenuMesContador(false)} />
+                      <div className="absolute right-0 z-20 mt-1 max-h-72 w-52 overflow-y-auto rounded-md border border-stone-200 bg-white py-1 shadow-lg">
+                        {mesesDisponiblesContador.map((m) => (
+                          <button
+                            key={m}
+                            onClick={() => {
+                              setMesReporteContador(m);
+                              setMostrarMenuMesContador(false);
+                              generarPdfContadores(m);
+                            }}
+                            className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-stone-50 ${m === mesReporteContador ? "bg-stone-50 font-semibold text-slate-900" : "text-slate-600"}`}
+                          >
+                            {nombreMesCuentas(m)}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
                 <button onClick={() => setShowGastoMensualForm((v) => !v)} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
                   + Gasto mensual
                 </button>
