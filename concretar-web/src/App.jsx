@@ -58,8 +58,8 @@ function nombreMesDeClave(clave) {
   return nombre.charAt(0).toUpperCase() + nombre.slice(1);
 }
 // Desplaza una clave "YYYY-MM" n meses hacia adelante — se usa para proyectar el pago
-// de un impuesto que se abona con meses de atraso (ej: IVA/Ingresos Brutos a 3 meses
-// vencidos) en el mes en que realmente sale la plata, no en el mes en que se devengó.
+// de un impuesto que se abona con meses de atraso (ej: IVA a 3 meses vencidos) en el
+// mes en que realmente sale la plata, no en el mes en que se devengó.
 function sumarMesesAClave(clave, n) {
   const [anio, mes] = clave.split("-").map(Number);
   const fecha = new Date(anio, mes - 1 + n, 1);
@@ -818,7 +818,7 @@ function TablaIvaMensual({ items, onActualizarReal }) {
               <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.aPagar)}</td>
               <td className={`px-2 py-1 text-right font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</td>
               <td className="px-2 py-1 text-right">
-                <MoneyInput value={m.real ?? 0} onBlur={(v) => onActualizarReal(m.clave, v)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+                <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
               </td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
                 {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
@@ -859,7 +859,7 @@ function TablaGananciasAnual({ items, onActualizarReal }) {
               <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.gastos)}</td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${r.ganancia < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(r.ganancia)}</td>
               <td className="px-2 py-1 text-right">
-                <MoneyInput value={r.real ?? 0} onBlur={(v) => onActualizarReal(r.anio, v)} className="w-32 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+                <CampoRealConSigno value={r.real} onGuardar={(v) => onActualizarReal(r.anio, v)} className="w-32 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
               </td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${r.diferencia === null || Math.abs(r.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
                 {r.diferencia === null ? "Sin dato" : fmtARS(r.diferencia)}
@@ -872,44 +872,24 @@ function TablaGananciasAnual({ items, onActualizarReal }) {
   );
 }
 
-// Ingresos Brutos mes a mes (Cuentas → IVA y Ganancias): a diferencia de IVA, la app
-// no puede calcular sola cuánto corresponde (depende de la alícuota de la actividad),
-// así que se carga el real que informa el contador y los meses sin ese dato todavía
-// se proyectan con la alícuota efectiva del último mes real cargado.
-function TablaIibbMensual({ items, onActualizarReal }) {
-  if (items.length === 0) {
-    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos con factura cargados.</div>;
-  }
+// Campo de "real (contador)" con un botón +/- al lado para poder cargar un
+// saldo a favor (negativo) además de un monto a pagar (positivo) — MoneyInput
+// no admite el signo "-" al tipear, así que el signo se maneja aparte y el
+// campo de monto siempre trabaja con el valor absoluto.
+function CampoRealConSigno({ value, onGuardar, className }) {
+  const val = value ?? 0;
+  const negativo = val < 0;
   return (
-    <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
-      <table className="w-full text-left text-xs">
-        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="px-2 py-1.5">Mes</th>
-            <th className="px-2 py-1.5 text-right">Ingresos gravables</th>
-            <th className="px-2 py-1.5 text-right">Alícuota usada</th>
-            <th className="px-2 py-1.5 text-right">Proyectado (app)</th>
-            <th className="px-2 py-1.5 text-right">Ingresos Brutos real (contador)</th>
-            <th className="px-2 py-1.5 text-right">Diferencia</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((m) => (
-            <tr key={m.clave} className="border-t border-stone-100">
-              <td className="px-2 py-1 font-medium text-slate-900">{nombreMesDeClave(m.clave)}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.ingresos)}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-500">{m.alicuota === null ? "—" : `${(m.alicuota * 100).toFixed(2)}%`}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-700">{m.proyectado === null ? "—" : fmtARS(m.proyectado)}</td>
-              <td className="px-2 py-1 text-right">
-                <MoneyInput value={m.real ?? 0} onBlur={(v) => onActualizarReal(m.clave, v)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
-              </td>
-              <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
-                {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex items-center justify-end gap-1">
+      <button
+        type="button"
+        onClick={() => onGuardar(-val)}
+        title={negativo ? "A favor (negativo) — clic para pasar a pagar" : "A pagar (positivo) — clic para pasar a favor"}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs font-bold ${negativo ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-white text-slate-500"}`}
+      >
+        {negativo ? "−" : "+"}
+      </button>
+      <MoneyInput value={Math.abs(val)} onBlur={(v) => onGuardar(negativo ? -v : v)} className={className} />
     </div>
   );
 }
@@ -4986,42 +4966,14 @@ export default function ConcretarApp() {
     return { anio, ...gananciasPorAnio[anio], ganancia, real, diferencia: real === null ? null : real - ganancia };
   }).reverse();
 
-  // ---------- Ingresos Brutos ----------
-  // A diferencia de IVA, acá no hay débito/crédito que la app pueda calcular sola —
-  // la alícuota depende de la actividad y la jurisdicción. Por eso se carga el monto
-  // real que informa el contador mes a mes, y los meses que todavía no tienen ese
-  // dato se proyectan con la alícuota efectiva del último mes real cargado (real /
-  // ingresos gravables de ese mes) — a medida que entran más datos reales, la
-  // alícuota se recalcula sola y la proyección de los meses siguientes se ajusta.
-  const ingresosGravablesPorMes = {};
-  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && conFacturaGravable(i.tipoFactura)).forEach((i) => {
-    const clave = claveMesCuentas(i.fecha);
-    ingresosGravablesPorMes[clave] = (ingresosGravablesPorMes[clave] || 0) + (i.monto || 0);
-  });
-  const clavesIibb = Array.from(new Set([
-    ...Object.keys(ingresosGravablesPorMes),
-    ...ajustesFiscales.filter((a) => a.tipo === "iibb").map((a) => a.clave),
-  ])).sort();
-  let alicuotaIibbEfectiva = null;
-  const iibbMensual = clavesIibb.map((clave) => {
-    const ingresosDelMes = ingresosGravablesPorMes[clave] || 0;
-    const real = ajusteFiscalDe("iibb", clave);
-    if (real !== null && ingresosDelMes > 0) alicuotaIibbEfectiva = real / ingresosDelMes;
-    const proyectado = alicuotaIibbEfectiva !== null ? ingresosDelMes * alicuotaIibbEfectiva : null;
-    return { clave, ingresos: ingresosDelMes, alicuota: alicuotaIibbEfectiva, proyectado, real, diferencia: real === null || proyectado === null ? null : real - proyectado };
-  }).reverse();
-
-  // Esta empresa paga IVA e Ingresos Brutos con 3 meses de atraso (el de junio se paga
-  // en septiembre) — para el flujo de caja de "Próximos pagos" importa cuándo sale
+  // Esta empresa paga IVA con 3 meses de atraso (el de junio se paga en
+  // septiembre) — para el flujo de caja de "Próximos pagos" importa cuándo sale
   // realmente la plata, no el mes en que se devengó, así que cada mes con algo a pagar
   // (el real que informó el contador, o la estimación de la app si todavía no lo cargó)
   // se corre a esa fecha de pago. Los meses sin nada que pagar no generan egreso.
-  const MESES_ATRASO_IVA_IIBB = 3;
+  const MESES_ATRASO_IVA = 3;
   const ivaPagosProyectados = ivaMensual
-    .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA_IIBB), monto: m.real ?? m.aPagar }))
-    .filter((p) => p.monto > 0);
-  const iibbPagosProyectados = iibbMensual
-    .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA_IIBB), monto: m.real ?? m.proyectado }))
+    .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA), monto: m.real ?? m.aPagar }))
     .filter((p) => p.monto > 0);
 
   // ---------- Resumen por obra (balance de cada obra en curso) ----------
@@ -5284,7 +5236,6 @@ export default function ConcretarApp() {
     ingresosPendientes.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
     obrasDisponibleProyectado.forEach((o) => o.meses.forEach((clave) => agregar(`${clave}-01`, o.montoPorMes, "egreso")));
     ivaPagosProyectados.forEach((p) => agregar(p.fechaPago, p.monto, "egreso"));
-    iibbPagosProyectados.forEach((p) => agregar(p.fechaPago, p.monto, "egreso"));
     return Object.values(grupos).sort((a, b) => (a.clave === "sin-fecha" ? 1 : b.clave === "sin-fecha" ? -1 : a.clave.localeCompare(b.clave)));
   })();
   // El acumulado arranca de la plata que hay hoy en las cuentas (Blanco + Negro) y le va
@@ -11492,18 +11443,12 @@ export default function ConcretarApp() {
             >
               ← Volver a Cuentas
             </button>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">IVA, Ingresos Brutos y Ganancias</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">IVA y Ganancias</h2>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B. Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B. Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. Usá el botón +/- si el contador informa un saldo a favor (negativo) en vez de un monto a pagar.</div>
               <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} />
-            </div>
-
-            <div>
-              <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ingresos Brutos por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">La alícuota no la calcula la app — sale sola del último "Ingresos Brutos real (contador)" que cargues (real ÷ ingresos gravables de ese mes), y con eso se proyectan los meses siguientes hasta que llegue el próximo dato real.</div>
-              <TablaIibbMensual items={iibbMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iibb", clave, monto)} />
             </div>
 
             <div>
@@ -11617,7 +11562,6 @@ export default function ConcretarApp() {
                 const ingresosDelMes = ingresosPendientes.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
                 const obrasDisponibleDelMes = obrasDisponibleProyectado.filter((o) => o.meses.includes(claveMes));
                 const ivaPagosDelMes = ivaPagosProyectados.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
-                const iibbPagosDelMes = iibbPagosProyectados.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
                 return (
                   <>
                     <button onClick={() => setMesProximosSeleccionado(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
@@ -11750,20 +11694,14 @@ export default function ConcretarApp() {
                       </div>
 
                       <div>
-                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">IVA e Ingresos Brutos (pago a 3 meses vencidos)</div>
-                        {ivaPagosDelMes.length === 0 && iibbPagosDelMes.length === 0 ? (
-                          <div className="text-xs text-slate-400">No hay IVA ni Ingresos Brutos para pagar este período.</div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">IVA (pago a 3 meses vencidos)</div>
+                        {ivaPagosDelMes.length === 0 ? (
+                          <div className="text-xs text-slate-400">No hay IVA para pagar este período.</div>
                         ) : (
                           <div className="space-y-1.5">
                             {ivaPagosDelMes.map((p) => (
                               <div key={`iva-${p.clave}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
                                 <span className="font-medium text-slate-800">IVA — {nombreMesDeClave(p.clave)}</span>
-                                <span className="font-mono font-semibold text-rose-600">{fmtARS(p.monto)}</span>
-                              </div>
-                            ))}
-                            {iibbPagosDelMes.map((p) => (
-                              <div key={`iibb-${p.clave}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
-                                <span className="font-medium text-slate-800">Ingresos Brutos — {nombreMesDeClave(p.clave)}</span>
                                 <span className="font-mono font-semibold text-rose-600">{fmtARS(p.monto)}</span>
                               </div>
                             ))}
