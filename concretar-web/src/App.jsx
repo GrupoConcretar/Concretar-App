@@ -5350,18 +5350,34 @@ export default function ConcretarApp() {
   // "Ajuste" como cuenta puente (no forma parte de CUENTAS, así que no aparece en el
   // resumen) solo para poder reutilizar el mecanismo de movimientos y que la cuenta
   // real quede en el número contado a mano.
-  async function arreglarCaja() {
-    let corregidas = 0;
-    // Mismo run-id (timestamp) en el detalle de todas las filas que genera esta
-    // pasada — así en Movimientos se pueden agrupar y mostrar como un solo
-    // renglón "Arreglo de caja", aunque hayan corregido varias cuentas.
-    const runId = Date.now();
+  // Antes de tocar nada se arma una vista previa de qué cuentas cambiarían y por
+  // cuánto, y recién se escribe en la base cuando el usuario confirma — así, si
+  // se apretó el botón por error o algo no cierra, alcanza con cancelar.
+  const [previewArregloCaja, setPreviewArregloCaja] = useState(null);
+  function prepararArregloCaja() {
+    const diffs = [];
     for (const cuenta of CUENTAS) {
       const real = dineroRealDe(cuenta);
       if (real === null) continue;
       const calculado = saldoCuenta(cuenta);
       const diferencia = real - calculado;
       if (Math.abs(diferencia) < 1) continue;
+      diffs.push({ cuenta, calculado, real, diferencia });
+    }
+    if (diffs.length === 0) {
+      alert("No hay diferencias entre lo calculado y el dinero real cargado.");
+      return;
+    }
+    setPreviewArregloCaja(diffs);
+  }
+  async function confirmarArregloCaja() {
+    const diffs = previewArregloCaja;
+    if (!diffs) return;
+    // Mismo run-id (timestamp) en el detalle de todas las filas que genera esta
+    // pasada — así en Movimientos se pueden agrupar y mostrar como un solo
+    // renglón "Arreglo de caja", aunque hayan corregido varias cuentas.
+    const runId = Date.now();
+    for (const { cuenta, diferencia } of diffs) {
       await addRecord("movimientos_cuenta", {
         fecha: hoyISO(),
         detalle: `Arreglo de caja #${runId}`,
@@ -5369,9 +5385,9 @@ export default function ConcretarApp() {
         cuentaDestino: diferencia > 0 ? cuenta : "Ajuste",
         monto: Math.abs(diferencia),
       }, setMovimientosManual);
-      corregidas++;
     }
-    alert(corregidas === 0 ? "No hay diferencias entre lo calculado y el dinero real cargado." : `Se corrigieron ${corregidas} cuenta(s). Mirá el detalle en Movimientos → "Arreglo de caja".`);
+    setPreviewArregloCaja(null);
+    alert(`Se corrigieron ${diffs.length} cuenta(s). Si te equivocaste, podés deshacerlo desde Movimientos → "Arreglo de caja".`);
   }
   async function eliminarArregloCaja(runId) {
     const filas = movimientosManual.filter((m) => m.detalle === `Arreglo de caja #${runId}`);
@@ -11245,7 +11261,7 @@ export default function ConcretarApp() {
                   <CalendarClock size={16} /> Próximos pagos/ingresos
                 </button>
                 <button
-                  onClick={arreglarCaja}
+                  onClick={prepararArregloCaja}
                   className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
                 >
                   <Wrench size={16} /> Arreglo de caja
@@ -12868,6 +12884,33 @@ export default function ConcretarApp() {
         )}
 
       </main>
+
+      {previewArregloCaja && (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={() => setPreviewArregloCaja(null)}>
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Confirmar arreglo de caja</h3>
+              <button onClick={() => setPreviewArregloCaja(null)}><X size={18} /></button>
+            </div>
+            <div className="mb-3 text-xs text-slate-500">Esto va a ajustar las siguientes cuentas para que coincidan con el dinero real contado a mano. Se puede deshacer después desde Movimientos.</div>
+            <div className="mb-4 divide-y divide-stone-100 rounded-md border border-stone-200">
+              {previewArregloCaja.map(({ cuenta, calculado, real, diferencia }) => (
+                <div key={cuenta} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <span className="flex items-center gap-1.5 text-slate-700"><CuentaIcon cuenta={cuenta} />{cuenta}</span>
+                  <span className="text-xs text-slate-400">{fmtARS(calculado)} → {fmtARS(real)}</span>
+                  <span className={`font-mono font-semibold ${diferencia > 0 ? "text-emerald-700" : "text-rose-600"}`}>
+                    {diferencia > 0 ? "+" : "-"}{fmtARS(Math.abs(diferencia))}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setPreviewArregloCaja(null)} className={btnGhost}>Cancelar</button>
+              <button onClick={confirmarArregloCaja} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editandoMovimiento && (
         <ModalEditarMovimiento
