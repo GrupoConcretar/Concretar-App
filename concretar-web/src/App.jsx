@@ -898,7 +898,9 @@ function CampoRealConSigno({ value, onGuardar, className }) {
 // no puede calcular sola cuánto corresponde (depende de la alícuota de la actividad),
 // así que se carga el real que informa el contador y los meses sin ese dato todavía
 // se proyectan con la alícuota efectiva del último mes real cargado (arranca en 2%,
-// la alícuota conocida sobre ventas, hasta que entre el primer dato real).
+// la alícuota conocida sobre ventas, hasta que entre el primer dato real). El real
+// admite el mismo signo que IVA (positivo = a favor, negativo = a pagar), y un saldo
+// a favor se arrastra al mes siguiente en vez de generar un pago.
 function TablaIibbMensual({ items, onActualizarReal }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos con factura cargados.</div>;
@@ -911,7 +913,9 @@ function TablaIibbMensual({ items, onActualizarReal }) {
             <th className="px-2 py-1.5">Mes</th>
             <th className="px-2 py-1.5 text-right">Ingresos gravables</th>
             <th className="px-2 py-1.5 text-right">Alícuota usada</th>
-            <th className="px-2 py-1.5 text-right">Proyectado (app)</th>
+            <th className="px-2 py-1.5 text-right">Saldo a favor usado</th>
+            <th className="px-2 py-1.5 text-right">Ingresos Brutos a pagar (app)</th>
+            <th className="px-2 py-1.5 text-right">Saldo a favor nuevo</th>
             <th className="px-2 py-1.5 text-right">Ingresos Brutos real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
           </tr>
@@ -922,9 +926,11 @@ function TablaIibbMensual({ items, onActualizarReal }) {
               <td className="px-2 py-1 font-medium text-slate-900">{nombreMesDeClave(m.clave)}</td>
               <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.ingresos)}</td>
               <td className="px-2 py-1 text-right font-mono text-slate-500">{m.alicuota === null ? "—" : `${(m.alicuota * 100).toFixed(2)}%`}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-700">{m.proyectado === null ? "—" : fmtARS(m.proyectado)}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-500">{fmtARS(m.saldoAFavorAnterior)}</td>
+              <td className={`px-2 py-1 text-right font-mono font-semibold ${m.proyectado > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.proyectado)}</td>
+              <td className={`px-2 py-1 text-right font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</td>
               <td className="px-2 py-1 text-right">
-                <MoneyInput value={m.real ?? 0} onBlur={(v) => onActualizarReal(m.clave, v)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+                <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
               </td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
                 {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
@@ -2620,8 +2626,8 @@ export default function ConcretarApp() {
   }
 
   const DEMO_OBRAS = [
-    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", clienteId: 1, presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], horaApertura: "08:00", diaCierre: "Viernes", horaCierre: "18:00", color: PALETA_OBRA[0] },
-    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", clienteId: 2, presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"], horaApertura: "07:30", diaCierre: "Viernes", horaCierre: "17:30", color: PALETA_OBRA[1] },
+    { id: 1, nombre: "Edificio Belgrano 450", cliente: "Consorcio Belgrano SA", clienteId: 1, presupuesto: 85000000, meses: 10, inicio: "2026-02-01", estado: "En curso", encargadoId: 4, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], horaApertura: "08:00", diaCierre: "Viernes", horaCierre: "18:00", tipoFacturacion: "A", color: PALETA_OBRA[0] },
+    { id: 2, nombre: "Casa Quinta Yerba Buena", cliente: "Fam. Ledesma", clienteId: 2, presupuesto: 32000000, meses: 6, inicio: "2026-05-01", estado: "En curso", encargadoId: null, diasLaborables: ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"], horaApertura: "07:30", diaCierre: "Viernes", horaCierre: "17:30", tipoFacturacion: "B", color: PALETA_OBRA[1] },
   ];
   const DEMO_ETAPAS_OBRA = [
     { id: 1, obraId: 1, nombre: "Movimiento de suelos", inicio: "2026-02-01", fin: "2026-02-20", avance: 100 },
@@ -3794,6 +3800,7 @@ export default function ConcretarApp() {
       horaApertura: f.get("horaApertura"),
       diaCierre: f.get("diaCierre"),
       horaCierre: f.get("horaCierre"),
+      tipoFacturacion: f.get("tipoFacturacion"),
       color: PALETA_OBRA[obras.length % PALETA_OBRA.length],
     }, setObras);
     if (nuevaObra) await importarPresupuestoAObra(nuevaObra.id);
@@ -4060,10 +4067,11 @@ export default function ConcretarApp() {
   const [cobroObraMonto, setCobroObraMonto] = useState(0);
   const [cobroObraMontoResetKey, setCobroObraMontoResetKey] = useState(0);
   // Valores por defecto de los campos no controlados del form de "Cobros" (fecha,
-  // concepto, tipo de factura) — normalmente vacíos, pero "Convertir en factura
-  // real" (facturación futura) los pre-carga. cobroObraFormKey fuerza que el
-  // <form> se vuelva a montar para que los defaultValue tomen el nuevo valor.
-  const emptyCobroObraDefaults = { fecha: hoyISO(), concepto: "", tipoFactura: "Sin factura" };
+  // concepto, tipo de factura) — el tipo de factura sale del que se eligió al crear
+  // la obra, pero "Convertir en factura real" (facturación futura) lo puede
+  // sobrescribir. cobroObraFormKey fuerza que el <form> se vuelva a montar para que
+  // los defaultValue tomen el nuevo valor.
+  const emptyCobroObraDefaults = { fecha: hoyISO(), concepto: "", tipoFactura: obraSel?.tipoFacturacion || "Sin factura" };
   const [cobroObraDefaults, setCobroObraDefaults] = useState(emptyCobroObraDefaults);
   const [cobroObraFormKey, setCobroObraFormKey] = useState(0);
 
@@ -4073,7 +4081,7 @@ export default function ConcretarApp() {
   // una tabla aparte de "ingresos" que únicamente suma débito fiscal de IVA e
   // ingresos gravables de Ingresos Brutos en el mes en que se piensa facturar.
   const [showFacturaVentaProyectadaForm, setShowFacturaVentaProyectadaForm] = useState(false);
-  const emptyFacturaVentaProyectadaForm = { fecha: hoyISO(), monto: 0, tipoFactura: "A" };
+  const emptyFacturaVentaProyectadaForm = { fecha: hoyISO(), monto: 0, tipoFactura: obraSel?.tipoFacturacion || "A" };
   const [facturaVentaProyectadaForm, setFacturaVentaProyectadaForm] = useState(emptyFacturaVentaProyectadaForm);
   const [facturaVentaProyectadaMontoResetKey, setFacturaVentaProyectadaMontoResetKey] = useState(0);
   function submitFacturaVentaProyectadaForm(e) {
@@ -5078,8 +5086,13 @@ export default function ConcretarApp() {
   // Los montos de Ingresos y Gastos/Facturas ya vienen "finales" (con IVA
   // incluido cuando corresponde), así que el IVA se saca de adentro del monto.
   // La C no discrimina IVA (la emite un monotributista), por eso no aporta
-  // débito ni crédito fiscal, pero sí cuenta como ingreso/gasto para Ganancias.
+  // débito ni crédito fiscal ni ingreso gravable de Ingresos Brutos, pero sí
+  // cuenta como ingreso/gasto para Ganancias.
   const conFacturaGravable = (t) => t === "A" || t === "B" || t === "C";
+  // A diferencia de conFacturaGravable, esta excluye la C -- se usa para IVA
+  // (débito fiscal) e Ingresos Brutos, los dos impuestos de los que la C queda
+  // afuera porque la emite un sujeto aparte (monotributista).
+  const esGravableIvaIibb = (t) => t === "A" || t === "B";
   const ivaDeMonto = (monto, tipoFactura) => (tipoFactura === "A" || tipoFactura === "B") ? (monto || 0) - (monto || 0) / 1.21 : 0;
   const netoDeIvaMonto = (monto, tipoFactura) => (monto || 0) - ivaDeMonto(monto, tipoFactura);
 
@@ -5096,14 +5109,14 @@ export default function ConcretarApp() {
   })();
 
   const ivaPorMes = {};
-  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && conFacturaGravable(i.tipoFactura)).forEach((i) => {
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && esGravableIvaIibb(i.tipoFactura)).forEach((i) => {
     const clave = claveMesCuentas(i.fecha);
     (ivaPorMes[clave] ??= { debito: 0, credito: 0 }).debito += ivaDeMonto(i.monto, i.tipoFactura);
   });
   // Facturas de venta futuras cargadas desde una obra (todavía no emitidas ni
   // cobradas) — se suman como débito fiscal proyectado del mes en que se piensan
   // facturar, para saber de antemano cómo va a impactar en el IVA de ese mes.
-  facturasVentaProyectadas.filter((f) => !obraIdsPapelera.has(f.obraId) && conFacturaGravable(f.tipoFactura)).forEach((f) => {
+  facturasVentaProyectadas.filter((f) => !obraIdsPapelera.has(f.obraId) && esGravableIvaIibb(f.tipoFactura)).forEach((f) => {
     const clave = claveMesCuentas(f.fecha);
     (ivaPorMes[clave] ??= { debito: 0, credito: 0 }).debito += ivaDeMonto(f.monto, f.tipoFactura);
   });
@@ -5149,18 +5162,21 @@ export default function ConcretarApp() {
   // ---------- Ingresos Brutos ----------
   // A diferencia de IVA, acá no hay débito/crédito que la app pueda calcular sola —
   // la alícuota depende de la actividad y la jurisdicción (2% sobre ventas, según
-  // informó el contador). Se arranca proyectando con ese 2% y, en cuanto se carga el
-  // real de algún mes, la alícuota efectiva se recalcula sola (real ÷ ingresos
-  // gravables de ese mes) y ajusta la proyección de los meses siguientes.
+  // informó el contador). Se arranca proyectando con ese 2% y, en cuanto se carga un
+  // real "a pagar" de algún mes, la alícuota efectiva se recalcula sola (real ÷ ingresos
+  // gravables de ese mes) y ajusta la proyección de los meses siguientes. Igual que
+  // IVA, el real puede quedar a favor (positivo) en vez de a pagar (negativo) —misma
+  // convención de CampoRealConSigno— y ese saldo se arrastra al mes siguiente en vez
+  // de generar un pago.
   const ALICUOTA_IIBB_INICIAL = 0.02;
   const ingresosGravablesPorMes = {};
-  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && conFacturaGravable(i.tipoFactura)).forEach((i) => {
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && esGravableIvaIibb(i.tipoFactura)).forEach((i) => {
     const clave = claveMesCuentas(i.fecha);
     ingresosGravablesPorMes[clave] = (ingresosGravablesPorMes[clave] || 0) + (i.monto || 0);
   });
   // Mismas facturas de venta futuras que impactan IVA también cuentan para
   // Ingresos Brutos, en el mes en que se piensan facturar.
-  facturasVentaProyectadas.filter((f) => !obraIdsPapelera.has(f.obraId) && conFacturaGravable(f.tipoFactura)).forEach((f) => {
+  facturasVentaProyectadas.filter((f) => !obraIdsPapelera.has(f.obraId) && esGravableIvaIibb(f.tipoFactura)).forEach((f) => {
     const clave = claveMesCuentas(f.fecha);
     ingresosGravablesPorMes[clave] = (ingresosGravablesPorMes[clave] || 0) + (f.monto || 0);
   });
@@ -5170,12 +5186,21 @@ export default function ConcretarApp() {
     ...MESES_IVA_IIBB_A_MOSTRAR,
   ])).sort();
   let alicuotaIibbEfectiva = ALICUOTA_IIBB_INICIAL;
+  let saldoAFavorIibbArrastre = 0;
   const iibbMensual = clavesIibb.map((clave) => {
     const ingresosDelMes = ingresosGravablesPorMes[clave] || 0;
     const real = ajusteFiscalDe("iibb", clave);
-    if (real !== null && ingresosDelMes > 0) alicuotaIibbEfectiva = real / ingresosDelMes;
-    const proyectado = ingresosDelMes * alicuotaIibbEfectiva;
-    return { clave, ingresos: ingresosDelMes, alicuota: alicuotaIibbEfectiva, proyectado, real, diferencia: real === null ? null : real - proyectado };
+    // Solo un real "a pagar" (negativo) sirve para recalibrar la alícuota de los
+    // meses siguientes — un real "a favor" (positivo) es saldo, no impuesto
+    // proporcional a los ingresos de ese mes.
+    if (real !== null && real < 0 && ingresosDelMes > 0) alicuotaIibbEfectiva = -real / ingresosDelMes;
+    const proyectadoBruto = ingresosDelMes * alicuotaIibbEfectiva;
+    const disponible = saldoAFavorIibbArrastre;
+    const saldoAFavorAnterior = saldoAFavorIibbArrastre;
+    const proyectado = Math.max(0, proyectadoBruto - disponible);
+    const realAPagar = real === null ? null : -real;
+    saldoAFavorIibbArrastre = Math.max(0, disponible - (realAPagar ?? proyectadoBruto));
+    return { clave, ingresos: ingresosDelMes, alicuota: alicuotaIibbEfectiva, saldoAFavorAnterior, proyectado, saldoAFavorNuevo: saldoAFavorIibbArrastre, real, diferencia: real === null ? null : proyectado + real };
   }).reverse();
 
   // Esta empresa paga IVA e Ingresos Brutos con 3 meses de atraso (el de junio se paga
@@ -5184,16 +5209,16 @@ export default function ConcretarApp() {
   // (el real que informó el contador, o la estimación de la app si todavía no lo cargó)
   // se corre a esa fecha de pago. Los meses sin nada que pagar no generan egreso.
   const MESES_ATRASO_IVA_IIBB = 3;
-  // "real" de IVA está en la convención positivo = a favor, negativo = a pagar,
-  // así que hay que invertirle el signo para obtener el monto a pagar: un real a
-  // favor (positivo) no debe generar ningún egreso futuro (ese saldo se cancela
-  // numéricamente contra el débito de las próximas facturas, no es plata que
-  // salga de la cuenta); solo un real a pagar (negativo) genera el egreso.
+  // El real de IVA e Ingresos Brutos está en la convención positivo = a favor,
+  // negativo = a pagar, así que hay que invertirle el signo para obtener el monto a
+  // pagar: un real a favor (positivo) no debe generar ningún egreso futuro (ese saldo
+  // se cancela numéricamente contra períodos futuros, no es plata que salga de la
+  // cuenta); solo un real a pagar (negativo) genera el egreso.
   const ivaPagosProyectados = ivaMensual
     .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA_IIBB), monto: m.real === null ? m.aPagar : -m.real }))
     .filter((p) => p.monto > 0);
   const iibbPagosProyectados = iibbMensual
-    .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA_IIBB), monto: m.real ?? m.proyectado }))
+    .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA_IIBB), monto: m.real === null ? m.proyectado : -m.real }))
     .filter((p) => p.monto > 0);
 
   // ---------- Resumen por obra (balance de cada obra en curso) ----------
@@ -7118,6 +7143,14 @@ export default function ConcretarApp() {
                   </Field>
                   <Field label="Fecha de inicio"><input name="inicio" type="date" required className={inputCls} /></Field>
                   <Field label="Duración (meses)"><input name="meses" type="number" min="1" required className={inputCls} /></Field>
+                  <Field label="Tipo de factura de la obra">
+                    <select name="tipoFacturacion" defaultValue="A" required className={inputCls}>
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C (monotributo)</option>
+                    </select>
+                    <div className="mt-1 text-[11px] text-slate-400">Se usa como valor por defecto al cargar los cobros de esta obra. La C es cuando se factura por monotributo: cuenta como ingreso de dinero pero no entra en el cálculo de IVA ni Ingresos Brutos.</div>
+                  </Field>
                   <Field label="Encargado de obra">
                     <select name="encargadoId" className={inputCls}>
                       <option value="">Sin asignar</option>
@@ -7714,7 +7747,13 @@ export default function ConcretarApp() {
                   <Panel
                     title="Facturación futura"
                     action={
-                      <button onClick={() => setShowFacturaVentaProyectadaForm((v) => !v)} className={btnGhost}>
+                      <button
+                        onClick={() => {
+                          if (!showFacturaVentaProyectadaForm) setFacturaVentaProyectadaForm(emptyFacturaVentaProyectadaForm);
+                          setShowFacturaVentaProyectadaForm((v) => !v);
+                        }}
+                        className={btnGhost}
+                      >
                         <span className="flex items-center gap-1"><Plus size={13} /> Factura de venta futura</span>
                       </button>
                     }
