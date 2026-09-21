@@ -11974,6 +11974,7 @@ export default function ConcretarApp() {
                 const echeqsEntradaDelMes = echeqsEntrada.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
                 const cuentasCorrientesDelMes = cuentasCorrientesPorProveedor.filter((g) => perteneceAMesProximos(g.fechaVencimiento, claveMes));
                 const ingresosDelMes = ingresosPendientes.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
+                const facturasVentaProyectadasDelMes = facturasVentaProyectadas.filter((f) => !obraIdsPapelera.has(f.obraId) && perteneceAMesProximos(f.fechaCobroEstimada || f.fecha, claveMes));
                 const obrasDisponibleDelMes = obrasDisponibleProyectado.filter((o) => o.meses.includes(claveMes));
                 const ivaPagosDelMes = ivaPagosProyectados.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
                 const iibbPagosDelMes = iibbPagosProyectados.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
@@ -12167,7 +12168,7 @@ export default function ConcretarApp() {
 
                       <div>
                         <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Ingresos pendientes de cobro</div>
-                        {ingresosDelMes.length === 0 ? (
+                        {ingresosDelMes.length === 0 && facturasVentaProyectadasDelMes.length === 0 ? (
                           <div className="text-xs text-slate-400">No hay ingresos pendientes de cobro este mes.</div>
                         ) : (
                           <div className="space-y-1.5">
@@ -12182,6 +12183,23 @@ export default function ConcretarApp() {
                                   </span>
                                   <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
                                   <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
+                                </div>
+                              );
+                            })}
+                            {facturasVentaProyectadasDelMes.map((f) => {
+                              const fechaEstimada = f.fechaCobroEstimada || f.fecha;
+                              const dias = diasHasta(fechaEstimada);
+                              const obraDeFactura = obras.find((o) => o.id === f.obraId);
+                              return (
+                                <div key={`proy-${f.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-stone-300 px-2.5 py-1.5 text-sm">
+                                  <span className="flex items-center gap-1.5 font-medium text-slate-800">
+                                    {obraDeFactura?.nombre || "Obra"}
+                                    <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Factura proyectada</span>
+                                  </span>
+                                  <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                    {fmtFecha(fechaEstimada)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
+                                  </span>
+                                  <span className="font-mono font-semibold text-emerald-700">{fmtARS(f.monto)}</span>
                                 </div>
                               );
                             })}
