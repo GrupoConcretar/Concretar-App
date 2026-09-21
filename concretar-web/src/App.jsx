@@ -3796,11 +3796,12 @@ export default function ConcretarApp() {
     e.preventDefault();
     const f = new FormData(e.target);
     setCreandoObra(true);
+    const presupuestoObra = Number(f.get("presupuesto")) || resumenObraImportado?.precioTotalConIva || 0;
     const nuevaObra = await addRecord("obras", {
       nombre: f.get("nombre"),
       clienteId: f.get("clienteId") ? Number(f.get("clienteId")) : null,
       cliente: nombreComercial(clientes.find((c) => c.id === Number(f.get("clienteId")))) || "",
-      presupuesto: Number(f.get("presupuesto")) || resumenObraImportado?.precioTotalConIva || 0,
+      presupuesto: presupuestoObra,
       meses: Number(f.get("meses")) || 1,
       inicio: f.get("inicio"),
       estado: "En curso",
@@ -3811,7 +3812,21 @@ export default function ConcretarApp() {
       tipoFacturacion: f.get("tipoFacturacion"),
       color: PALETA_OBRA[obras.length % PALETA_OBRA.length],
     }, setObras);
-    if (nuevaObra) await importarPresupuestoAObra(nuevaObra.id);
+    if (nuevaObra) {
+      await importarPresupuestoAObra(nuevaObra.id);
+      // Si ya se sabe el posible día de factura, se carga de una en "Facturas y
+      // cobros" con el Presupuesto como monto — así no hace falta volver a entrar a
+      // la obra para cargarlo a mano.
+      if (f.get("facturaFecha")) {
+        await addRecord("facturas_venta_proyectadas", {
+          obraId: nuevaObra.id,
+          fecha: f.get("facturaFecha"),
+          fechaCobroEstimada: f.get("facturaFechaCobro") || f.get("facturaFecha"),
+          monto: presupuestoObra,
+          tipoFactura: f.get("tipoFacturacion"),
+        }, setFacturasVentaProyectadas);
+      }
+    }
     e.target.reset();
     quitarExcelNuevaObra();
     setCreandoObra(false);
@@ -7168,6 +7183,13 @@ export default function ConcretarApp() {
                       <option value="C">C (monotributo)</option>
                     </select>
                     <div className="mt-1 text-[11px] text-slate-400">Se usa como valor por defecto al cargar los cobros de esta obra. La C es cuando se factura por monotributo: cuenta como ingreso de dinero pero no entra en el cálculo de IVA ni Ingresos Brutos.</div>
+                  </Field>
+                  <Field label="Posible día de factura (opcional)">
+                    <input name="facturaFecha" type="date" className={inputCls} />
+                    <div className="mt-1 text-[11px] text-slate-400">Si la completás, se carga de una en "Facturas y cobros" con el Presupuesto como monto. Si no, lo cargás después entrando a la obra.</div>
+                  </Field>
+                  <Field label="Posible día de cobro (opcional)">
+                    <input name="facturaFechaCobro" type="date" className={inputCls} />
                   </Field>
                   <Field label="Encargado de obra">
                     <select name="encargadoId" className={inputCls}>
