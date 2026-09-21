@@ -4069,22 +4069,7 @@ export default function ConcretarApp() {
   const [ingresoArchivo, setIngresoArchivo] = useState(null);
   const [ingresoNombreArchivo, setIngresoNombreArchivo] = useState(null);
   const [ingresoTipoArchivo, setIngresoTipoArchivo] = useState(null);
-  const [showCobroObraForm, setShowCobroObraForm] = useState(false);
-  const [cobroObraCuenta, setCobroObraCuenta] = useState(CUENTAS[0]);
-  const [cobroObraMedioBancario, setCobroObraMedioBancario] = useState("Transferencia");
-  const [cobroObraMonto, setCobroObraMonto] = useState(0);
-  const [cobroObraMontoResetKey, setCobroObraMontoResetKey] = useState(0);
-  // Valores por defecto de los campos no controlados del form de "Cobros" (fecha,
-  // concepto, tipo de factura, día posible de cobro) — el tipo de factura sale del
-  // que se eligió al crear la obra, pero "Convertir en factura real" (facturación
-  // futura) lo puede sobrescribir, junto con el día posible de cobro que ya se
-  // había cargado ahí. cobroObraFormKey fuerza que el <form> se vuelva a montar
-  // para que los defaultValue tomen el nuevo valor.
-  const emptyCobroObraDefaults = { fecha: hoyISO(), concepto: "", tipoFactura: obraSel?.tipoFacturacion || "Sin factura", fechaCobroEstimada: hoyISO() };
-  const [cobroObraDefaults, setCobroObraDefaults] = useState(emptyCobroObraDefaults);
-  const [cobroObraFormKey, setCobroObraFormKey] = useState(0);
-
-  // ---------- Facturación futura de una obra (impacto en IVA e Ingresos Brutos) ----------
+  // ---------- Facturas y cobros de una obra (impacto en IVA/Ingresos Brutos + cobro futuro) ----------
   // Se carga solo para saber de antemano cuánto va a impactar una factura de venta
   // que todavía no se emitió — no es un ingreso real ni algo a cobrar, por eso es
   // una tabla aparte de "ingresos" que únicamente suma débito fiscal de IVA e
@@ -4114,14 +4099,22 @@ export default function ConcretarApp() {
     deleteRecord("facturas_venta_proyectadas", id, setFacturasVentaProyectadas);
   }
   // No pide confirmación: no es un "eliminar" de verdad, es que la proyección ya
-  // se concretó — pre-carga el form de "Cobros" con la fecha, el monto, el tipo
-  // de factura y el día posible de cobro proyectados, y saca la proyección de la lista.
+  // se concretó — crea directamente el ingreso pendiente con la fecha, el monto, el
+  // tipo de factura y el día posible de cobro ya cargados, y saca la proyección de
+  // la lista. Concepto y cuenta quedan con un valor por defecto, editable después
+  // con el lápiz de "Modificar" en la lista de cobros.
   function convertirFacturaVentaProyectadaEnReal(f) {
-    setCobroObraDefaults({ fecha: f.fecha, concepto: "Factura de venta", tipoFactura: f.tipoFactura, fechaCobroEstimada: f.fechaCobroEstimada || hoyISO() });
-    setCobroObraMonto(f.monto);
-    setCobroObraMontoResetKey((k) => k + 1);
-    setCobroObraFormKey((k) => k + 1);
-    setShowCobroObraForm(true);
+    addRecord("ingresos", {
+      fecha: f.fecha,
+      obraId: f.obraId,
+      concepto: "Factura de venta",
+      monto: f.monto,
+      tipoFactura: f.tipoFactura,
+      cuenta: CUENTAS[0],
+      medioBancario: null,
+      estado: "Pendiente",
+      fechaCobroEstimada: f.fechaCobroEstimada || f.fecha,
+    }, setIngresos);
     setFacturasVentaProyectadas((prev) => prev.filter((x) => x.id !== f.id));
     if (isSupabaseConfigured) sbDelete("facturas_venta_proyectadas", f.id).catch(() => {});
   }
@@ -7667,110 +7660,7 @@ export default function ConcretarApp() {
                   </Panel>
 
                   <Panel
-                    title="Cobros"
-                    action={
-                      <button
-                        onClick={() => {
-                          if (!showCobroObraForm) { setCobroObraDefaults(emptyCobroObraDefaults); setCobroObraFormKey((k) => k + 1); }
-                          setShowCobroObraForm((v) => !v);
-                        }}
-                        className={btnGhost}
-                      >
-                        <span className="flex items-center gap-1"><Plus size={13} /> Agregar día posible de cobro</span>
-                      </button>
-                    }
-                  >
-                    {showCobroObraForm && (
-                      <form
-                        key={cobroObraFormKey}
-                        className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 md:grid-cols-3"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const f = new FormData(e.target);
-                          addRecord("ingresos", {
-                            fecha: f.get("fecha"),
-                            obraId: obraSel.id,
-                            concepto: f.get("concepto"),
-                            monto: Number(f.get("monto")) || 0,
-                            tipoFactura: f.get("tipoFactura"),
-                            cuenta: f.get("cuenta"),
-                            medioBancario: f.get("cuenta") === "Banco" ? f.get("medioBancario") : null,
-                            estado: "Pendiente",
-                            fechaCobroEstimada: f.get("fechaCobroEstimada"),
-                          }, setIngresos);
-                          e.target.reset();
-                          setCobroObraCuenta(CUENTAS[0]);
-                          setCobroObraMedioBancario("Transferencia");
-                          setCobroObraMonto(0);
-                          setCobroObraMontoResetKey((k) => k + 1);
-                          setCobroObraDefaults(emptyCobroObraDefaults);
-                          setShowCobroObraForm(false);
-                        }}
-                      >
-                        <Field label="Fecha de la factura">
-                          <input name="fecha" type="date" defaultValue={cobroObraDefaults.fecha} required className={inputCls} />
-                          <div className="mt-1 text-[11px] text-slate-400">La fecha en que se emitió, para que el IVA se acomode en el mes que corresponde.</div>
-                        </Field>
-                        <Field label="Día posible de cobro"><input name="fechaCobroEstimada" type="date" defaultValue={cobroObraDefaults.fechaCobroEstimada} required className={inputCls} /></Field>
-                        <Field label="Concepto"><input name="concepto" defaultValue={cobroObraDefaults.concepto} required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
-                        <Field label="Monto (ARS)">
-                          <div className="flex items-center gap-1.5">
-                            <MoneyInput key={cobroObraMontoResetKey} name="monto" value={cobroObraMonto} onChange={setCobroObraMonto} className={inputCls} />
-                            <button
-                              type="button"
-                              title={`Cargar lo que falta cobrar de esta obra (${fmtARS(resumenObraSel?.faltaCobrar || 0)})`}
-                              onClick={() => { setCobroObraMonto(resumenObraSel?.faltaCobrar || 0); setCobroObraMontoResetKey((k) => k + 1); }}
-                              className="shrink-0 rounded-md border border-emerald-300 bg-emerald-50 p-2 text-emerald-700 hover:bg-emerald-100"
-                            >
-                              <Check size={14} />
-                            </button>
-                          </div>
-                        </Field>
-                        <Field label="Factura">
-                          <select name="tipoFactura" defaultValue={cobroObraDefaults.tipoFactura} className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
-                        </Field>
-                        <Field label="Cuenta">
-                          <select name="cuenta" value={cobroObraCuenta} onChange={(e) => setCobroObraCuenta(e.target.value)} className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
-                        </Field>
-                        {cobroObraCuenta === "Banco" && (
-                          <Field label="Medio">
-                            <select name="medioBancario" value={cobroObraMedioBancario} onChange={(e) => setCobroObraMedioBancario(e.target.value)} className={inputCls}>
-                              <option value="Transferencia">Transferencia</option>
-                              <option value="eCheq">eCheq</option>
-                            </select>
-                          </Field>
-                        )}
-                        <div className="flex items-end gap-2 md:col-span-3">
-                          <button type="submit" className={btnPrimary}>Guardar</button>
-                          <button type="button" onClick={() => { setShowCobroObraForm(false); setCobroObraMonto(0); setCobroObraMontoResetKey((k) => k + 1); setCobroObraDefaults(emptyCobroObraDefaults); }} className={btnGhost}>Cancelar</button>
-                        </div>
-                      </form>
-                    )}
-                    {cobrosPendientesObra.length === 0 ? (
-                      <div className="text-xs text-slate-400">No hay cobros pendientes cargados para esta obra.</div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {cobrosPendientesObra.map((i) => (
-                          <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 bg-white px-3 py-1.5 text-xs">
-                            <div>
-                              <div className="font-medium text-slate-800">{i.concepto}</div>
-                              <div className="text-slate-400">Cobra el {fmtFecha(i.fechaCobroEstimada)}</div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
-                              <button onClick={() => setEditandoMovimiento({ origen: "ingresos", origenId: i.id })} className={btnGhostSm} title="Modificar fecha y monto">
-                                <Pencil size={11} />
-                              </button>
-                              <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Panel>
-
-                  <Panel
-                    title="Facturación futura"
+                    title="Facturas y cobros"
                     action={
                       <button
                         onClick={() => {
@@ -7783,7 +7673,7 @@ export default function ConcretarApp() {
                       </button>
                     }
                   >
-                    <div className="mb-3 text-xs text-slate-500">Cargá acá una factura de venta que todavía no emitiste, para saber de antemano cómo va a impactar en el IVA e Ingresos Brutos del mes en que la pienses facturar. No es un ingreso real ni algo a cobrar — cuando la factures de verdad, usá "Convertir en factura real".</div>
+                    <div className="mb-3 text-xs text-slate-500">Cargá acá una factura de venta que todavía no emitiste, con su posible día de factura (decide el mes de IVA/Ingresos Brutos) y su posible día de cobro (decide el mes en Próximos pagos e ingresos). Cuando la factures de verdad, usá "Convertir en factura real" para que pase a ser un cobro pendiente de esta obra.</div>
                     {showFacturaVentaProyectadaForm && (
                       <form className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-5" onSubmit={submitFacturaVentaProyectadaForm}>
                         <Field label="Posible día de factura">
@@ -7808,10 +7698,28 @@ export default function ConcretarApp() {
                         </div>
                       </form>
                     )}
-                    {facturasVentaProyectadasObra.length === 0 ? (
-                      <div className="text-xs text-slate-400">No hay facturas de venta futuras cargadas para esta obra.</div>
+                    {cobrosPendientesObra.length === 0 && facturasVentaProyectadasObra.length === 0 ? (
+                      <div className="text-xs text-slate-400">No hay facturas de venta futuras ni cobros pendientes cargados para esta obra.</div>
                     ) : (
                       <div className="space-y-2">
+                        {cobrosPendientesObra.map((i) => (
+                          <div key={`ingreso-${i.id}`} className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold text-slate-900">{i.concepto}</span>
+                                <span className="text-slate-400">· cobra {fmtFecha(i.fechaCobroEstimada)}</span>
+                                <span className="rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-sky-700">Pendiente de cobro</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
+                                <button onClick={() => setEditandoMovimiento({ origen: "ingresos", origenId: i.id })} className={btnGhostSm} title="Modificar">
+                                  <Pencil size={11} />
+                                </button>
+                                <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                         {facturasVentaProyectadasObra.map((f) => {
                           const clave = claveMesCuentas(f.fecha);
                           const ivaMes = ivaMensual.find((m) => m.clave === clave);
