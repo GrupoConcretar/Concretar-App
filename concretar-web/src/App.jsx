@@ -789,7 +789,7 @@ function ResumenObrasCuentas({ items }) {
 // Balance de IVA mes a mes (Cuentas → IVA y Ganancias): débito fiscal (IVA de
 // lo facturado a clientes) contra crédito fiscal (IVA de las compras con
 // Factura A), arrastrando el saldo a favor de un mes al siguiente.
-function TablaIvaMensual({ items, onActualizarReal }) {
+function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos ni gastos con factura A o B cargados.</div>;
   }
@@ -818,7 +818,7 @@ function TablaIvaMensual({ items, onActualizarReal }) {
               <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.aPagar)}</td>
               <td className={`px-2 py-1 text-right font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</td>
               <td className="px-2 py-1 text-right">
-                <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+                <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
               </td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
                 {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
@@ -834,7 +834,7 @@ function TablaIvaMensual({ items, onActualizarReal }) {
 // Ganancia neta por año (Cuentas → IVA y Ganancias): ingresos menos gastos,
 // ambos netos de IVA, de todo lo que tiene factura (A, B o C) — es la base
 // aproximada para el Impuesto a las Ganancias que después ajusta el contador.
-function TablaGananciasAnual({ items, onActualizarReal }) {
+function TablaGananciasAnual({ items, onActualizarReal, onBorrarReal }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos ni gastos con factura cargados.</div>;
   }
@@ -859,7 +859,7 @@ function TablaGananciasAnual({ items, onActualizarReal }) {
               <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.gastos)}</td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${r.ganancia < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(r.ganancia)}</td>
               <td className="px-2 py-1 text-right">
-                <CampoRealConSigno value={r.real} onGuardar={(v) => onActualizarReal(r.anio, v)} className="w-32 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+                <CampoRealConSigno value={r.real} onGuardar={(v) => onActualizarReal(r.anio, v)} onBorrar={() => onBorrarReal(r.anio)} className="w-32 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
               </td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${r.diferencia === null || Math.abs(r.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
                 {r.diferencia === null ? "Sin dato" : fmtARS(r.diferencia)}
@@ -875,8 +875,11 @@ function TablaGananciasAnual({ items, onActualizarReal }) {
 // Campo de "real (contador)" con un botón +/- al lado para poder cargar un
 // saldo a favor (positivo) además de un monto a pagar (negativo) — MoneyInput
 // no admite el signo "-" al tipear, así que el signo se maneja aparte y el
-// campo de monto siempre trabaja con el valor absoluto.
-function CampoRealConSigno({ value, onGuardar, className }) {
+// campo de monto siempre trabaja con el valor absoluto. Cuando ya hay un valor
+// cargado aparece un botón para borrarlo y volver el mes a "sin dato todavía"
+// (null), que es distinto de un real confirmado en $0 — mientras no hay dato la
+// app sigue proyectando con su propio cálculo automático.
+function CampoRealConSigno({ value, onGuardar, onBorrar, className }) {
   const val = value ?? 0;
   const negativo = val < 0;
   return (
@@ -890,6 +893,11 @@ function CampoRealConSigno({ value, onGuardar, className }) {
         {negativo ? "−" : "+"}
       </button>
       <MoneyInput value={Math.abs(val)} onBlur={(v) => onGuardar(negativo ? -v : v)} className={className} />
+      {value !== null && onBorrar && (
+        <button type="button" onClick={onBorrar} title="Borrar: volver a 'sin dato todavía' y usar el cálculo automático de la app" className="shrink-0 text-slate-300 hover:text-rose-600">
+          <X size={13} />
+        </button>
+      )}
     </div>
   );
 }
@@ -901,7 +909,7 @@ function CampoRealConSigno({ value, onGuardar, className }) {
 // la alícuota conocida sobre ventas, hasta que entre el primer dato real). El real
 // admite el mismo signo que IVA (positivo = a favor, negativo = a pagar), y un saldo
 // a favor se arrastra al mes siguiente en vez de generar un pago.
-function TablaIibbMensual({ items, onActualizarReal }) {
+function TablaIibbMensual({ items, onActualizarReal, onBorrarReal }) {
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos con factura cargados.</div>;
   }
@@ -930,7 +938,7 @@ function TablaIibbMensual({ items, onActualizarReal }) {
               <td className={`px-2 py-1 text-right font-mono font-semibold ${m.proyectado > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.proyectado)}</td>
               <td className={`px-2 py-1 text-right font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</td>
               <td className="px-2 py-1 text-right">
-                <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+                <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
               </td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
                 {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
@@ -5537,6 +5545,13 @@ export default function ConcretarApp() {
     } else {
       addRecord("ajustes_fiscales", { tipo, clave, monto, actualizado: hoyISO() }, setAjustesFiscales);
     }
+  }
+  // Vuelve el mes a "sin dato todavía" (null) en vez de dejarlo en $0 — así la
+  // proyección de IVA/Ingresos Brutos/Ganancias vuelve a usar el cálculo automático
+  // de la app hasta que el contador informe el número definitivo.
+  function borrarAjusteFiscal(tipo, clave) {
+    const existente = ajustesFiscales.find((a) => a.tipo === tipo && a.clave === clave);
+    if (existente) deleteRecord("ajustes_fiscales", existente.id, setAjustesFiscales);
   }
   // Un "Error de cálculo" nunca es transferencia real entre nuestras cuentas: usamos
   // "Ajuste" como cuenta puente (no forma parte de CUENTAS, así que no aparece en el
@@ -11831,19 +11846,19 @@ export default function ConcretarApp() {
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
               <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−).</div>
-              <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} />
+              <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iva", clave)} />
             </div>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ingresos Brutos por mes</h3>
               <div className="mb-1.5 text-[11px] text-slate-400">Se proyecta al 2% de los ingresos gravables (incluye facturas de venta futuras proyectadas desde una obra) hasta que cargues el "Ingresos Brutos real (contador)" de algún mes — ahí la alícuota efectiva se recalcula sola y ajusta la proyección de los meses siguientes.</div>
-              <TablaIibbMensual items={iibbMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iibb", clave, monto)} />
+              <TablaIibbMensual items={iibbMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iibb", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iibb", clave)} />
             </div>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ganancias por año</h3>
               <div className="mb-1.5 text-[11px] text-slate-400">Ingresos y gastos netos de IVA, de todo lo que tenga Factura A, B o C — base aproximada para el Impuesto a las Ganancias. Cargá en "Ganancia real (contador)" el número que informe el contador para compararlo contra la estimación de la app.</div>
-              <TablaGananciasAnual items={gananciasAnuales} onActualizarReal={(anio, monto) => actualizarAjusteFiscal("ganancia", anio, monto)} />
+              <TablaGananciasAnual items={gananciasAnuales} onActualizarReal={(anio, monto) => actualizarAjusteFiscal("ganancia", anio, monto)} onBorrarReal={(anio) => borrarAjusteFiscal("ganancia", anio)} />
             </div>
           </div>
         )}
