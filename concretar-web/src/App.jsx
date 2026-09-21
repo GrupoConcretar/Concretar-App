@@ -5083,6 +5083,18 @@ export default function ConcretarApp() {
   const ivaDeMonto = (monto, tipoFactura) => (tipoFactura === "A" || tipoFactura === "B") ? (monto || 0) - (monto || 0) / 1.21 : 0;
   const netoDeIvaMonto = (monto, tipoFactura) => (monto || 0) - ivaDeMonto(monto, tipoFactura);
 
+  // Meses que siempre aparecen en las tablas de IVA e Ingresos Brutos, tengan o
+  // no algo cargado todavía — todo el año actual más el primer semestre del
+  // año que viene, para poder ir completando el real a futuro sin esperar a
+  // que haya un ingreso/gasto que "cree" el mes solo.
+  const MESES_IVA_IIBB_A_MOSTRAR = (() => {
+    const anioActual = Number(hoyISO().slice(0, 4));
+    const claves = [];
+    for (let m = 1; m <= 12; m++) claves.push(`${anioActual}-${String(m).padStart(2, "0")}`);
+    for (let m = 1; m <= 6; m++) claves.push(`${anioActual + 1}-${String(m).padStart(2, "0")}`);
+    return claves;
+  })();
+
   const ivaPorMes = {};
   ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && conFacturaGravable(i.tipoFactura)).forEach((i) => {
     const clave = claveMesCuentas(i.fecha);
@@ -5101,8 +5113,8 @@ export default function ConcretarApp() {
     (ivaPorMes[clave] ??= { debito: 0, credito: 0 }).credito += ivaDeMonto(c.monto, c.tipoFactura);
   });
   let saldoAFavorIvaArrastre = 0;
-  const ivaMensual = Object.keys(ivaPorMes).sort().map((clave) => {
-    const { debito, credito } = ivaPorMes[clave];
+  const ivaMensual = Array.from(new Set([...Object.keys(ivaPorMes), ...MESES_IVA_IIBB_A_MOSTRAR])).sort().map((clave) => {
+    const { debito = 0, credito = 0 } = ivaPorMes[clave] || {};
     const disponible = credito + saldoAFavorIvaArrastre;
     const saldoAFavorAnterior = saldoAFavorIvaArrastre;
     const aPagar = Math.max(0, debito - disponible);
@@ -5155,6 +5167,7 @@ export default function ConcretarApp() {
   const clavesIibb = Array.from(new Set([
     ...Object.keys(ingresosGravablesPorMes),
     ...ajustesFiscales.filter((a) => a.tipo === "iibb").map((a) => a.clave),
+    ...MESES_IVA_IIBB_A_MOSTRAR,
   ])).sort();
   let alicuotaIibbEfectiva = ALICUOTA_IIBB_INICIAL;
   const iibbMensual = clavesIibb.map((clave) => {
@@ -11497,7 +11510,7 @@ export default function ConcretarApp() {
                   onClick={() => setShowIvaGanancias(true)}
                   className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
                 >
-                  <Percent size={16} /> IVA y Ganancias
+                  <Percent size={16} /> IVA, Ingresos Brutos y Ganancias
                 </button>
                 <button
                   onClick={() => setShowMovimientoForm((v) => !v)}
