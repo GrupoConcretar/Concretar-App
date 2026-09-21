@@ -5184,8 +5184,13 @@ export default function ConcretarApp() {
   // (el real que informó el contador, o la estimación de la app si todavía no lo cargó)
   // se corre a esa fecha de pago. Los meses sin nada que pagar no generan egreso.
   const MESES_ATRASO_IVA_IIBB = 3;
+  // "real" de IVA está en la convención positivo = a favor, negativo = a pagar,
+  // así que hay que invertirle el signo para obtener el monto a pagar: un real a
+  // favor (positivo) no debe generar ningún egreso futuro (ese saldo se cancela
+  // numéricamente contra el débito de las próximas facturas, no es plata que
+  // salga de la cuenta); solo un real a pagar (negativo) genera el egreso.
   const ivaPagosProyectados = ivaMensual
-    .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA_IIBB), monto: m.real ?? m.aPagar }))
+    .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA_IIBB), monto: m.real === null ? m.aPagar : -m.real }))
     .filter((p) => p.monto > 0);
   const iibbPagosProyectados = iibbMensual
     .map((m) => ({ clave: m.clave, fechaPago: sumarMesesAClave(m.clave, MESES_ATRASO_IVA_IIBB), monto: m.real ?? m.proyectado }))
