@@ -425,7 +425,7 @@ function MoneyInput({ name, value, onChange, onBlur, className, placeholder, req
         inputMode="decimal"
         value={display}
         onChange={handleChange}
-        onBlur={() => onBlur && onBlur(num)}
+        onBlur={() => onBlur && onBlur(num, raw !== "")}
         placeholder={placeholder || "0"}
         disabled={disabled}
         className={`${className || inputCls} ${disabled ? "cursor-not-allowed bg-stone-100 text-slate-400" : ""}`}
@@ -786,47 +786,82 @@ function ResumenObrasCuentas({ items }) {
   );
 }
 
+// Un mes sin ningún movimiento ni real cargado no aporta nada a la vista — se
+// agrupan detrás de un "ver meses sin movimiento" en vez de listarlos todos,
+// para que la tabla no quede dominada por filas en $0.
+function mesIvaSinMovimiento(m) {
+  return m.debito === 0 && m.credito === 0 && m.saldoAFavorAnterior === 0 && m.aPagar === 0 && m.saldoAFavorNuevo === 0 && m.real === null;
+}
 // Balance de IVA mes a mes (Cuentas → IVA y Ganancias): débito fiscal (IVA de
 // lo facturado a clientes) contra crédito fiscal (IVA de las compras con
-// Factura A), arrastrando el saldo a favor de un mes al siguiente.
+// Factura A), arrastrando el saldo a favor de un mes al siguiente. Se muestran
+// solo "IVA a pagar (app)", "IVA real (contador)" y "Diferencia" — el desglose
+// (débito, crédito, saldo a favor usado/nuevo) queda atrás de la flechita de
+// cada mes, para no abrumar con columnas técnicas la vista de todos los días.
 function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
+  const [expandidos, setExpandidos] = useState({});
+  const [verSinMovimiento, setVerSinMovimiento] = useState(false);
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos ni gastos con factura A o B cargados.</div>;
   }
+  const inactivos = items.filter(mesIvaSinMovimiento);
+  const itemsAMostrar = verSinMovimiento ? items : items.filter((m) => !mesIvaSinMovimiento(m));
+  const toggleExpandido = (clave) => setExpandidos((e) => ({ ...e, [clave]: !e[clave] }));
   return (
     <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
       <table className="w-full text-left text-xs">
         <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-2 py-1.5">Mes</th>
-            <th className="px-2 py-1.5 text-right">Débito fiscal</th>
-            <th className="px-2 py-1.5 text-right">Crédito fiscal</th>
-            <th className="px-2 py-1.5 text-right">Saldo a favor usado</th>
             <th className="px-2 py-1.5 text-right">IVA a pagar (app)</th>
-            <th className="px-2 py-1.5 text-right">Saldo a favor nuevo</th>
             <th className="px-2 py-1.5 text-right">IVA real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((m) => (
-            <tr key={m.clave} className="border-t border-stone-100">
-              <td className="px-2 py-1 font-medium text-slate-900">{nombreMesDeClave(m.clave)}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.debito)}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.credito)}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-500">{fmtARS(m.saldoAFavorAnterior)}</td>
-              <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.aPagar)}</td>
-              <td className={`px-2 py-1 text-right font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</td>
-              <td className="px-2 py-1 text-right">
-                <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
-              </td>
-              <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
-                {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
-              </td>
-            </tr>
+          {itemsAMostrar.length === 0 ? (
+            <tr><td colSpan={4} className="px-2 py-3 text-center text-slate-400">Todos los meses están sin movimiento — usá "Ver meses sin movimiento" abajo.</td></tr>
+          ) : itemsAMostrar.map((m) => (
+            <Fragment key={m.clave}>
+              <tr className="border-t border-stone-100">
+                <td className="px-2 py-1 font-medium text-slate-900">
+                  <button type="button" onClick={() => toggleExpandido(m.clave)} className="flex items-center gap-1 hover:text-slate-600">
+                    <ChevronRight size={12} className={`shrink-0 text-slate-400 transition-transform ${expandidos[m.clave] ? "rotate-90" : ""}`} />
+                    {nombreMesDeClave(m.clave)}
+                  </button>
+                </td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.aPagar)}</td>
+                <td className="px-2 py-1 text-right">
+                  <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+                </td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                  {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
+                </td>
+              </tr>
+              {expandidos[m.clave] && (
+                <tr className="border-t border-stone-100 bg-stone-50">
+                  <td colSpan={4} className="px-2 py-1.5">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                      <span>Débito fiscal: <span className="font-mono text-slate-700">{fmtARS(m.debito)}</span></span>
+                      <span>Crédito fiscal: <span className="font-mono text-slate-700">{fmtARS(m.credito)}</span></span>
+                      <span>Saldo a favor usado: <span className="font-mono text-slate-500">{fmtARS(m.saldoAFavorAnterior)}</span></span>
+                      <span>Saldo a favor nuevo: <span className={`font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</span></span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
+      {inactivos.length > 0 && (
+        <div className="border-t border-stone-200 px-2 py-1.5">
+          <button type="button" onClick={() => setVerSinMovimiento((v) => !v)} className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800">
+            <ChevronDown size={12} className={`transition-transform ${verSinMovimiento ? "rotate-180" : ""}`} />
+            {verSinMovimiento ? "Ocultar" : "Ver"} {inactivos.length} mes{inactivos.length === 1 ? "" : "es"} sin movimiento
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -878,22 +913,36 @@ function TablaGananciasAnual({ items, onActualizarReal, onBorrarReal }) {
 // campo de monto siempre trabaja con el valor absoluto. Cuando ya hay un valor
 // cargado aparece un botón para borrarlo y volver el mes a "sin dato todavía"
 // (null), que es distinto de un real confirmado en $0 — mientras no hay dato la
-// app sigue proyectando con su propio cálculo automático.
+// app sigue proyectando con su propio cálculo automático. Mientras no hay dato,
+// el campo queda vacío (no en "0") y el botón +/- no hace nada: así un clic o un
+// blur accidental sin haber tipeado nada no termina guardando un real falso en
+// $0 (fue justo lo que pasó una vez y tapó la proyección automática).
 function CampoRealConSigno({ value, onGuardar, onBorrar, className }) {
+  const sinDato = value === null;
   const val = value ?? 0;
   const negativo = val < 0;
   return (
     <div className="flex items-center justify-end gap-1">
       <button
         type="button"
-        onClick={() => onGuardar(-val)}
-        title={negativo ? "A pagar (negativo) — clic para pasar a favor" : "A favor (positivo) — clic para pasar a pagar"}
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs font-bold ${negativo ? "border-rose-300 bg-rose-50 text-rose-700" : "border-emerald-300 bg-emerald-50 text-emerald-700"}`}
+        onClick={() => { if (!sinDato) onGuardar(-val); }}
+        disabled={sinDato}
+        title={sinDato ? "Escribí un monto para poder elegir el signo" : negativo ? "A pagar (negativo) — clic para pasar a favor" : "A favor (positivo) — clic para pasar a pagar"}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs font-bold ${
+          sinDato ? "cursor-not-allowed border-stone-200 bg-stone-50 text-stone-300"
+          : negativo ? "border-rose-300 bg-rose-50 text-rose-700"
+          : "border-emerald-300 bg-emerald-50 text-emerald-700"
+        }`}
       >
         {negativo ? "−" : "+"}
       </button>
-      <MoneyInput value={Math.abs(val)} onBlur={(v) => onGuardar(negativo ? -v : v)} className={className} />
-      {value !== null && onBorrar && (
+      <MoneyInput
+        key={String(value)}
+        value={sinDato ? null : Math.abs(val)}
+        onBlur={(v, tocado) => { if (sinDato && !tocado) return; onGuardar(negativo ? -v : v); }}
+        className={className}
+      />
+      {!sinDato && onBorrar && (
         <button type="button" onClick={onBorrar} title="Borrar: volver a 'sin dato todavía' y usar el cálculo automático de la app" className="shrink-0 text-slate-300 hover:text-rose-600">
           <X size={13} />
         </button>
@@ -902,51 +951,82 @@ function CampoRealConSigno({ value, onGuardar, onBorrar, className }) {
   );
 }
 
+function mesIibbSinMovimiento(m) {
+  return m.ingresos === 0 && m.saldoAFavorAnterior === 0 && m.proyectado === 0 && m.saldoAFavorNuevo === 0 && m.real === null;
+}
 // Ingresos Brutos mes a mes (Cuentas → IVA y Ganancias): a diferencia de IVA, la app
 // no puede calcular sola cuánto corresponde (depende de la alícuota de la actividad),
 // así que se carga el real que informa el contador y los meses sin ese dato todavía
 // se proyectan con la alícuota efectiva del último mes real cargado (arranca en 2%,
 // la alícuota conocida sobre ventas, hasta que entre el primer dato real). El real
 // admite el mismo signo que IVA (positivo = a favor, negativo = a pagar), y un saldo
-// a favor se arrastra al mes siguiente en vez de generar un pago.
+// a favor se arrastra al mes siguiente en vez de generar un pago. Mismo formato
+// resumido que la tabla de IVA: el desglose (ingresos gravables, alícuota, saldo a
+// favor usado/nuevo) queda atrás de la flechita de cada mes.
 function TablaIibbMensual({ items, onActualizarReal, onBorrarReal }) {
+  const [expandidos, setExpandidos] = useState({});
+  const [verSinMovimiento, setVerSinMovimiento] = useState(false);
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos con factura cargados.</div>;
   }
+  const inactivos = items.filter(mesIibbSinMovimiento);
+  const itemsAMostrar = verSinMovimiento ? items : items.filter((m) => !mesIibbSinMovimiento(m));
+  const toggleExpandido = (clave) => setExpandidos((e) => ({ ...e, [clave]: !e[clave] }));
   return (
     <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
       <table className="w-full text-left text-xs">
         <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-2 py-1.5">Mes</th>
-            <th className="px-2 py-1.5 text-right">Ingresos gravables</th>
-            <th className="px-2 py-1.5 text-right">Alícuota usada</th>
-            <th className="px-2 py-1.5 text-right">Saldo a favor usado</th>
             <th className="px-2 py-1.5 text-right">Ingresos Brutos a pagar (app)</th>
-            <th className="px-2 py-1.5 text-right">Saldo a favor nuevo</th>
             <th className="px-2 py-1.5 text-right">Ingresos Brutos real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((m) => (
-            <tr key={m.clave} className="border-t border-stone-100">
-              <td className="px-2 py-1 font-medium text-slate-900">{nombreMesDeClave(m.clave)}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.ingresos)}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-500">{m.alicuota === null ? "—" : `${(m.alicuota * 100).toFixed(2)}%`}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-500">{fmtARS(m.saldoAFavorAnterior)}</td>
-              <td className={`px-2 py-1 text-right font-mono font-semibold ${m.proyectado > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.proyectado)}</td>
-              <td className={`px-2 py-1 text-right font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</td>
-              <td className="px-2 py-1 text-right">
-                <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
-              </td>
-              <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
-                {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
-              </td>
-            </tr>
+          {itemsAMostrar.length === 0 ? (
+            <tr><td colSpan={4} className="px-2 py-3 text-center text-slate-400">Todos los meses están sin movimiento — usá "Ver meses sin movimiento" abajo.</td></tr>
+          ) : itemsAMostrar.map((m) => (
+            <Fragment key={m.clave}>
+              <tr className="border-t border-stone-100">
+                <td className="px-2 py-1 font-medium text-slate-900">
+                  <button type="button" onClick={() => toggleExpandido(m.clave)} className="flex items-center gap-1 hover:text-slate-600">
+                    <ChevronRight size={12} className={`shrink-0 text-slate-400 transition-transform ${expandidos[m.clave] ? "rotate-90" : ""}`} />
+                    {nombreMesDeClave(m.clave)}
+                  </button>
+                </td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.proyectado > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.proyectado)}</td>
+                <td className="px-2 py-1 text-right">
+                  <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
+                </td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                  {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
+                </td>
+              </tr>
+              {expandidos[m.clave] && (
+                <tr className="border-t border-stone-100 bg-stone-50">
+                  <td colSpan={4} className="px-2 py-1.5">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                      <span>Ingresos gravables: <span className="font-mono text-slate-700">{fmtARS(m.ingresos)}</span></span>
+                      <span>Alícuota usada: <span className="font-mono text-slate-700">{m.alicuota === null ? "—" : `${(m.alicuota * 100).toFixed(2)}%`}</span></span>
+                      <span>Saldo a favor usado: <span className="font-mono text-slate-500">{fmtARS(m.saldoAFavorAnterior)}</span></span>
+                      <span>Saldo a favor nuevo: <span className={`font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</span></span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
+      {inactivos.length > 0 && (
+        <div className="border-t border-stone-200 px-2 py-1.5">
+          <button type="button" onClick={() => setVerSinMovimiento((v) => !v)} className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800">
+            <ChevronDown size={12} className={`transition-transform ${verSinMovimiento ? "rotate-180" : ""}`} />
+            {verSinMovimiento ? "Ocultar" : "Ver"} {inactivos.length} mes{inactivos.length === 1 ? "" : "es"} sin movimiento
+          </button>
+        </div>
+      )}
     </div>
   );
 }
