@@ -792,12 +792,12 @@ function ResumenObrasCuentas({ items }) {
 function mesIvaSinMovimiento(m) {
   return m.debito === 0 && m.credito === 0 && m.saldoAFavorAnterior === 0 && m.aPagar === 0 && m.saldoAFavorNuevo === 0 && m.real === null;
 }
-// Balance de IVA mes a mes (Cuentas → IVA y Ganancias): débito fiscal (IVA de
-// lo facturado a clientes) contra crédito fiscal (IVA de las compras con
-// Factura A), arrastrando el saldo a favor de un mes al siguiente. Se muestran
-// solo "IVA a pagar (app)", "IVA real (contador)" y "Diferencia" — el desglose
-// (débito, crédito, saldo a favor usado/nuevo) queda atrás de la flechita de
-// cada mes, para no abrumar con columnas técnicas la vista de todos los días.
+// Balance de IVA mes a mes (Cuentas → IVA y Ganancias): IVA venta (débito
+// fiscal, de lo facturado a clientes) contra IVA compra (crédito fiscal, de
+// las compras con Factura A), arrastrando el saldo a favor de un mes al
+// siguiente. "IVA venta" e "IVA compra" quedan a la vista para poder ver de
+// entrada si el mes da a favor o en contra; el saldo a favor arrastrado
+// (usado/nuevo) queda atrás de la flechita de cada mes.
 function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
   const [expandidos, setExpandidos] = useState({});
   const [verSinMovimiento, setVerSinMovimiento] = useState(false);
@@ -813,6 +813,8 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
         <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-2 py-1.5">Mes</th>
+            <th className="px-2 py-1.5 text-right">IVA venta</th>
+            <th className="px-2 py-1.5 text-right">IVA compra</th>
             <th className="px-2 py-1.5 text-right">IVA a pagar (app)</th>
             <th className="px-2 py-1.5 text-right">IVA real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
@@ -820,7 +822,7 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
         </thead>
         <tbody>
           {itemsAMostrar.length === 0 ? (
-            <tr><td colSpan={4} className="px-2 py-3 text-center text-slate-400">Todos los meses están sin movimiento — usá "Ver meses sin movimiento" abajo.</td></tr>
+            <tr><td colSpan={6} className="px-2 py-3 text-center text-slate-400">Todos los meses están sin movimiento — usá "Ver meses sin movimiento" abajo.</td></tr>
           ) : itemsAMostrar.map((m) => (
             <Fragment key={m.clave}>
               <tr className="border-t border-stone-100">
@@ -830,6 +832,8 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
                     {nombreMesDeClave(m.clave)}
                   </button>
                 </td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.debito)}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.credito)}</td>
                 <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.aPagar)}</td>
                 <td className="px-2 py-1 text-right">
                   <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
@@ -840,12 +844,10 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
               </tr>
               {expandidos[m.clave] && (
                 <tr className="border-t border-stone-100 bg-stone-50">
-                  <td colSpan={4} className="px-2 py-1.5">
+                  <td colSpan={6} className="px-2 py-1.5">
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
-                      <span>Débito fiscal: <span className="font-mono text-slate-700">{fmtARS(m.debito)}</span></span>
-                      <span>Crédito fiscal: <span className="font-mono text-slate-700">{fmtARS(m.credito)}</span></span>
-                      <span>Saldo a favor usado: <span className="font-mono text-slate-500">{fmtARS(m.saldoAFavorAnterior)}</span></span>
-                      <span>Saldo a favor nuevo: <span className={`font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</span></span>
+                      <span>Saldo a favor usado (del mes anterior): <span className="font-mono text-slate-500">{fmtARS(m.saldoAFavorAnterior)}</span></span>
+                      <span>Saldo a favor nuevo (pasa al mes siguiente): <span className={`font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</span></span>
                     </div>
                   </td>
                 </tr>
@@ -11858,7 +11860,7 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Débito fiscal: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). Crédito fiscal: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−).</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">IVA venta: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). IVA compra: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Si IVA venta supera a IVA compra (+ el saldo a favor que venía arrastrando) el mes da en contra (a pagar); si no, da a favor y ese saldo pasa al mes siguiente — no es plata que entra a la cuenta. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−).</div>
               <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iva", clave)} />
             </div>
 
