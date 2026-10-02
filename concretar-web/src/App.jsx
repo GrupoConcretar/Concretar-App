@@ -4179,6 +4179,10 @@ export default function ConcretarApp() {
   const emptyFacturaVentaProyectadaForm = { fecha: hoyISO(), fechaCobroEstimada: hoyISO(), concepto: "", monto: 0, tipoFactura: obraSel?.tipoFacturacion || "A", cuenta: CUENTAS[0], medioBancario: "Transferencia" };
   const [facturaVentaProyectadaForm, setFacturaVentaProyectadaForm] = useState(emptyFacturaVentaProyectadaForm);
   const [facturaVentaProyectadaMontoResetKey, setFacturaVentaProyectadaMontoResetKey] = useState(0);
+  // % del precio de obra: es solo una calculadora para completar el Monto más rápido
+  // (100% = precio total de la obra) — no se guarda en la base, el monto final siempre
+  // es el que quedó en el campo Monto al enviar el formulario.
+  const [facturaVentaProyectadaPct, setFacturaVentaProyectadaPct] = useState("");
   function submitFacturaVentaProyectadaForm(e) {
     e.preventDefault();
     addRecord("facturas_venta_proyectadas", {
@@ -4192,6 +4196,7 @@ export default function ConcretarApp() {
       medioBancario: facturaVentaProyectadaForm.cuenta === "Banco" ? facturaVentaProyectadaForm.medioBancario : null,
     }, setFacturasVentaProyectadas);
     setFacturaVentaProyectadaForm(emptyFacturaVentaProyectadaForm);
+    setFacturaVentaProyectadaPct("");
     setFacturaVentaProyectadaMontoResetKey((k) => k + 1);
     setShowFacturaVentaProyectadaForm(false);
   }
@@ -7780,7 +7785,11 @@ export default function ConcretarApp() {
                     action={
                       <button
                         onClick={() => {
-                          if (!showFacturaVentaProyectadaForm) setFacturaVentaProyectadaForm(emptyFacturaVentaProyectadaForm);
+                          if (!showFacturaVentaProyectadaForm) {
+                            setFacturaVentaProyectadaForm(emptyFacturaVentaProyectadaForm);
+                            setFacturaVentaProyectadaPct("");
+                            setFacturaVentaProyectadaMontoResetKey((k) => k + 1);
+                          }
                           setShowFacturaVentaProyectadaForm((v) => !v);
                         }}
                         className={btnGhost}
@@ -7802,6 +7811,27 @@ export default function ConcretarApp() {
                         </Field>
                         <Field label="Concepto">
                           <input value={facturaVentaProyectadaForm.concepto} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, concepto: e.target.value }))} placeholder="Ej: Certificado de avance 3" className={inputCls} />
+                        </Field>
+                        <Field label="% del precio de obra">
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={facturaVentaProyectadaPct}
+                            onChange={(e) => {
+                              const pct = e.target.value;
+                              setFacturaVentaProyectadaPct(pct);
+                              if (pct === "") return;
+                              const precioObra = resumenPorObra.find((x) => x.obra.id === obraSel?.id)?.precioObra || 0;
+                              setFacturaVentaProyectadaForm((f) => ({ ...f, monto: Math.round(precioObra * (Number(pct) / 100)) }));
+                              setFacturaVentaProyectadaMontoResetKey((k) => k + 1);
+                            }}
+                            placeholder="Ej: 100"
+                            className={inputCls}
+                          />
+                          <div className="mt-1 text-[11px] text-slate-400">
+                            100% = precio total de la obra ({fmtARS(resumenPorObra.find((x) => x.obra.id === obraSel?.id)?.precioObra || 0)}).
+                          </div>
                         </Field>
                         <Field label="Monto ($)">
                           <MoneyInput key={facturaVentaProyectadaMontoResetKey} value={facturaVentaProyectadaForm.monto} onChange={(v) => setFacturaVentaProyectadaForm((f) => ({ ...f, monto: v }))} className={inputCls} />
