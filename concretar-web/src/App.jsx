@@ -4195,14 +4195,18 @@ export default function ConcretarApp() {
   function eliminarFacturaVentaProyectada(id) {
     deleteRecord("facturas_venta_proyectadas", id, setFacturasVentaProyectadas);
   }
+  // Adjunta/reemplaza el PDF o foto de la factura ya emitida, sin tocar el estado
+  // de la proyección — es solo guardar el comprobante para más adelante, no un
+  // cambio de "pendiente" a "cobrado".
+  function adjuntarComprobanteFacturaProyectada(f, archivo, nombreArchivo, tipoArchivo) {
+    updateRecord("facturas_venta_proyectadas", f.id, { archivo, nombreArchivo, tipoArchivo }, setFacturasVentaProyectadas);
+  }
   // No pide confirmación: no es un "eliminar" de verdad, es que la proyección ya
-  // se concretó — crea directamente el ingreso con la fecha, el monto, el tipo de
-  // factura y el día posible de cobro ya cargados, y saca la proyección de la
-  // lista. "estado" es "Pendiente" (Cargar factura) o "Cobrado" (Marcar cobrado,
-  // cuando ya se sabe que se cobró y no hace falta pasar por Pendiente). Concepto
-  // y cuenta quedan con un valor por defecto, editable después con el lápiz de
-  // "Modificar" en la lista de cobros.
-  function convertirFacturaVentaProyectadaEnReal(f, estado = "Pendiente") {
+  // se cobró — crea directamente el ingreso Cobrado con la fecha, el monto, el
+  // tipo de factura y el comprobante que ya se hubiera adjuntado, y saca la
+  // proyección de la lista. Concepto y cuenta quedan con un valor por defecto,
+  // editable después con el lápiz de "Modificar" en la lista de cobros.
+  function marcarFacturaProyectadaCobrada(f) {
     addRecord("ingresos", {
       fecha: f.fecha,
       obraId: f.obraId,
@@ -4211,8 +4215,11 @@ export default function ConcretarApp() {
       tipoFactura: f.tipoFactura,
       cuenta: CUENTAS[0],
       medioBancario: null,
-      estado,
+      estado: "Cobrado",
       fechaCobroEstimada: f.fechaCobroEstimada || f.fecha,
+      archivo: f.archivo || null,
+      nombreArchivo: f.nombreArchivo || null,
+      tipoArchivo: f.tipoArchivo || null,
     }, setIngresos);
     setFacturasVentaProyectadas((prev) => prev.filter((x) => x.id !== f.id));
     if (isSupabaseConfigured) sbDelete("facturas_venta_proyectadas", f.id).catch(() => {});
@@ -7779,7 +7786,7 @@ export default function ConcretarApp() {
                       </button>
                     }
                   >
-                    <div className="mb-3 text-xs text-slate-500">Cargá acá una factura de venta que todavía no emitiste, con su posible día de factura (decide el mes de IVA/Ingresos Brutos) y su posible día de cobro (decide el mes en Próximos pagos e ingresos). Cuando la factures de verdad, usá "Cargar factura" para que pase a ser un cobro pendiente de esta obra, o "Marcar cobrado" si ya se cobró y no hace falta pasar por pendiente.</div>
+                    <div className="mb-3 text-xs text-slate-500">Cargá acá una factura de venta que todavía no emitiste, con su posible día de factura (decide el mes de IVA/Ingresos Brutos) y su posible día de cobro (decide el mes en Próximos pagos e ingresos) — ya queda proyectada, sin necesidad de ningún paso más. Cuando la factures de verdad, adjuntale el PDF o foto de la factura. Cuando se cobre, usá "Marcar cobrado" para que pase a ser un ingreso real de esta obra.</div>
                     {showFacturaVentaProyectadaForm && (
                       <form className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-5" onSubmit={submitFacturaVentaProyectadaForm}>
                         <Field label="Posible día de factura">
@@ -7840,8 +7847,7 @@ export default function ConcretarApp() {
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <span className="font-mono font-semibold text-slate-800">{fmtARS(f.monto)}</span>
-                                  <button onClick={() => convertirFacturaVentaProyectadaEnReal(f)} className={btnGhost}>Cargar factura</button>
-                                  <button onClick={() => convertirFacturaVentaProyectadaEnReal(f, "Cobrado")} className={btnGhost}>Marcar cobrado</button>
+                                  <button onClick={() => marcarFacturaProyectadaCobrada(f)} className={btnGhost}>Marcar cobrado</button>
                                   <BotonEliminar onClick={() => eliminarFacturaVentaProyectada(f.id)} title="Eliminar factura proyectada" />
                                 </div>
                               </div>
@@ -7866,6 +7872,14 @@ export default function ConcretarApp() {
                                   </div>
                                 </div>
                               )}
+                              <div className="mt-1.5 border-t border-stone-100 pt-1.5">
+                                <ArchivoInput
+                                  label="Factura emitida (PDF o foto, una vez que la factures de verdad)"
+                                  value={f.archivo}
+                                  nombreArchivo={f.nombreArchivo}
+                                  onChange={(archivo, nombreArchivo, tipoArchivo) => adjuntarComprobanteFacturaProyectada(f, archivo, nombreArchivo, tipoArchivo)}
+                                />
+                              </div>
                             </div>
                           );
                         })}
@@ -12205,7 +12219,7 @@ export default function ConcretarApp() {
                                     {fmtFecha(fechaEstimada)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
                                   </span>
                                   <span className="font-mono font-semibold text-emerald-700">{fmtARS(f.monto)}</span>
-                                  <button onClick={() => convertirFacturaVentaProyectadaEnReal(f, "Cobrado")} className={btnGhost}>Marcar cobrado</button>
+                                  <button onClick={() => marcarFacturaProyectadaCobrada(f)} className={btnGhost}>Marcar cobrado</button>
                                 </div>
                               );
                             })}
