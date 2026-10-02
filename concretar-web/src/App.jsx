@@ -4176,7 +4176,7 @@ export default function ConcretarApp() {
   // Brutos, la segunda en qué mes aparece el ingreso proyectado en "Próximos pagos
   // e ingresos" — casi nunca son el mismo mes.
   const [showFacturaVentaProyectadaForm, setShowFacturaVentaProyectadaForm] = useState(false);
-  const emptyFacturaVentaProyectadaForm = { fecha: hoyISO(), fechaCobroEstimada: hoyISO(), monto: 0, tipoFactura: obraSel?.tipoFacturacion || "A" };
+  const emptyFacturaVentaProyectadaForm = { fecha: hoyISO(), fechaCobroEstimada: hoyISO(), concepto: "", monto: 0, tipoFactura: obraSel?.tipoFacturacion || "A", cuenta: CUENTAS[0], medioBancario: "Transferencia" };
   const [facturaVentaProyectadaForm, setFacturaVentaProyectadaForm] = useState(emptyFacturaVentaProyectadaForm);
   const [facturaVentaProyectadaMontoResetKey, setFacturaVentaProyectadaMontoResetKey] = useState(0);
   function submitFacturaVentaProyectadaForm(e) {
@@ -4185,8 +4185,11 @@ export default function ConcretarApp() {
       obraId: obraSel.id,
       fecha: facturaVentaProyectadaForm.fecha,
       fechaCobroEstimada: facturaVentaProyectadaForm.fechaCobroEstimada,
+      concepto: facturaVentaProyectadaForm.concepto,
       monto: Number(facturaVentaProyectadaForm.monto) || 0,
       tipoFactura: facturaVentaProyectadaForm.tipoFactura,
+      cuenta: facturaVentaProyectadaForm.cuenta,
+      medioBancario: facturaVentaProyectadaForm.cuenta === "Banco" ? facturaVentaProyectadaForm.medioBancario : null,
     }, setFacturasVentaProyectadas);
     setFacturaVentaProyectadaForm(emptyFacturaVentaProyectadaForm);
     setFacturaVentaProyectadaMontoResetKey((k) => k + 1);
@@ -4203,18 +4206,18 @@ export default function ConcretarApp() {
   }
   // No pide confirmación: no es un "eliminar" de verdad, es que la proyección ya
   // se cobró — crea directamente el ingreso Cobrado con la fecha, el monto, el
-  // tipo de factura y el comprobante que ya se hubiera adjuntado, y saca la
-  // proyección de la lista. Concepto y cuenta quedan con un valor por defecto,
-  // editable después con el lápiz de "Modificar" en la lista de cobros.
+  // tipo de factura, la cuenta/medio y el comprobante que ya se hubieran cargado
+  // en la proyección, y saca la proyección de la lista — así "Marcar cobrado"
+  // deja todo resuelto de una, sin tener que editarlo después.
   function marcarFacturaProyectadaCobrada(f) {
     addRecord("ingresos", {
       fecha: f.fecha,
       obraId: f.obraId,
-      concepto: "Factura de venta",
+      concepto: f.concepto || "Factura de venta",
       monto: f.monto,
       tipoFactura: f.tipoFactura,
-      cuenta: CUENTAS[0],
-      medioBancario: null,
+      cuenta: f.cuenta || CUENTAS[0],
+      medioBancario: f.cuenta === "Banco" ? f.medioBancario : null,
       estado: "Cobrado",
       fechaCobroEstimada: f.fechaCobroEstimada || f.fecha,
       archivo: f.archivo || null,
@@ -7797,6 +7800,9 @@ export default function ConcretarApp() {
                           <input type="date" value={facturaVentaProyectadaForm.fechaCobroEstimada} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, fechaCobroEstimada: e.target.value }))} required className={inputCls} />
                           <div className="mt-1 text-[11px] text-slate-400">Decide el mes en Próximos pagos e ingresos.</div>
                         </Field>
+                        <Field label="Concepto">
+                          <input value={facturaVentaProyectadaForm.concepto} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, concepto: e.target.value }))} placeholder="Ej: Certificado de avance 3" className={inputCls} />
+                        </Field>
                         <Field label="Monto ($)">
                           <MoneyInput key={facturaVentaProyectadaMontoResetKey} value={facturaVentaProyectadaForm.monto} onChange={(v) => setFacturaVentaProyectadaForm((f) => ({ ...f, monto: v }))} className={inputCls} />
                         </Field>
@@ -7805,6 +7811,19 @@ export default function ConcretarApp() {
                             {["A", "B", "C"].map((t) => <option key={t}>{t}</option>)}
                           </select>
                         </Field>
+                        <Field label="Cuenta">
+                          <select value={facturaVentaProyectadaForm.cuenta} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+                            {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                          </select>
+                        </Field>
+                        {facturaVentaProyectadaForm.cuenta === "Banco" && (
+                          <Field label="Medio">
+                            <select value={facturaVentaProyectadaForm.medioBancario} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, medioBancario: e.target.value }))} className={inputCls}>
+                              <option value="Transferencia">Transferencia</option>
+                              <option value="eCheq">eCheq</option>
+                            </select>
+                          </Field>
+                        )}
                         <div className="flex items-end gap-2">
                           <button type="submit" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Agregar</button>
                           <button type="button" onClick={() => setShowFacturaVentaProyectadaForm(false)} className={btnGhost}>Cancelar</button>
@@ -7841,8 +7860,11 @@ export default function ConcretarApp() {
                             <div key={f.id} className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-semibold text-slate-900">Factura {fmtFecha(f.fecha)}</span>
+                                  <span className="font-semibold text-slate-900">{f.concepto || `Factura ${fmtFecha(f.fecha)}`}</span>
                                   <span className="text-slate-400">· cobra {fmtFecha(f.fechaCobroEstimada || f.fecha)}</span>
+                                  {f.cuenta && (
+                                    <span className="flex items-center gap-1 text-slate-400"><CuentaIcon cuenta={f.cuenta} />{f.cuenta}{f.medioBancario ? ` · ${f.medioBancario}` : ""}</span>
+                                  )}
                                   <span className="rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">Factura {f.tipoFactura}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
