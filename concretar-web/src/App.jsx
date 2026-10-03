@@ -2023,6 +2023,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
       onGuardarCobro(editando.origenId, {
         socio: form.socio,
         fecha: form.fecha,
+        mes: form.mes || null,
         monto: Number(form.monto) || 0,
         cuenta: form.cuenta,
         medioBancario: form.cuenta === "Banco" ? form.medioBancario : null,
@@ -2231,6 +2232,17 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               </Field>
               <Field label="Fecha">
                 <input type="date" value={form.fecha} onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+              </Field>
+              <Field label="Mes planificado">
+                <div className="flex items-center gap-2">
+                  <MesPicker value={form.mes || hoyISO().slice(0, 7)} onChange={(v) => setForm((f) => ({ ...f, mes: v }))} />
+                  {form.mes && (
+                    <button type="button" onClick={() => setForm((f) => ({ ...f, mes: null }))} className="text-[11px] font-semibold text-slate-400 hover:text-rose-600">
+                      Quitar
+                    </button>
+                  )}
+                </div>
+                <div className="mt-1 text-[11px] text-slate-400">A qué mes de "Cobros Ricardo y Pablo" corresponde este cobro.</div>
               </Field>
               <Field label="Monto ($)">
                 <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} className={inputCls} />
@@ -2600,6 +2612,211 @@ function FormularioGastoRecurrente({ claveMes, onAgregar }) {
         <span className="flex items-center justify-center gap-1"><Plus size={13} /> Agregar gasto recurrente a {nombreMesClave(claveMes)}</span>
       </button>
     </form>
+  );
+}
+
+// Alta rápida de un cobro parcial de un socio, dentro del mes al que corresponde
+// (socio y mes ya los fija quien lo usa) — fecha/monto/cuenta siempre a la vista;
+// factura/comprobante/observaciones quedan atrás de "+ Factura o comprobante"
+// para no frenar la carga cuando es solo "cobramos una parte porque hacía falta".
+function FormularioCobroParcial({ onAgregar }) {
+  const [cuenta, setCuenta] = useState(CUENTAS[0]);
+  const [medioBancario, setMedioBancario] = useState("Transferencia");
+  const [tipoFactura, setTipoFactura] = useState("Sin factura");
+  const [archivo, setArchivo] = useState(null);
+  const [nombreArchivo, setNombreArchivo] = useState(null);
+  const [tipoArchivo, setTipoArchivo] = useState(null);
+  const [mostrarMas, setMostrarMas] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
+
+  return (
+    <form
+      className="mt-2 space-y-1.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        onAgregar({
+          fecha: f.get("fecha"),
+          monto: Number(f.get("monto")) || 0,
+          cuenta,
+          medioBancario: cuenta === "Banco" ? medioBancario : null,
+          tipoFactura,
+          observaciones: f.get("observaciones") || "",
+          archivo,
+          nombreArchivo,
+          tipoArchivo,
+        });
+        e.target.reset();
+        setCuenta(CUENTAS[0]);
+        setMedioBancario("Transferencia");
+        setTipoFactura("Sin factura");
+        setArchivo(null);
+        setNombreArchivo(null);
+        setTipoArchivo(null);
+        setMostrarMas(false);
+        setResetKey((k) => k + 1);
+      }}
+    >
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
+        <input name="fecha" type="date" defaultValue={hoyISO()} required className={`${inputCls} text-xs`} />
+        <MoneyInput key={resetKey} name="monto" placeholder="Monto" className={`${inputCls} text-xs`} />
+        <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={`${inputCls} text-xs`}>
+          {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+        </select>
+        {cuenta === "Banco" && (
+          <select value={medioBancario} onChange={(e) => setMedioBancario(e.target.value)} className={`${inputCls} text-xs`}>
+            <option value="Transferencia">Transferencia</option>
+            <option value="eCheq">eCheq</option>
+          </select>
+        )}
+        <button className="rounded-md bg-slate-900 px-2 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Agregar cobro</button>
+      </div>
+      <button type="button" onClick={() => setMostrarMas((v) => !v)} className="text-[11px] font-semibold text-slate-400 hover:text-slate-600">
+        {mostrarMas ? "Ocultar factura / comprobante" : "+ Factura / comprobante"}
+      </button>
+      {mostrarMas && (
+        <div className="grid grid-cols-1 gap-2 rounded-md border border-dashed border-stone-200 p-2 sm:grid-cols-2">
+          <Field label="Factura">
+            <select value={tipoFactura} onChange={(e) => setTipoFactura(e.target.value)} className={`${inputCls} text-xs`}>
+              {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="Observaciones">
+            <input name="observaciones" placeholder="Opcional" className={`${inputCls} text-xs`} />
+          </Field>
+          <div className="sm:col-span-2">
+            <ArchivoInput
+              label="Factura / comprobante (PDF o foto)"
+              value={archivo}
+              nombreArchivo={nombreArchivo}
+              onChange={(a, n, t) => { setArchivo(a); setNombreArchivo(n); setTipoArchivo(t); }}
+            />
+          </div>
+        </div>
+      )}
+    </form>
+  );
+}
+
+// Una fila (Ricardo o Pablo) dentro del bloque de un mes: muestra lo planificado
+// contra lo cobrado hasta ahora para ESE socio en ESE mes, con una barra de
+// progreso, y debajo el alta rápida de un cobro parcial más.
+function FilaSocioPlan({ socio, clave, planificado, cobrado, onAgregar }) {
+  const completo = planificado > 0 && cobrado >= planificado;
+  const pct = planificado > 0 ? Math.min(100, (cobrado / planificado) * 100) : (cobrado > 0 ? 100 : 0);
+  return (
+    <div className="p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-slate-900">{socio}</span>
+        <div className="flex items-center gap-3 text-xs text-slate-500">
+          <span>Planificado <span className="font-mono font-semibold text-slate-700">{fmtARS(planificado)}</span></span>
+          <span className={completo ? "font-semibold text-emerald-700" : ""}>Cobrado <span className="font-mono font-semibold">{fmtARS(cobrado)}</span></span>
+        </div>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-100">
+        <div className={`h-full ${completo ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
+      </div>
+      <div className="mt-1 text-[11px] text-slate-400">
+        {planificado === 0
+          ? "Sin monto planificado para este mes."
+          : completo
+          ? (cobrado > planificado ? `Completo — cobró ${fmtARS(cobrado - planificado)} de más.` : "Completo.")
+          : `Falta ${fmtARS(planificado - cobrado)}.`}
+      </div>
+      <FormularioCobroParcial onAgregar={(data) => onAgregar(socio, clave, data)} />
+    </div>
+  );
+}
+
+// Todo lo cobrado hasta el momento, en formato de tabla compacta (como una
+// planilla) — fecha, socio, mes al que correspondió, cuenta, factura y monto.
+// Reutiliza Editar/Eliminar de Movimientos en Cuentas, así queda todo en un solo
+// lugar para corregir algo que se cargó mal.
+function ModalHistorialCobrosSocios({ cobrosSocios, onEditar, onEliminar, onClose }) {
+  const [filtroSocio, setFiltroSocio] = useState("Todos");
+  const filas = cobrosSocios
+    .filter((c) => filtroSocio === "Todos" || c.socio === filtroSocio)
+    .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+  const total = filas.reduce((s, c) => s + (c.monto || 0), 0);
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-4xl rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h3 className="text-lg font-bold text-slate-900">Historial de cobros</h3>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            {["Todos", "Ricardo", "Pablo"].map((s) => (
+              <button
+                key={s}
+                onClick={() => setFiltroSocio(s)}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${filtroSocio === s ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-slate-500">Total: <span className="font-mono font-bold text-slate-800">{fmtARS(total)}</span></div>
+        </div>
+
+        <div className="max-h-[65vh] overflow-auto rounded-lg border border-stone-200">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-2 py-1.5">Fecha</th>
+                <th className="px-2 py-1.5">Socio</th>
+                <th className="px-2 py-1.5">Mes</th>
+                <th className="px-2 py-1.5">Cuenta</th>
+                <th className="px-2 py-1.5">Factura</th>
+                <th className="px-2 py-1.5 text-right">Monto</th>
+                <th className="px-2 py-1.5"></th>
+                <th className="px-2 py-1.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filas.length === 0 ? (
+                <tr><td colSpan={8} className="px-2 py-6 text-center text-slate-400">Todavía no hay cobros cargados.</td></tr>
+              ) : (
+                filas.map((c) => (
+                  <tr key={c.id} className="border-t border-stone-100">
+                    <td className="px-2 py-1 text-slate-600">{fmtFecha(c.fecha)}</td>
+                    <td className="px-2 py-1 font-medium text-slate-900">{c.socio}</td>
+                    <td className="px-2 py-1 text-slate-500">{c.mes ? nombreMesClave(c.mes) : "—"}</td>
+                    <td className="px-2 py-1 text-slate-600">
+                      <span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta} />{c.cuenta}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
+                    </td>
+                    <td className="px-2 py-1">
+                      {(!c.tipoFactura || c.tipoFactura === "Sin factura") ? (
+                        <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
+                      ) : (
+                        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">{c.tipoFactura}</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(c.monto)}</td>
+                    <td className="px-2 py-1">
+                      {c.archivo && (
+                        <a href={c.archivo} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-slate-500 hover:underline">
+                          <FileDown size={12} /> Ver
+                        </a>
+                      )}
+                    </td>
+                    <td className="px-2 py-1">
+                      <div className="flex items-center gap-1.5">
+                        <button type="button" onClick={() => onEditar(c)} className="text-slate-400 hover:text-slate-700" title="Editar"><Pencil size={12} /></button>
+                        <BotonEliminar onClick={() => onEliminar(c)} title="Eliminar cobro" />
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3064,8 +3281,10 @@ export default function ConcretarApp() {
   ];
 
   const DEMO_COBROS_SOCIOS = [
-    { id: 1, fecha: "2026-07-15", socio: "Ricardo", monto: 1500000, cuenta: "Banco", medioBancario: "Transferencia", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" },
-    { id: 2, fecha: "2026-08-01", socio: "Pablo", monto: 1200000, cuenta: "Efectivo", medioBancario: null, archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" },
+    { id: 1, fecha: "2026-07-15", socio: "Ricardo", monto: 1500000, cuenta: "Banco", medioBancario: "Transferencia", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "", mes: "2026-07" },
+    { id: 2, fecha: "2026-08-01", socio: "Pablo", monto: 1200000, cuenta: "Efectivo", medioBancario: null, archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "", mes: "2026-08" },
+    { id: 3, fecha: "2026-10-03", socio: "Ricardo", monto: 500000, cuenta: "Mercado Pago", medioBancario: null, archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "Adelanto, necesitábamos efectivo", mes: "2026-10" },
+    { id: 4, fecha: "2026-10-03", socio: "Pablo", monto: 500000, cuenta: "Mercado Pago", medioBancario: null, archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "Adelanto, necesitábamos efectivo", mes: "2026-10" },
   ];
 
   const DEMO_NOTAS_CREDITO = [
@@ -5129,35 +5348,18 @@ export default function ConcretarApp() {
 
   // ---------- Cobros Ricardo y Pablo (retiros de los socios) ----------
   const SOCIOS = ["Ricardo", "Pablo"];
-  const emptyCobroSocioForm = { fecha: hoyISO(), socio: SOCIOS[0], monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", tipoFactura: "Sin factura", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "" };
-  const [cobroSocioForm, setCobroSocioForm] = useState(emptyCobroSocioForm);
-  const [showCobroSocioForm, setShowCobroSocioForm] = useState(false);
-  const [filtroSocio, setFiltroSocio] = useState("Todos");
-  function submitCobroSocioForm(e) {
-    e.preventDefault();
-    addRecord("cobros_socios", {
-      ...cobroSocioForm,
-      monto: Number(cobroSocioForm.monto) || 0,
-      medioBancario: cobroSocioForm.cuenta === "Banco" ? cobroSocioForm.medioBancario : null,
-    }, setCobrosSocios);
-    setCobroSocioForm(emptyCobroSocioForm);
-    setShowCobroSocioForm(false);
-  }
   function totalCobradoPorSocio(socio) {
     return cobrosSocios.filter((c) => c.socio === socio).reduce((s, c) => s + (c.monto || 0), 0);
   }
-  const cobrosSociosFiltrados = cobrosSocios
-    .filter((c) => filtroSocio === "Todos" || c.socio === filtroSocio)
-    .sort(porCargado);
+  const [showHistorialCobrosSocios, setShowHistorialCobrosSocios] = useState(false);
 
   // ---------- Próximos sueldos (planificación de retiros futuros) ----------
   // Ricardo y Pablo siempre cobran juntos y por el mismo monto, así que se
-  // carga una sola fecha y un solo total (como en "Registrar juntos") y queda
-  // partido a la mitad en dos planificados, uno por socio — para que "Marcar
-  // cobrado" después pueda generar el cobro real de cada uno por separado.
-  // Es solo un calendario, sin cuenta ni factura: eso se completa recién
-  // cuando se marca cobrado y se carga el cobro real.
-  const [showSueldosPlanificados, setShowSueldosPlanificados] = useState(false);
+  // carga una sola fecha y un solo total y queda partido a la mitad en dos
+  // planificados, uno por socio. Es solo un calendario, sin cuenta ni factura
+  // — el plan queda para siempre como referencia (no se borra al cobrar), así
+  // se puede comparar mes a mes cuánto se planificó contra cuánto se cobró de
+  // verdad más abajo.
   const emptySueldoPlanForm = { fecha: hoyISO(), monto: 0 };
   const [sueldoPlanForm, setSueldoPlanForm] = useState(emptySueldoPlanForm);
   const [sueldoPlanMontoResetKey, setSueldoPlanMontoResetKey] = useState(0);
@@ -5170,8 +5372,9 @@ export default function ConcretarApp() {
     setSueldoPlanForm(emptySueldoPlanForm);
     setSueldoPlanMontoResetKey((k) => k + 1);
   }
-  // Agrupados por fecha para mostrar un solo renglón con el total (en vez de
-  // una fila por socio) — es lo que se cargó de una y lo que hay que cobrar.
+  // Agrupados por fecha exacta — lo usa el detalle de "Próximos pagos e ingresos",
+  // que necesita el día puntual en que sale la plata (un solo renglón con el total
+  // en vez de una fila por socio).
   const sueldosPlanificadosAgrupados = Object.values(
     sueldosPlanificados.reduce((acc, s) => {
       (acc[s.fecha] ??= { fecha: s.fecha, total: 0, items: [] }).total += s.monto || 0;
@@ -5179,27 +5382,42 @@ export default function ConcretarApp() {
       return acc;
     }, {})
   ).sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
-  function eliminarGrupoSueldoPlanificado(grupo) {
-    if (!window.confirm("¿Eliminar este sueldo planificado?")) return;
-    const ids = grupo.items.map((s) => s.id);
-    grupo.items.forEach((s) => { if (isSupabaseConfigured) sbDelete("sueldos_planificados", s.id).catch(() => {}); });
-    setSueldosPlanificados((prev) => prev.filter((x) => !ids.includes(x.id)));
-  }
-  // Al marcar cobrado no se pide confirmación (no es un "eliminar" de verdad,
-  // es que ese plan ya se cumplió) — se pre-carga "Registrar juntos" con la
-  // fecha y el total planificados, y se saca de la lista de próximos sueldos.
-  function marcarGrupoSueldoPlanificadoCobrado(grupo) {
-    setCobroJuntosForm({ ...emptyCobroJuntosForm, fecha: grupo.fecha, monto: grupo.total });
-    setShowCobroJuntosForm(true);
+  // Agrupados por MES y por socio por separado — lo usa la pantalla "Cobros Ricardo
+  // y Pablo", que compara mes a mes lo planificado contra lo cobrado de verdad (si
+  // hay dos fechas planificadas dentro del mismo mes, se suman en un solo total).
+  const sueldosPlanificadosPorMes = Object.values(
+    sueldosPlanificados.reduce((acc, s) => {
+      const clave = s.fecha.slice(0, 7);
+      const grupo = (acc[clave] ??= { clave, porSocio: {}, items: [] });
+      grupo.porSocio[s.socio] = (grupo.porSocio[s.socio] || 0) + (s.monto || 0);
+      grupo.items.push(s);
+      return acc;
+    }, {})
+  ).sort((a, b) => a.clave.localeCompare(b.clave));
+  function eliminarMesPlanificado(grupo) {
+    if (!window.confirm("¿Eliminar lo planificado para este mes? Los cobros reales ya cargados no se borran.")) return;
     const ids = grupo.items.map((s) => s.id);
     grupo.items.forEach((s) => { if (isSupabaseConfigured) sbDelete("sueldos_planificados", s.id).catch(() => {}); });
     setSueldosPlanificados((prev) => prev.filter((x) => !ids.includes(x.id)));
   }
 
+  // ---------- Cobros reales de Ricardo y Pablo, mes a mes ----------
+  // Cada cobro queda etiquetado con el "mes" al que corresponde (puede no ser el
+  // mes de su propia fecha — ej. un adelanto de hoy contra el sueldo del mes que
+  // viene). No siempre se cobra todo junto, así que puede haber varios cobros
+  // parciales por socio y por mes; se suman para compararlos contra lo planificado.
+  function cobradoPorSocioYMes(socio, clave) {
+    return cobrosSocios.filter((c) => c.socio === socio && c.mes === clave).reduce((s, c) => s + (c.monto || 0), 0);
+  }
+  function agregarCobroParcial(socio, clave, data) {
+    addRecord("cobros_socios", { socio, mes: clave, ...data }, setCobrosSocios);
+  }
+
   // "Registrar juntos": carga un solo total y lo parte a la mitad para cada socio,
   // pero queda guardado como dos cobros separados (uno por socio) en el historial —
   // y cada uno con SU PROPIA factura, porque aunque sea un solo retiro conjunto,
-  // cada socio le factura a Concretar por separado.
+  // cada socio le factura a Concretar por separado. Cuenta para el mes de su propia
+  // fecha (se puede corregir después desde "Historial de cobros" si hace falta).
   const emptyFacturaSocio = { tipoFactura: "Sin factura", archivo: null, nombreArchivo: null, tipoArchivo: null };
   const emptyCobroJuntosForm = {
     fecha: hoyISO(), monto: 0, cuenta: CUENTAS[0], medioBancario: "Transferencia", observaciones: "",
@@ -5218,6 +5436,7 @@ export default function ConcretarApp() {
       const factura = cobroJuntosForm.facturas[socio];
       await addRecord("cobros_socios", {
         fecha: cobroJuntosForm.fecha,
+        mes: cobroJuntosForm.fecha.slice(0, 7),
         monto: mitad,
         cuenta: cobroJuntosForm.cuenta,
         medioBancario: cobroJuntosForm.cuenta === "Banco" ? cobroJuntosForm.medioBancario : null,
@@ -12411,22 +12630,16 @@ export default function ConcretarApp() {
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cobros Ricardo y Pablo</h2>
               <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={() => setShowSueldosPlanificados((v) => !v)}
-                  className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
-                >
-                  <CalendarDays size={16} /> Próximos sueldos
-                </button>
-                <button
                   onClick={() => setShowCobroJuntosForm((v) => !v)}
                   className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
                 >
                   <Users size={16} /> Registrar juntos
                 </button>
                 <button
-                  onClick={() => setShowCobroSocioForm((v) => !v)}
+                  onClick={() => setShowHistorialCobrosSocios(true)}
                   className={btnPrimary}
                 >
-                  <Plus size={16} /> Registrar cobro
+                  <History size={16} /> Historial de cobros
                 </button>
               </div>
             </div>
@@ -12440,38 +12653,48 @@ export default function ConcretarApp() {
               ))}
             </div>
 
-            {showSueldosPlanificados && (
-              <Panel title="Próximos sueldos" action={<button onClick={() => setShowSueldosPlanificados(false)}><X size={16} /></button>}>
-                <div className="mb-3 text-xs text-slate-500">Ricardo y Pablo cobran siempre juntos y por el mismo monto: cargá la fecha y el total, y se reparte solo a la mitad para cada uno. Es solo un calendario, todavía no mueve plata de ninguna cuenta. Cuando llegue el día, usá "Marcar cobrado" para pasarlo a un cobro real.</div>
-                <form className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-3" onSubmit={submitSueldoPlanForm}>
-                  <Field label="Fecha">
-                    <input type="date" value={sueldoPlanForm.fecha} onChange={(e) => setSueldoPlanForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
-                  </Field>
-                  <Field label="Monto total ($)">
-                    <MoneyInput key={sueldoPlanMontoResetKey} value={sueldoPlanForm.monto} onChange={(v) => setSueldoPlanForm((f) => ({ ...f, monto: v }))} className={inputCls} />
-                  </Field>
-                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Agregar</button></div>
-                </form>
-                {sueldosPlanificadosAgrupados.length === 0 ? (
-                  <div className="text-xs text-slate-400">Todavía no hay sueldos planificados.</div>
-                ) : (
-                  <div className="space-y-1.5">
-                    {sueldosPlanificadosAgrupados.map((grupo) => (
-                      <div key={grupo.fecha} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 bg-white px-3 py-1.5 text-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-slate-900">Ricardo y Pablo</span>
-                          <span className="text-xs text-slate-500">{fmtFecha(grupo.fecha)} — {fmtARS(grupo.total / 2)} c/u</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-semibold text-slate-800">{fmtARS(grupo.total)}</span>
-                          <button onClick={() => marcarGrupoSueldoPlanificadoCobrado(grupo)} className={btnGhost}>Marcar cobrado</button>
-                          <BotonEliminar onClick={() => eliminarGrupoSueldoPlanificado(grupo)} title="Eliminar sueldo planificado" />
-                        </div>
-                      </div>
-                    ))}
+            <Panel title="Planificar un mes">
+              <div className="mb-3 text-xs text-slate-500">
+                Ricardo y Pablo cobran siempre juntos y por el mismo monto: cargá la fecha y el total, y se reparte solo a la
+                mitad para cada uno. Es solo un calendario, todavía no mueve plata de ninguna cuenta — después, mes a mes,
+                vas registrando los cobros reales de cada uno más abajo (a veces parciales).
+              </div>
+              <form className="grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-3" onSubmit={submitSueldoPlanForm}>
+                <Field label="Fecha">
+                  <input type="date" value={sueldoPlanForm.fecha} onChange={(e) => setSueldoPlanForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+                </Field>
+                <Field label="Monto total ($)">
+                  <MoneyInput key={sueldoPlanMontoResetKey} value={sueldoPlanForm.monto} onChange={(v) => setSueldoPlanForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+                </Field>
+                <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Agregar</button></div>
+              </form>
+            </Panel>
+
+            {sueldosPlanificadosPorMes.length === 0 ? (
+              <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay meses planificados.</div>
+            ) : (
+              <div className="space-y-3">
+                {sueldosPlanificadosPorMes.map((grupo) => (
+                  <div key={grupo.clave} className="rounded-lg border border-stone-200 bg-white">
+                    <div className="flex items-center justify-between border-b border-stone-100 px-3 py-2">
+                      <span className="text-sm font-bold text-slate-900">{nombreMesClave(grupo.clave)}</span>
+                      <BotonEliminar onClick={() => eliminarMesPlanificado(grupo)} title="Eliminar mes planificado" />
+                    </div>
+                    <div className="divide-y divide-stone-100">
+                      {SOCIOS.map((socio) => (
+                        <FilaSocioPlan
+                          key={socio}
+                          socio={socio}
+                          clave={grupo.clave}
+                          planificado={grupo.porSocio[socio] || 0}
+                          cobrado={cobradoPorSocioYMes(socio, grupo.clave)}
+                          onAgregar={agregarCobroParcial}
+                        />
+                      ))}
+                    </div>
                   </div>
-                )}
-              </Panel>
+                ))}
+              </div>
             )}
 
             {showCobroJuntosForm && (
@@ -12530,103 +12753,6 @@ export default function ConcretarApp() {
               </Panel>
             )}
 
-            {showCobroSocioForm && (
-              <Panel title="Registrar cobro" action={<button onClick={() => setShowCobroSocioForm(false)}><X size={16} /></button>}>
-                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitCobroSocioForm}>
-                  <Field label="Socio">
-                    <select value={cobroSocioForm.socio} onChange={(e) => setCobroSocioForm((f) => ({ ...f, socio: e.target.value }))} className={inputCls}>
-                      {SOCIOS.map((s) => <option key={s}>{s}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Fecha">
-                    <input type="date" value={cobroSocioForm.fecha} onChange={(e) => setCobroSocioForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
-                  </Field>
-                  <Field label="Monto ($)">
-                    <MoneyInput value={cobroSocioForm.monto} onChange={(v) => setCobroSocioForm((f) => ({ ...f, monto: v }))} className={inputCls} />
-                  </Field>
-                  <Field label="Cuenta de la que sale">
-                    <select value={cobroSocioForm.cuenta} onChange={(e) => setCobroSocioForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
-                      {CUENTAS.map((c) => <option key={c}>{c}</option>)}
-                    </select>
-                  </Field>
-                  {cobroSocioForm.cuenta === "Banco" && (
-                    <Field label="Medio">
-                      <select value={cobroSocioForm.medioBancario} onChange={(e) => setCobroSocioForm((f) => ({ ...f, medioBancario: e.target.value }))} className={inputCls}>
-                        <option value="Transferencia">Transferencia</option>
-                        <option value="eCheq">eCheq</option>
-                      </select>
-                    </Field>
-                  )}
-                  <Field label="Factura">
-                    <select value={cobroSocioForm.tipoFactura} onChange={(e) => setCobroSocioForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
-                      {TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Observaciones">
-                    <input value={cobroSocioForm.observaciones} onChange={(e) => setCobroSocioForm((f) => ({ ...f, observaciones: e.target.value }))} placeholder="Opcional" className={inputCls} />
-                  </Field>
-                  <div className="md:col-span-2">
-                    <ArchivoInput
-                      label="Factura / comprobante (PDF o foto)"
-                      value={cobroSocioForm.archivo}
-                      nombreArchivo={cobroSocioForm.nombreArchivo}
-                      onChange={(archivo, nombreArchivo, tipoArchivo) => setCobroSocioForm((f) => ({ ...f, archivo, nombreArchivo, tipoArchivo }))}
-                    />
-                  </div>
-                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
-                </form>
-              </Panel>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              {["Todos", ...SOCIOS].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setFiltroSocio(s)}
-                  className={`rounded-md px-3 py-2 text-sm font-semibold ${filtroSocio === s ? "bg-amber-500 text-slate-900" : "border border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-
-            {cobrosSociosFiltrados.length === 0 ? (
-              <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay cobros cargados.</div>
-            ) : (
-              <div className="space-y-2">
-                {cobrosSociosFiltrados.map((c) => (
-                  <div key={c.id} className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-900">{c.socio}</span>
-                        <span className="text-xs text-slate-500">{fmtFecha(c.fecha)}</span>
-                        {(!c.tipoFactura || c.tipoFactura === "Sin factura") ? (
-                          <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
-                        ) : (
-                          <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{c.tipoFactura}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-base font-bold text-rose-600">{fmtARS(c.monto)}</span>
-                        <button onClick={() => setEditandoMovimiento({ origen: "cobros_socios", origenId: c.id })} className={btnGhost}>
-                          <span className="flex items-center gap-1"><Pencil size={12} /> Editar</span>
-                        </button>
-                        <BotonEliminar onClick={() => moverAPapelera("cobros_socios", c.id, setCobrosSocios, `Cobro de ${c.socio}`)} title="Eliminar cobro" />
-                      </div>
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                      <span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta} />{c.cuenta}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
-                      {c.observaciones && <span>{c.observaciones}</span>}
-                      {c.archivo && (
-                        <a href={c.archivo} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-slate-600 hover:underline">
-                          <FileDown size={13} /> {c.nombreArchivo || "Ver comprobante"}
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
@@ -13514,6 +13640,15 @@ export default function ConcretarApp() {
           onAgregar={(claveMes, data) => addRecord("gastos_recurrentes", { claveMes, ...data }, setGastosRecurrentes)}
           onEliminar={(id) => deleteRecord("gastos_recurrentes", id, setGastosRecurrentes)}
           onClose={() => setShowGastosRecurrentesModal(false)}
+        />
+      )}
+
+      {showHistorialCobrosSocios && (
+        <ModalHistorialCobrosSocios
+          cobrosSocios={cobrosSocios}
+          onEditar={(c) => { setShowHistorialCobrosSocios(false); setEditandoMovimiento({ origen: "cobros_socios", origenId: c.id }); }}
+          onEliminar={(c) => moverAPapelera("cobros_socios", c.id, setCobrosSocios, `Cobro de ${c.socio}`)}
+          onClose={() => setShowHistorialCobrosSocios(false)}
         />
       )}
     </div>
