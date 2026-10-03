@@ -2730,16 +2730,38 @@ function FilaSocioPlan({ socio, clave, planificado, cobrado, onAgregar }) {
   );
 }
 
-// Todo lo cobrado hasta el momento, en formato de tabla compacta (como una
-// planilla) — fecha, socio, mes al que correspondió, cuenta, factura y monto.
-// Reutiliza Editar/Eliminar de Movimientos en Cuentas, así queda todo en un solo
-// lugar para corregir algo que se cargó mal.
+// Todo lo cobrado hasta el momento, agrupado por mes (el que se eligió al
+// cargar cada cobro, no necesariamente el de su fecha real) — un resumen por
+// mes con el total de cada socio, y al entrar a un mes se ve el detalle día a
+// día de cuándo se hizo cada pago. Reutiliza Editar/Eliminar de Movimientos en
+// Cuentas, así queda todo en un solo lugar para corregir algo que se cargó mal.
 function ModalHistorialCobrosSocios({ cobrosSocios, onEditar, onEliminar, onClose }) {
   const [filtroSocio, setFiltroSocio] = useState("Todos");
-  const filas = cobrosSocios
-    .filter((c) => filtroSocio === "Todos" || c.socio === filtroSocio)
-    .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
+  const [mesesExpandidos, setMesesExpandidos] = useState(new Set());
+  function toggleMes(clave) {
+    setMesesExpandidos((prev) => {
+      const next = new Set(prev);
+      if (next.has(clave)) next.delete(clave); else next.add(clave);
+      return next;
+    });
+  }
+
+  const filas = cobrosSocios.filter((c) => filtroSocio === "Todos" || c.socio === filtroSocio);
   const total = filas.reduce((s, c) => s + (c.monto || 0), 0);
+
+  const porMes = Object.values(
+    filas.reduce((acc, c) => {
+      const clave = c.mes || "sin-mes";
+      const grupo = (acc[clave] ??= { clave, items: [], porSocio: {} });
+      grupo.items.push(c);
+      grupo.porSocio[c.socio] = (grupo.porSocio[c.socio] || 0) + (c.monto || 0);
+      return acc;
+    }, {})
+  ).sort((a, b) => {
+    if (a.clave === "sin-mes") return 1;
+    if (b.clave === "sin-mes") return -1;
+    return b.clave.localeCompare(a.clave);
+  });
 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
@@ -2764,58 +2786,86 @@ function ModalHistorialCobrosSocios({ cobrosSocios, onEditar, onEliminar, onClos
           <div className="text-xs text-slate-500">Total: <span className="font-mono font-bold text-slate-800">{fmtARS(total)}</span></div>
         </div>
 
-        <div className="max-h-[65vh] overflow-auto rounded-lg border border-stone-200">
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-2 py-1.5">Fecha</th>
-                <th className="px-2 py-1.5">Socio</th>
-                <th className="px-2 py-1.5">Mes</th>
-                <th className="px-2 py-1.5">Cuenta</th>
-                <th className="px-2 py-1.5">Factura</th>
-                <th className="px-2 py-1.5 text-right">Monto</th>
-                <th className="px-2 py-1.5"></th>
-                <th className="px-2 py-1.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filas.length === 0 ? (
-                <tr><td colSpan={8} className="px-2 py-6 text-center text-slate-400">Todavía no hay cobros cargados.</td></tr>
-              ) : (
-                filas.map((c) => (
-                  <tr key={c.id} className="border-t border-stone-100">
-                    <td className="px-2 py-1 text-slate-600">{fmtFecha(c.fecha)}</td>
-                    <td className="px-2 py-1 font-medium text-slate-900">{c.socio}</td>
-                    <td className="px-2 py-1 text-slate-500">{c.mes ? nombreMesClave(c.mes) : "—"}</td>
-                    <td className="px-2 py-1 text-slate-600">
-                      <span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta} />{c.cuenta}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
-                    </td>
-                    <td className="px-2 py-1">
-                      {(!c.tipoFactura || c.tipoFactura === "Sin factura") ? (
-                        <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
-                      ) : (
-                        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">{c.tipoFactura}</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(c.monto)}</td>
-                    <td className="px-2 py-1">
-                      {c.archivo && (
-                        <a href={c.archivo} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-slate-500 hover:underline">
-                          <FileDown size={12} /> Ver
-                        </a>
-                      )}
-                    </td>
-                    <td className="px-2 py-1">
-                      <div className="flex items-center gap-1.5">
-                        <button type="button" onClick={() => onEditar(c)} className="text-slate-400 hover:text-slate-700" title="Editar"><Pencil size={12} /></button>
-                        <BotonEliminar onClick={() => onEliminar(c)} title="Eliminar cobro" />
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="max-h-[65vh] space-y-1.5 overflow-y-auto">
+          {porMes.length === 0 ? (
+            <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay cobros cargados.</div>
+          ) : (
+            porMes.map((grupo) => {
+              const expandido = mesesExpandidos.has(grupo.clave);
+              const totalMes = grupo.items.reduce((s, c) => s + (c.monto || 0), 0);
+              return (
+                <div key={grupo.clave} className="rounded-lg border border-stone-200 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => toggleMes(grupo.clave)}
+                    className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 text-left hover:bg-stone-50"
+                  >
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
+                      {expandido ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      {grupo.clave === "sin-mes" ? "Sin mes asignado" : nombreMesClave(grupo.clave)}
+                    </span>
+                    <span className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+                      {Object.entries(grupo.porSocio).map(([socio, monto]) => (
+                        <span key={socio}>{socio} <span className="font-mono font-semibold text-slate-700">{fmtARS(monto)}</span></span>
+                      ))}
+                      <span className="font-mono font-semibold text-slate-800">{fmtARS(totalMes)}</span>
+                    </span>
+                  </button>
+                  {expandido && (
+                    <div className="overflow-x-auto border-t border-stone-100">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-2 py-1.5">Fecha de pago</th>
+                            <th className="px-2 py-1.5">Socio</th>
+                            <th className="px-2 py-1.5">Cuenta</th>
+                            <th className="px-2 py-1.5">Factura</th>
+                            <th className="px-2 py-1.5 text-right">Monto</th>
+                            <th className="px-2 py-1.5"></th>
+                            <th className="px-2 py-1.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {grupo.items
+                            .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha))
+                            .map((c) => (
+                              <tr key={c.id} className="border-t border-stone-100">
+                                <td className="px-2 py-1 text-slate-600">{fmtFecha(c.fecha)}</td>
+                                <td className="px-2 py-1 font-medium text-slate-900">{c.socio}</td>
+                                <td className="px-2 py-1 text-slate-600">
+                                  <span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta} />{c.cuenta}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
+                                </td>
+                                <td className="px-2 py-1">
+                                  {(!c.tipoFactura || c.tipoFactura === "Sin factura") ? (
+                                    <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">S/F</span>
+                                  ) : (
+                                    <span className="rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">{c.tipoFactura}</span>
+                                  )}
+                                </td>
+                                <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(c.monto)}</td>
+                                <td className="px-2 py-1">
+                                  {c.archivo && (
+                                    <a href={c.archivo} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-slate-500 hover:underline">
+                                      <FileDown size={12} /> Ver
+                                    </a>
+                                  )}
+                                </td>
+                                <td className="px-2 py-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <button type="button" onClick={() => onEditar(c)} className="text-slate-400 hover:text-slate-700" title="Editar"><Pencil size={12} /></button>
+                                    <BotonEliminar onClick={() => onEliminar(c)} title="Eliminar cobro" />
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>
@@ -3305,6 +3355,10 @@ export default function ConcretarApp() {
   // socio, mitad y mitad) por cada fecha — no mueve plata todavía, eso recién
   // pasa cuando se marca cobrado y se registra como cobro real.
   const DEMO_SUELDOS_PLANIFICADOS = [
+    // Agosto queda viejo (hoy es octubre) — sirve para probar que ya no se
+    // muestra en "Cobros Ricardo y Pablo" (solo sigue en "Historial de cobros").
+    { id: 5, socio: "Ricardo", fecha: "2026-08-15", monto: 1200000 },
+    { id: 6, socio: "Pablo", fecha: "2026-08-15", monto: 1200000 },
     { id: 1, socio: "Ricardo", fecha: "2026-10-05", monto: 1500000 },
     { id: 2, socio: "Pablo", fecha: "2026-10-05", monto: 1500000 },
     { id: 3, socio: "Ricardo", fecha: "2026-10-20", monto: 1000000 },
@@ -5408,6 +5462,10 @@ export default function ConcretarApp() {
       return acc;
     }, {})
   ).sort((a, b) => a.clave.localeCompare(b.clave));
+  // En la pantalla de "Cobros Ricardo y Pablo" solo interesa ver el mes anterior
+  // (para terminar de cobrarlo) en adelante — los meses más viejos que ya quedaron
+  // atrás no se muestran más ahí (siguen enteros en "Historial de cobros").
+  const mesesPlanAMostrar = sueldosPlanificadosPorMes.filter((g) => g.clave >= shiftMes(hoyISO().slice(0, 7), -1));
   function eliminarMesPlanificado(grupo) {
     if (!window.confirm("¿Eliminar lo planificado para este mes? Los cobros reales ya cargados no se borran.")) return;
     const ids = grupo.items.map((s) => s.id);
@@ -12692,11 +12750,11 @@ export default function ConcretarApp() {
               </Panel>
             )}
 
-            {sueldosPlanificadosPorMes.length === 0 ? (
+            {mesesPlanAMostrar.length === 0 ? (
               <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay meses planificados.</div>
             ) : (
               <div className="space-y-1.5">
-                {sueldosPlanificadosPorMes.map((grupo) => {
+                {mesesPlanAMostrar.map((grupo) => {
                   const expandido = mesesPlanExpandidos.has(grupo.clave);
                   return (
                     <div key={grupo.clave} className="rounded-lg border border-stone-200 bg-white">
