@@ -226,10 +226,12 @@ const ROLES_FINANZAS = ["Gerente", "Contador"];
 // Precios de pedidos de obra: el capataz arma el pedido a ciegas (sin precios ni proveedor),
 // eso lo ve y lo carga Logística cuando el pedido llega aprobado.
 const ROLES_VEN_PRECIOS_PEDIDO = ["Gerente", "Contador", "Logística"];
-const CUENTAS = ["Efectivo", "Banco", "Mercado Pago"];
+// Hay dos cuentas de Mercado Pago (una por socio) — van separadas para no mezclar
+// la plata de una con la de la otra.
+const CUENTAS = ["Efectivo", "Banco", "MP Pablo", "MP Ricardo"];
 // "Cuenta corriente" es su propia forma de pago (no es un medio del Banco: es una
 // deuda con el proveedor, todavía no se sabe por qué canal real se va a saldar).
-const FORMAS_PAGO = ["Banco", "Mercado Pago", "Efectivo", "Cuenta corriente"];
+const FORMAS_PAGO = ["Banco", "MP Pablo", "MP Ricardo", "Efectivo", "Cuenta corriente"];
 // "eCheq" sí es un medio del Banco: queda "Pendiente" hasta su fecha en vez de
 // acreditarse al toque como Débito/Transferencia y Crédito.
 const MEDIOS_BANCARIOS = ["Débito/Transferencia", "eCheq", "Crédito"];
@@ -355,7 +357,7 @@ function EspecialidadIcon({ especialidad, size = 13 }) {
   );
 }
 
-const ICONO_CUENTA = { Efectivo: Banknote, Banco: Landmark, "Mercado Pago": Smartphone };
+const ICONO_CUENTA = { Efectivo: Banknote, Banco: Landmark, "MP Pablo": Smartphone, "MP Ricardo": Smartphone, "Mercado Pago": Smartphone };
 
 function CuentaIcon({ cuenta, size = 13 }) {
   const IconComp = ICONO_CUENTA[cuenta];
@@ -3255,7 +3257,7 @@ export default function ConcretarApp() {
     { id: 4, fecha: "2026-05-22", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 5300000, comprobante: "A-0001-00012551", estado: "Pagada", tipoFactura: "Sin factura", cuenta: "Efectivo" },
     { id: 5, fecha: "2026-06-19", obraId: 1, ordenCompraId: 1, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 4200000, comprobante: "A-0003-00009087", estado: "Pagada", tipoFactura: "A", cuenta: "Banco" },
     { id: 6, fecha: "2026-07-25", obraId: 1, ordenCompraId: 2, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 6800000, comprobante: "B-0001-00000442", estado: "Pendiente", tipoFactura: "B", cuenta: "Banco" },
-    { id: 7, fecha: "2026-05-10", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 3800000, comprobante: "A-0001-00012470", estado: "Pagada", tipoFactura: "A", cuenta: "Mercado Pago" },
+    { id: 7, fecha: "2026-05-10", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 3800000, comprobante: "A-0001-00012470", estado: "Pagada", tipoFactura: "A", cuenta: "MP Pablo" },
     { id: 8, fecha: "2026-06-14", obraId: 2, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 2600000, comprobante: "A-0001-00012600", estado: "Pagada", tipoFactura: "Sin factura", cuenta: "Efectivo" },
     { id: 9, fecha: "2026-07-15", obraId: 2, ordenCompraId: 3, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 1500000, comprobante: "A-0004-00001180", estado: "Pendiente", tipoFactura: "A", cuenta: "Banco" },
     { id: 10, fecha: "2026-08-20", obraId: 1, ordenCompraId: null, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 2000000, estado: "Pendiente", tipoFactura: "B", formaPago: "eCheq", fechaPagoEcheq: "2026-10-15", cuenta: "Banco" },
@@ -3267,7 +3269,7 @@ export default function ConcretarApp() {
     { id: 1, fecha: "2026-02-05", obraId: 1, concepto: "Anticipo certificado 1", monto: 20000000, tipoFactura: "A", cuenta: "Banco", estado: "Cobrado" },
     { id: 2, fecha: "2026-04-10", obraId: 1, concepto: "Certificado de avance 2", monto: 18000000, tipoFactura: "A", cuenta: "Banco", estado: "Cobrado" },
     { id: 3, fecha: "2026-05-15", obraId: 1, concepto: "Adicional acordado con el cliente", monto: 6000000, tipoFactura: "Sin factura", cuenta: "Efectivo", estado: "Cobrado" },
-    { id: 4, fecha: "2026-05-01", obraId: 2, concepto: "Anticipo Fam. Ledesma", monto: 12000000, tipoFactura: "B", cuenta: "Mercado Pago", estado: "Cobrado" },
+    { id: 4, fecha: "2026-05-01", obraId: 2, concepto: "Anticipo Fam. Ledesma", monto: 12000000, tipoFactura: "B", cuenta: "MP Pablo", estado: "Cobrado" },
     { id: 5, fecha: "2026-06-20", obraId: 2, concepto: "Pago en mano acordado", monto: 4000000, tipoFactura: "Sin factura", cuenta: "Efectivo", estado: "Cobrado" },
     { id: 6, fecha: "2026-09-20", obraId: 1, concepto: "Certificado de avance 3", monto: 15000000, tipoFactura: "A", cuenta: "Banco", medioBancario: "eCheq", estado: "Pendiente", fechaCobroEstimada: "2026-10-05" },
   ];
@@ -3283,8 +3285,8 @@ export default function ConcretarApp() {
   const DEMO_COBROS_SOCIOS = [
     { id: 1, fecha: "2026-07-15", socio: "Ricardo", monto: 1500000, cuenta: "Banco", medioBancario: "Transferencia", archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "", mes: "2026-07" },
     { id: 2, fecha: "2026-08-01", socio: "Pablo", monto: 1200000, cuenta: "Efectivo", medioBancario: null, archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "", mes: "2026-08" },
-    { id: 3, fecha: "2026-10-03", socio: "Ricardo", monto: 500000, cuenta: "Mercado Pago", medioBancario: null, archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "Adelanto, necesitábamos efectivo", mes: "2026-10" },
-    { id: 4, fecha: "2026-10-03", socio: "Pablo", monto: 500000, cuenta: "Mercado Pago", medioBancario: null, archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "Adelanto, necesitábamos efectivo", mes: "2026-10" },
+    { id: 3, fecha: "2026-10-03", socio: "Ricardo", monto: 500000, cuenta: "MP Ricardo", medioBancario: null, archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "Adelanto, necesitábamos efectivo", mes: "2026-10" },
+    { id: 4, fecha: "2026-10-03", socio: "Pablo", monto: 500000, cuenta: "MP Pablo", medioBancario: null, archivo: null, nombreArchivo: null, tipoArchivo: null, observaciones: "Adelanto, necesitábamos efectivo", mes: "2026-10" },
   ];
 
   const DEMO_NOTAS_CREDITO = [
@@ -5255,7 +5257,7 @@ export default function ConcretarApp() {
     setAvanceAbiertoId(avance.tanteroId);
   }
 
-  // ---------- Resumen de Cuentas (Efectivo/Banco/Mercado Pago) ----------
+  // ---------- Resumen de Cuentas (Efectivo/Banco/MP Pablo/MP Ricardo) ----------
   const canVerFinanzas = ROLES_FINANZAS.includes(currentRole);
   // El capataz arma el pedido de obra sin ver precios ni proveedor — eso es cosa de Logística.
   const canVerPreciosPedido = ROLES_VEN_PRECIOS_PEDIDO.includes(currentRole);
@@ -6414,7 +6416,7 @@ export default function ConcretarApp() {
     setAgregandoNotaCreditoId(null);
   }
   function marcarFacturaPagada(factura) {
-    // Restaura la cuenta real (Banco/Efectivo/Mercado Pago) para que vuelva a contar
+    // Restaura la cuenta real (Banco/Efectivo/MP Pablo/MP Ricardo) para que vuelva a contar
     // en su balance — por si venía de marcarCompraPendiente, que la había vaciado.
     // Los gastos viejos que todavía tienen el formaPago plano "eCheq" (de antes de
     // anidarlo bajo Banco) cuentan igual a la balanza de Banco.
