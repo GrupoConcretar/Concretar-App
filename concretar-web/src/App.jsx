@@ -5354,6 +5354,7 @@ export default function ConcretarApp() {
     return cobrosSocios.filter((c) => c.socio === socio).reduce((s, c) => s + (c.monto || 0), 0);
   }
   const [showHistorialCobrosSocios, setShowHistorialCobrosSocios] = useState(false);
+  const [showPlanificarMes, setShowPlanificarMes] = useState(false);
   // Cada mes arranca colapsado mostrando solo el resumen (cobrado/planificado por
   // socio) — se despliega el detalle completo (barra de progreso + alta de cobro)
   // tocándolo.
@@ -12643,6 +12644,12 @@ export default function ConcretarApp() {
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cobros Ricardo y Pablo</h2>
               <div className="flex flex-wrap gap-2">
                 <button
+                  onClick={() => setShowPlanificarMes((v) => !v)}
+                  className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
+                >
+                  <CalendarDays size={16} /> Planificación de sueldos
+                </button>
+                <button
                   onClick={() => setShowCobroJuntosForm((v) => !v)}
                   className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
                 >
@@ -12666,22 +12673,24 @@ export default function ConcretarApp() {
               ))}
             </div>
 
-            <Panel title="Planificar un mes">
-              <div className="mb-3 text-xs text-slate-500">
-                Ricardo y Pablo cobran siempre juntos y por el mismo monto: cargá la fecha y el total, y se reparte solo a la
-                mitad para cada uno. Es solo un calendario, todavía no mueve plata de ninguna cuenta — después, mes a mes,
-                vas registrando los cobros reales de cada uno más abajo (a veces parciales).
-              </div>
-              <form className="grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-3" onSubmit={submitSueldoPlanForm}>
-                <Field label="Fecha">
-                  <input type="date" value={sueldoPlanForm.fecha} onChange={(e) => setSueldoPlanForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
-                </Field>
-                <Field label="Monto total ($)">
-                  <MoneyInput key={sueldoPlanMontoResetKey} value={sueldoPlanForm.monto} onChange={(v) => setSueldoPlanForm((f) => ({ ...f, monto: v }))} className={inputCls} />
-                </Field>
-                <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Agregar</button></div>
-              </form>
-            </Panel>
+            {showPlanificarMes && (
+              <Panel title="Planificar un mes" action={<button onClick={() => setShowPlanificarMes(false)}><X size={16} /></button>}>
+                <div className="mb-3 text-xs text-slate-500">
+                  Ricardo y Pablo cobran siempre juntos y por el mismo monto: cargá la fecha y el total, y se reparte solo a la
+                  mitad para cada uno. Es solo un calendario, todavía no mueve plata de ninguna cuenta — después, mes a mes,
+                  vas registrando los cobros reales de cada uno más abajo (a veces parciales).
+                </div>
+                <form className="grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-3" onSubmit={submitSueldoPlanForm}>
+                  <Field label="Fecha">
+                    <input type="date" value={sueldoPlanForm.fecha} onChange={(e) => setSueldoPlanForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+                  </Field>
+                  <Field label="Monto total ($)">
+                    <MoneyInput key={sueldoPlanMontoResetKey} value={sueldoPlanForm.monto} onChange={(v) => setSueldoPlanForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+                  </Field>
+                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Agregar</button></div>
+                </form>
+              </Panel>
+            )}
 
             {sueldosPlanificadosPorMes.length === 0 ? (
               <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay meses planificados.</div>
