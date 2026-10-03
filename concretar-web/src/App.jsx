@@ -2631,7 +2631,7 @@ function FormularioCobroParcial({ onAgregar }) {
 
   return (
     <form
-      className="mt-2 space-y-1.5"
+      className="mt-1.5 space-y-1"
       onSubmit={(e) => {
         e.preventDefault();
         const f = new FormData(e.target);
@@ -2705,18 +2705,18 @@ function FilaSocioPlan({ socio, clave, planificado, cobrado, onAgregar }) {
   const completo = planificado > 0 && cobrado >= planificado;
   const pct = planificado > 0 ? Math.min(100, (cobrado / planificado) * 100) : (cobrado > 0 ? 100 : 0);
   return (
-    <div className="p-3">
+    <div className="p-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-slate-900">{socio}</span>
-        <div className="flex items-center gap-3 text-xs text-slate-500">
+        <span className="text-xs font-semibold text-slate-900">{socio}</span>
+        <div className="flex items-center gap-2 text-[11px] text-slate-500">
           <span>Planificado <span className="font-mono font-semibold text-slate-700">{fmtARS(planificado)}</span></span>
           <span className={completo ? "font-semibold text-emerald-700" : ""}>Cobrado <span className="font-mono font-semibold">{fmtARS(cobrado)}</span></span>
         </div>
       </div>
-      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-100">
+      <div className="mt-1 h-1 overflow-hidden rounded-full bg-stone-100">
         <div className={`h-full ${completo ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
       </div>
-      <div className="mt-1 text-[11px] text-slate-400">
+      <div className="mt-0.5 text-[10px] text-slate-400">
         {planificado === 0
           ? "Sin monto planificado para este mes."
           : completo
@@ -5352,6 +5352,17 @@ export default function ConcretarApp() {
     return cobrosSocios.filter((c) => c.socio === socio).reduce((s, c) => s + (c.monto || 0), 0);
   }
   const [showHistorialCobrosSocios, setShowHistorialCobrosSocios] = useState(false);
+  // Cada mes arranca colapsado mostrando solo el resumen (cobrado/planificado por
+  // socio) — se despliega el detalle completo (barra de progreso + alta de cobro)
+  // tocándolo.
+  const [mesesPlanExpandidos, setMesesPlanExpandidos] = useState(new Set());
+  function toggleMesPlanExpandido(clave) {
+    setMesesPlanExpandidos((prev) => {
+      const next = new Set(prev);
+      if (next.has(clave)) next.delete(clave); else next.add(clave);
+      return next;
+    });
+  }
 
   // ---------- Próximos sueldos (planificación de retiros futuros) ----------
   // Ricardo y Pablo siempre cobran juntos y por el mismo monto, así que se
@@ -12673,27 +12684,54 @@ export default function ConcretarApp() {
             {sueldosPlanificadosPorMes.length === 0 ? (
               <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">Todavía no hay meses planificados.</div>
             ) : (
-              <div className="space-y-3">
-                {sueldosPlanificadosPorMes.map((grupo) => (
-                  <div key={grupo.clave} className="rounded-lg border border-stone-200 bg-white">
-                    <div className="flex items-center justify-between border-b border-stone-100 px-3 py-2">
-                      <span className="text-sm font-bold text-slate-900">{nombreMesClave(grupo.clave)}</span>
-                      <BotonEliminar onClick={() => eliminarMesPlanificado(grupo)} title="Eliminar mes planificado" />
+              <div className="space-y-1.5">
+                {sueldosPlanificadosPorMes.map((grupo) => {
+                  const expandido = mesesPlanExpandidos.has(grupo.clave);
+                  return (
+                    <div key={grupo.clave} className="rounded-lg border border-stone-200 bg-white">
+                      <div className="flex items-center gap-2 px-3 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleMesPlanExpandido(grupo.clave)}
+                          className="flex flex-1 flex-wrap items-center gap-3 py-0.5 text-left"
+                        >
+                          <span className="flex items-center gap-1 text-sm font-bold text-slate-900">
+                            {expandido ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            {nombreMesClave(grupo.clave)}
+                          </span>
+                          <span className="flex flex-wrap items-center gap-2.5 text-[11px]">
+                            {SOCIOS.map((socio) => {
+                              const planificado = grupo.porSocio[socio] || 0;
+                              const cobrado = cobradoPorSocioYMes(socio, grupo.clave);
+                              const completo = planificado > 0 && cobrado >= planificado;
+                              return (
+                                <span key={socio} className="flex items-center gap-1 text-slate-500">
+                                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${completo ? "bg-emerald-500" : "bg-amber-500"}`} />
+                                  {socio} <span className="font-mono font-semibold text-slate-700">{fmtARS(cobrado)}</span>/<span className="font-mono">{fmtARS(planificado)}</span>
+                                </span>
+                              );
+                            })}
+                          </span>
+                        </button>
+                        <BotonEliminar onClick={() => eliminarMesPlanificado(grupo)} title="Eliminar mes planificado" />
+                      </div>
+                      {expandido && (
+                        <div className="divide-y divide-stone-100 border-t border-stone-100">
+                          {SOCIOS.map((socio) => (
+                            <FilaSocioPlan
+                              key={socio}
+                              socio={socio}
+                              clave={grupo.clave}
+                              planificado={grupo.porSocio[socio] || 0}
+                              cobrado={cobradoPorSocioYMes(socio, grupo.clave)}
+                              onAgregar={agregarCobroParcial}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="divide-y divide-stone-100">
-                      {SOCIOS.map((socio) => (
-                        <FilaSocioPlan
-                          key={socio}
-                          socio={socio}
-                          clave={grupo.clave}
-                          planificado={grupo.porSocio[socio] || 0}
-                          cobrado={cobradoPorSocioYMes(socio, grupo.clave)}
-                          onAgregar={agregarCobroParcial}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
