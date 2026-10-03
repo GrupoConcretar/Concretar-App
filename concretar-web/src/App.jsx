@@ -2713,8 +2713,8 @@ function FilaSocioPlan({ socio, clave, planificado, cobrado, onAgregar }) {
           <span className={completo ? "font-semibold text-emerald-700" : ""}>Cobrado <span className="font-mono font-semibold">{fmtARS(cobrado)}</span></span>
         </div>
       </div>
-      <div className="mt-1 h-1 overflow-hidden rounded-full bg-stone-100">
-        <div className={`h-full ${completo ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
+      <div className="mt-1 h-1 overflow-hidden rounded-full bg-stone-200">
+        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
       </div>
       <div className="mt-0.5 text-[10px] text-slate-400">
         {planificado === 0
@@ -12699,15 +12699,23 @@ export default function ConcretarApp() {
                             {expandido ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                             {nombreMesClave(grupo.clave)}
                           </span>
-                          <span className="flex flex-wrap items-center gap-2.5 text-[11px]">
+                          <span className="flex flex-wrap items-center gap-3 text-[11px]">
                             {SOCIOS.map((socio) => {
                               const planificado = grupo.porSocio[socio] || 0;
                               const cobrado = cobradoPorSocioYMes(socio, grupo.clave);
                               const completo = planificado > 0 && cobrado >= planificado;
+                              const pct = planificado > 0 ? Math.min(100, (cobrado / planificado) * 100) : (cobrado > 0 ? 100 : 0);
                               return (
-                                <span key={socio} className="flex items-center gap-1 text-slate-500">
-                                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${completo ? "bg-emerald-500" : "bg-amber-500"}`} />
-                                  {socio} <span className="font-mono font-semibold text-slate-700">{fmtARS(cobrado)}</span>/<span className="font-mono">{fmtARS(planificado)}</span>
+                                <span key={socio} className="flex items-center gap-1.5 text-slate-500">
+                                  <span className="font-medium text-slate-600">{socio}</span>
+                                  <span className="inline-block h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-stone-200">
+                                    <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+                                  </span>
+                                  <span className="font-mono">
+                                    <span className={`font-semibold ${completo ? "text-emerald-700" : "text-slate-700"}`}>{fmtARS(cobrado)}</span>
+                                    {" / "}{fmtARS(planificado)}
+                                    <span className="text-slate-400"> ({Math.round(pct)}%)</span>
+                                  </span>
                                 </span>
                               );
                             })}
