@@ -794,6 +794,13 @@ function ResumenObrasCuentas({ items }) {
   );
 }
 
+// Convención de las tablas de IVA e Ingresos Brutos: positivo = a favor (verde),
+// negativo = a pagar (rojo), $0 o sin dato en gris.
+function colorPorSigno(monto) {
+  if (monto === null || Math.abs(monto) < 1) return "text-slate-400";
+  return monto > 0 ? "text-emerald-700" : "text-rose-600";
+}
+
 // Un mes sin ningún movimiento ni real cargado no aporta nada a la vista — se
 // agrupan detrás de un "ver meses sin movimiento" en vez de listarlos todos,
 // para que la tabla no quede dominada por filas en $0.
@@ -823,7 +830,7 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
             <th className="px-2 py-1.5">Mes</th>
             <th className="px-2 py-1.5 text-right">IVA venta</th>
             <th className="px-2 py-1.5 text-right">IVA compra</th>
-            <th className="px-2 py-1.5 text-right">IVA a pagar (app)</th>
+            <th className="px-2 py-1.5 text-right">IVA a pagar / a favor (app)</th>
             <th className="px-2 py-1.5 text-right">IVA real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
           </tr>
@@ -842,11 +849,11 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
                 </td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.debito)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.credito)}</td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.aPagar)}</td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${colorPorSigno(m.resultadoApp)}`}>{fmtARS(Math.abs(m.resultadoApp))}</td>
                 <td className="px-2 py-1 text-right">
                   <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
                 </td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${colorPorSigno(m.diferencia)}`}>
                   {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
                 </td>
               </tr>
@@ -962,7 +969,7 @@ function CampoRealConSigno({ value, onGuardar, onBorrar, className }) {
         key={String(value)}
         value={sinDato ? null : Math.abs(val)}
         onBlur={(v, tocado) => { if (sinDato && !tocado) return; onGuardar(negativo ? -v : v); }}
-        className={className}
+        className={`${className} ${sinDato || val === 0 ? "" : negativo ? "text-rose-600" : "text-emerald-700"}`}
       />
       {!sinDato && onBorrar && (
         <button type="button" onClick={onBorrar} title="Borrar: volver a 'sin dato todavía' y usar el cálculo automático de la app" className="shrink-0 text-slate-300 hover:text-rose-600">
@@ -1000,7 +1007,7 @@ function TablaIibbMensual({ items, onActualizarReal, onBorrarReal }) {
         <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-2 py-1.5">Mes</th>
-            <th className="px-2 py-1.5 text-right">Ingresos Brutos a pagar (app)</th>
+            <th className="px-2 py-1.5 text-right">Ingresos Brutos a pagar / a favor (app)</th>
             <th className="px-2 py-1.5 text-right">Ingresos Brutos real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
           </tr>
@@ -1017,11 +1024,11 @@ function TablaIibbMensual({ items, onActualizarReal, onBorrarReal }) {
                     {nombreMesDeClave(m.clave)}
                   </button>
                 </td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.proyectado > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.proyectado)}</td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${colorPorSigno(m.resultadoApp)}`}>{fmtARS(Math.abs(m.resultadoApp))}</td>
                 <td className="px-2 py-1 text-right">
                   <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
                 </td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${colorPorSigno(m.diferencia)}`}>
                   {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
                 </td>
               </tr>
@@ -5718,8 +5725,12 @@ export default function ConcretarApp() {
     // (no se le suma ni se le resta), porque el contador puede tener en cuenta cosas
     // que la app no ve. Sin real, se sigue estimando con disponible - debito.
     const real = ajusteFiscalDe("iva", clave);
-    saldoAFavorIvaArrastre = real === null ? Math.max(0, disponible - debito) : Math.max(0, real);
-    return { clave, debito, credito, saldoAFavorAnterior, aPagar, saldoAFavorNuevo: saldoAFavorIvaArrastre, real, diferencia: real === null ? null : aPagar + real };
+    const saldoAFavorApp = Math.max(0, disponible - debito);
+    saldoAFavorIvaArrastre = real === null ? saldoAFavorApp : Math.max(0, real);
+    // Lo que estima la app, en la misma convención que el real (positivo = a favor,
+    // negativo = a pagar), para poder compararlos directo.
+    const resultadoApp = saldoAFavorApp - aPagar;
+    return { clave, debito, credito, saldoAFavorAnterior, aPagar, resultadoApp, saldoAFavorNuevo: saldoAFavorIvaArrastre, real, diferencia: real === null ? null : real - resultadoApp };
   }).reverse();
 
   // Ganancia del año = facturas nuestras emitidas − (compras con factura + mano de
@@ -5820,8 +5831,10 @@ export default function ConcretarApp() {
     const proyectado = Math.max(0, proyectadoBruto - disponible);
     // Igual que IVA: el real reemplaza por completo la estimación de la app para el
     // saldo a favor que se arrastra, no se le suma ni se le resta.
-    saldoAFavorIibbArrastre = real === null ? Math.max(0, disponible - proyectadoBruto) : Math.max(0, real);
-    return { clave, ingresos: ingresosDelMes, alicuota: alicuotaIibbEfectiva, saldoAFavorAnterior, proyectado, saldoAFavorNuevo: saldoAFavorIibbArrastre, real, diferencia: real === null ? null : proyectado + real };
+    const saldoAFavorApp = Math.max(0, disponible - proyectadoBruto);
+    saldoAFavorIibbArrastre = real === null ? saldoAFavorApp : Math.max(0, real);
+    const resultadoApp = saldoAFavorApp - proyectado;
+    return { clave, ingresos: ingresosDelMes, alicuota: alicuotaIibbEfectiva, saldoAFavorAnterior, proyectado, resultadoApp, saldoAFavorNuevo: saldoAFavorIibbArrastre, real, diferencia: real === null ? null : real - resultadoApp };
   }).reverse();
 
   // Esta empresa paga IVA e Ingresos Brutos con 3 meses de atraso (el de junio se paga
@@ -12398,13 +12411,13 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">IVA venta: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). IVA compra: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Si IVA venta supera a IVA compra (+ el saldo a favor que venía arrastrando) el mes da en contra (a pagar); si no, da a favor y ese saldo pasa al mes siguiente — no es plata que entra a la cuenta. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−).</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">IVA venta: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). IVA compra: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Si IVA venta supera a IVA compra (+ el saldo a favor que venía arrastrando) el mes da en contra (a pagar); si no, da a favor y ese saldo pasa al mes siguiente — no es plata que entra a la cuenta. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−). En verde lo que queda a favor, en rojo lo que hay que pagar.</div>
               <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iva", clave)} />
             </div>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ingresos Brutos por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Se proyecta al 2% de los ingresos gravables (incluye facturas de venta futuras proyectadas desde una obra) hasta que cargues el "Ingresos Brutos real (contador)" de algún mes — ahí la alícuota efectiva se recalcula sola y ajusta la proyección de los meses siguientes.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">Se proyecta al 2% de los ingresos gravables (incluye facturas de venta futuras proyectadas desde una obra) hasta que cargues el "Ingresos Brutos real (contador)" de algún mes — ahí la alícuota efectiva se recalcula sola y ajusta la proyección de los meses siguientes. En verde lo que queda a favor, en rojo lo que hay que pagar.</div>
               <TablaIibbMensual items={iibbMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iibb", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iibb", clave)} />
             </div>
 
