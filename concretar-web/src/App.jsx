@@ -876,12 +876,14 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
   );
 }
 
-// Ganancia neta por año (Cuentas → IVA y Ganancias): ingresos menos gastos,
-// ambos netos de IVA, de todo lo que tiene factura (A, B o C) — es la base
-// aproximada para el Impuesto a las Ganancias que después ajusta el contador.
+// Ganancia neta por año (Cuentas → IVA y Ganancias): facturas nuestras emitidas
+// contra compras con factura, mano de obra en blanco y mano de obra con factura —
+// es la base aproximada para el Impuesto a las Ganancias que después ajusta el
+// contador. Debajo de cada monto se aclara cuánto es proyección (facturas de venta
+// todavía sin cobrar, quincenas en blanco sin costo real confirmado).
 function TablaGananciasAnual({ items, onActualizarReal, onBorrarReal }) {
   if (items.length === 0) {
-    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay ingresos ni gastos con factura cargados.</div>;
+    return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay facturas, gastos con factura ni personal en blanco cargados.</div>;
   }
   return (
     <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
@@ -889,8 +891,10 @@ function TablaGananciasAnual({ items, onActualizarReal, onBorrarReal }) {
         <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-2 py-1.5">Año</th>
-            <th className="px-2 py-1.5 text-right">Ingresos netos</th>
-            <th className="px-2 py-1.5 text-right">Gastos netos</th>
+            <th className="px-2 py-1.5 text-right">Facturas emitidas</th>
+            <th className="px-2 py-1.5 text-right">Compras con factura</th>
+            <th className="px-2 py-1.5 text-right">M.O. en blanco</th>
+            <th className="px-2 py-1.5 text-right">M.O. con factura</th>
             <th className="px-2 py-1.5 text-right">Ganancia neta (app)</th>
             <th className="px-2 py-1.5 text-right">Ganancia real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
@@ -900,8 +904,16 @@ function TablaGananciasAnual({ items, onActualizarReal, onBorrarReal }) {
           {items.map((r) => (
             <tr key={r.anio} className="border-t border-stone-100">
               <td className="px-2 py-1 font-medium text-slate-900">{r.anio}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.ingresos)}</td>
-              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.gastos)}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">
+                {fmtARS(r.facturasEmitidas)}
+                {r.facturasProyectadas > 0 && <div className="font-sans text-[10px] text-slate-400">incluye {fmtARS(r.facturasProyectadas)} proyectadas</div>}
+              </td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.compras)}</td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">
+                {fmtARS(r.manoObraBlanco)}
+                {r.manoObraBlancoEstimada > 0 && <div className="font-sans text-[10px] text-slate-400">incluye {fmtARS(r.manoObraBlancoEstimada)} estimado</div>}
+              </td>
+              <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.manoObraFactura)}</td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${r.ganancia < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(r.ganancia)}</td>
               <td className="px-2 py-1 text-right">
                 <CampoRealConSigno value={r.real} onGuardar={(v) => onActualizarReal(r.anio, v)} onBorrar={() => onBorrarReal(r.anio)} className="w-32 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
@@ -5710,19 +5722,61 @@ export default function ConcretarApp() {
     return { clave, debito, credito, saldoAFavorAnterior, aPagar, saldoAFavorNuevo: saldoAFavorIvaArrastre, real, diferencia: real === null ? null : aPagar + real };
   }).reverse();
 
+  // Ganancia del año = facturas nuestras emitidas − (compras con factura + mano de
+  // obra en blanco + mano de obra con factura A o C).
+  // - Facturas emitidas: Ingresos con Factura A, B o C, más las facturas de venta
+  //   proyectadas desde una obra (mismo criterio que IVA e Ingresos Brutos). A y B
+  //   van netas de IVA (ese IVA es del fisco, no ingreso nuestro); la C va completa.
+  // - Compras con factura y mano de obra con factura: Gastos y Facturas con factura,
+  //   separados por la categoría "Mano de obra". Solo la A va neta de IVA, porque es
+  //   la única cuyo IVA vuelve como crédito fiscal — en una B o C ese IVA es costo.
+  // - Mano de obra en blanco: costo empresa de los recibos (bruto + contribuciones +
+  //   fondo de cese + IERIC), por el mes de la quincena. Usa el costo real que carga
+  //   Contaduría en "Liquidación formal"; si la quincena todavía no se confirmó, lo
+  //   estima con la fórmula UOCRA. Las horas en negro de ese mismo personal no
+  //   entran: no tienen comprobante, así que no se pueden deducir.
   const gananciasPorAnio = {};
+  function sumarGanancia(fechaStr, campo, monto) {
+    const anio = (fechaStr || "").slice(0, 4);
+    const g = (gananciasPorAnio[anio] ??= { facturasEmitidas: 0, facturasProyectadas: 0, compras: 0, manoObraBlanco: 0, manoObraBlancoEstimada: 0, manoObraFactura: 0 });
+    g[campo] += monto;
+  }
+  const netoDeIvaCompra = (monto, tipoFactura) => tipoFactura === "A" ? netoDeIvaMonto(monto, tipoFactura) : (monto || 0);
   ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && conFacturaGravable(i.tipoFactura)).forEach((i) => {
-    const anio = (i.fecha || "").slice(0, 4);
-    (gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 }).ingresos += netoDeIvaMonto(i.monto, i.tipoFactura);
+    sumarGanancia(i.fecha, "facturasEmitidas", netoDeIvaMonto(i.monto, i.tipoFactura));
+  });
+  facturasVentaProyectadas.filter((f) => !obraIdsPapelera.has(f.obraId) && conFacturaGravable(f.tipoFactura)).forEach((f) => {
+    sumarGanancia(f.fecha, "facturasEmitidas", netoDeIvaMonto(f.monto, f.tipoFactura));
+    sumarGanancia(f.fecha, "facturasProyectadas", netoDeIvaMonto(f.monto, f.tipoFactura));
   });
   comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId) && conFacturaGravable(c.tipoFactura)).forEach((c) => {
-    const anio = (c.fecha || "").slice(0, 4);
-    (gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 }).gastos += netoDeIvaMonto(c.monto, c.tipoFactura);
+    sumarGanancia(c.fecha, c.categoria === "Mano de obra" ? "manoObraFactura" : "compras", netoDeIvaCompra(c.monto, c.tipoFactura));
+  });
+  liquidacionesFormales.filter((l) => l.costoRealBlanco != null && !obraIdsPapelera.has(l.obraId)).forEach((l) => {
+    sumarGanancia(l.mes, "manoObraBlanco", l.costoRealBlanco);
+  });
+  const quincenasBlancoSinConfirmar = {}; // "obraId|mes|quincena|nombre" -> horas trabajadas
+  asistencia
+    .filter((a) => !obraIdsPapelera.has(a.obraId) && a.estado !== "Ausente" && (a.horas || 0) > 0 && tipoTrabajadorDe(a.nombre) === "En blanco")
+    .forEach((a) => {
+      const mes = a.fecha.slice(0, 7);
+      const quincena = quincenaDeFecha(a.fecha);
+      const registro = liquidacionesFormales.find((l) => l.obraId === a.obraId && l.mes === mes && l.quincena === quincena && l.nombre === a.nombre);
+      if (registro?.costoRealBlanco != null) return; // ya sumada arriba con el costo real
+      const key = `${a.obraId}|${mes}|${quincena}|${a.nombre}`;
+      (quincenasBlancoSinConfirmar[key] ??= { mes, nombre: a.nombre, registro, horas: 0 }).horas += a.horas || 0;
+    });
+  Object.values(quincenasBlancoSinConfirmar).forEach((q) => {
+    const { costoEmpresa } = costoBlancoEstimadoQuincena(q.nombre, q.mes, q.horas, q.registro);
+    sumarGanancia(q.mes, "manoObraBlanco", costoEmpresa);
+    sumarGanancia(q.mes, "manoObraBlancoEstimada", costoEmpresa);
   });
   const gananciasAnuales = Object.keys(gananciasPorAnio).sort().map((anio) => {
-    const ganancia = gananciasPorAnio[anio].ingresos - gananciasPorAnio[anio].gastos;
+    const g = gananciasPorAnio[anio];
+    const gastos = g.compras + g.manoObraBlanco + g.manoObraFactura;
+    const ganancia = g.facturasEmitidas - gastos;
     const real = ajusteFiscalDe("ganancia", anio);
-    return { anio, ...gananciasPorAnio[anio], ganancia, real, diferencia: real === null ? null : real - ganancia };
+    return { anio, ...g, gastos, ganancia, real, diferencia: real === null ? null : real - ganancia };
   }).reverse();
 
   // ---------- Ingresos Brutos ----------
@@ -5802,6 +5856,26 @@ export default function ConcretarApp() {
   // "hasta" (Date) es opcional — sirve para cortar el cálculo a una fecha puntual (ej: fin
   // de un mes en la curva de inversión de la pestaña Obras). Sin ese parámetro da el total
   // acumulado a hoy, que es lo que usa el Balance por obra de Cuentas.
+  // Estimación (fórmulas UOCRA) de una quincena de una persona en blanco que
+  // Contaduría todavía no confirmó con el costo real del recibo. costoEmpresa es
+  // lo formal (bruto + contribuciones + fondo de cese + IERIC); costoNegro, las
+  // horas trabajadas que no entran en el recibo y se pagan informal.
+  function costoBlancoEstimadoQuincena(nombre, mes, horasTrabajadas, registro) {
+    const categoria = categoriaDe(nombre) || CATEGORIAS_PERSONAL[0];
+    const horasRecibo = registro?.horasRecibo ?? Math.round((horasTrabajadas / 2) * 100) / 100;
+    const presentismo = registro?.presentismo ?? false;
+    const horasNegroDeBlanco = Math.max(0, horasTrabajadas - horasRecibo);
+    const basicoHora = basicoConvenioDeCategoria(categoria, `${mes}-01`);
+    const costoHoraInformal = costoHoraDeCategoria(categoria, `${mes}-01`);
+    const montoBasico = horasRecibo * basicoHora;
+    const montoPresentismo = presentismo ? montoBasico * ((cfgLiq.presentismoPct || 0) / 100) : 0;
+    const bruto = montoBasico + montoPresentismo;
+    const contribPct = (cfgLiq.contribObraSocialPct || 0) + (cfgLiq.contribEmpresariaPct || 0) + (cfgLiq.contribJubilacionPct || 0);
+    const contribuciones = bruto * (contribPct / 100);
+    const fondoCese = bruto * ((cfgLiq.fondoCesePosteriorPct || 0) / 100);
+    const costoEmpresa = bruto + contribuciones + fondoCese + (cfgLiq.iericMontoFijo || 0);
+    return { costoEmpresa, costoNegro: horasNegroDeBlanco * costoHoraInformal };
+  }
   function costoManoDeObraDeObra(obraId, hasta) {
     const dentroDePlazo = (fechaStr) => !hasta || fechaLocal(fechaStr) <= hasta;
     const asistenciaObra = asistencia.filter((a) => a.obraId === obraId && a.estado !== "Ausente" && (a.horas || 0) > 0 && dentroDePlazo(a.fecha));
@@ -5825,20 +5899,8 @@ export default function ConcretarApp() {
     Object.values(gruposBlanco).forEach((g) => {
       const registro = liquidacionesFormales.find((l) => l.obraId === obraId && l.mes === g.mes && l.quincena === g.quincena && l.nombre === g.nombre);
       if (registro?.costoRealBlanco != null) { costoBlanco += registro.costoRealBlanco; return; }
-      const categoria = categoriaDe(g.nombre) || CATEGORIAS_PERSONAL[0];
-      const horasRecibo = registro?.horasRecibo ?? Math.round((g.horas / 2) * 100) / 100;
-      const presentismo = registro?.presentismo ?? false;
-      const horasNegroDeBlanco = Math.max(0, g.horas - horasRecibo);
-      const basicoHora = basicoConvenioDeCategoria(categoria, `${g.mes}-01`);
-      const costoHoraInformal = costoHoraDeCategoria(categoria, `${g.mes}-01`);
-      const montoBasico = horasRecibo * basicoHora;
-      const montoPresentismo = presentismo ? montoBasico * ((cfgLiq.presentismoPct || 0) / 100) : 0;
-      const bruto = montoBasico + montoPresentismo;
-      const contribPct = (cfgLiq.contribObraSocialPct || 0) + (cfgLiq.contribEmpresariaPct || 0) + (cfgLiq.contribJubilacionPct || 0);
-      const contribuciones = bruto * (contribPct / 100);
-      const fondoCese = bruto * ((cfgLiq.fondoCesePosteriorPct || 0) / 100);
-      const costoEmpresa = bruto + contribuciones + fondoCese + (cfgLiq.iericMontoFijo || 0);
-      costoBlanco += costoEmpresa + horasNegroDeBlanco * costoHoraInformal;
+      const { costoEmpresa, costoNegro } = costoBlancoEstimadoQuincena(g.nombre, g.mes, g.horas, registro);
+      costoBlanco += costoEmpresa + costoNegro;
     });
 
     const tanterosDeObra = new Set(tanteros.filter((t) => t.obraId === obraId).map((t) => t.id));
@@ -12348,7 +12410,7 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ganancias por año</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Ingresos y gastos netos de IVA, de todo lo que tenga Factura A, B o C — base aproximada para el Impuesto a las Ganancias. Cargá en "Ganancia real (contador)" el número que informe el contador para compararlo contra la estimación de la app.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">Ganancia neta = Facturas emitidas − Compras con factura − Mano de obra en blanco − Mano de obra con factura. Facturas emitidas: nuestras facturas A, B o C (Ingresos más las facturas de venta proyectadas desde una obra), sin el IVA. Compras con factura: Gastos/Facturas con factura, salvo la categoría "Mano de obra"; la A va sin IVA porque ese IVA se recupera como crédito, la B y la C van completas. M.O. en blanco: costo empresa de los recibos del personal en blanco (sueldo + cargas sociales + fondo de cese + IERIC), con el costo real que carga Contaduría o, si la quincena todavía no se confirmó, estimado. M.O. con factura: Gastos/Facturas de la categoría "Mano de obra" con Factura A o C (subcontratistas). Lo pagado en negro no entra porque no tiene comprobante. Es una base aproximada para el Impuesto a las Ganancias: cargá en "Ganancia real (contador)" el número que informe el contador para compararlo contra la estimación de la app.</div>
               <TablaGananciasAnual items={gananciasAnuales} onActualizarReal={(anio, monto) => actualizarAjusteFiscal("ganancia", anio, monto)} onBorrarReal={(anio) => borrarAjusteFiscal("ganancia", anio)} />
             </div>
           </div>
