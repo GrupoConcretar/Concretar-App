@@ -228,6 +228,140 @@ const MENSAJE_ALTA_PERSONAL = [
   "",
   "¡Gracias!",
 ].join("\n");
+
+// Lee la respuesta que manda la persona por WhatsApp (el mensaje de arriba con sus
+// datos completados) y la convierte en campos del formulario de alta. Es tolerante
+// a cómo se escribe de verdad en WhatsApp: con o sin asteriscos, mayúsculas o sin
+// acentos, el dato en la línea de abajo de la etiqueta, y el prefijo
+// "[fecha, hora] Nombre:" que agrega WhatsApp al copiar varios mensajes juntos.
+const CAMPOS_RESPUESTA_ALTA = [
+  { campo: "nombre", etiqueta: "Nombre", claves: ["nombre"] },
+  { campo: "apellido", etiqueta: "Apellido", claves: ["apellido"] },
+  { campo: "dni", etiqueta: "DNI", claves: ["dni", "documento"] },
+  { campo: "fechaNacimiento", etiqueta: "Fecha de nacimiento", claves: ["nacimiento"] },
+  { campo: "direccion", etiqueta: "Dirección", claves: ["direccion", "domicilio"] },
+  { campo: "manoHabil", etiqueta: "Mano hábil", claves: ["mano"] },
+  { campo: "tipoSangre", etiqueta: "Tipo de sangre", claves: ["sangre"] },
+  { campo: "tarjetaIeric", etiqueta: "Tarjeta IERIC", claves: ["ieric"] },
+  { campo: "especialidad", etiqueta: "Especialidad", claves: ["especialidad", "oficio"] },
+  { campo: "tallePantalon", etiqueta: "Talle de pantalón", claves: ["pantalon"] },
+  { campo: "talleCamisa", etiqueta: "Talle de camisa", claves: ["camisa", "remera"] },
+  { campo: "talleGuantes", etiqueta: "Talle de guantes", claves: ["guante"] },
+  { campo: "talleCalzado", etiqueta: "Talle de calzado", claves: ["calzado", "zapato", "botin"] },
+  { campo: "observaciones", etiqueta: "Alergias / lesiones", claves: ["alergia", "lesion"] },
+];
+const ALIAS_ESPECIALIDAD = { albanil: "Civil", electricista: "Eléctrico", plomero: "Plomería", gasista: "Plomería", soldador: "Metalúrgico", herrero: "Hierrero" };
+
+// "JUAN" o "juan" -> "Juan"; si ya viene con mayúsculas y minúsculas se respeta.
+function capitalizarNombre(s) {
+  if (s !== s.toUpperCase() && s !== s.toLowerCase()) return s;
+  return s.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, sep, letra) => sep + letra.toUpperCase());
+}
+
+function fechaRespuestaAISO(valor) {
+  const v = normalizarTexto(valor);
+  let d, m, y;
+  let r = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (r) [, y, m, d] = r.map(Number);
+  else if ((r = v.match(/^(\d{1,2})[\s/.-]+(\d{1,2})[\s/.-]+(\d{2,4})$/))) [, d, m, y] = r.map(Number);
+  else if ((r = v.match(/^(\d{1,2})\s*(?:de\s+)?([a-z]+)\s*(?:de(?:l)?\s+)?(\d{2,4})$/))) {
+    d = Number(r[1]);
+    m = NOMBRES_MES_ES.findIndex((mes) => mes.startsWith(r[2].slice(0, 3))) + 1;
+    y = Number(r[3]);
+  } else return null;
+  if (y < 100) y += y > new Date().getFullYear() % 100 ? 1900 : 2000;
+  const fecha = new Date(y, m - 1, d);
+  if (!m || fecha.getFullYear() !== y || fecha.getMonth() !== m - 1 || fecha.getDate() !== d) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function talleLetra(valor, opciones) {
+  const v = normalizarTexto(valor);
+  const porPalabra = [["extra grande", "XL"], ["grande", "L"], ["mediano", "M"], ["chico", "S"], ["small", "S"], ["medium", "M"], ["large", "L"]];
+  const palabra = porPalabra.find(([p]) => v.includes(p));
+  const t = palabra ? palabra[1] : v.toUpperCase().replace(/\s/g, "").replace(/^2XL$/, "XXL");
+  return opciones.includes(t) ? t : null;
+}
+
+function valorRespuestaAlta(campo, valor) {
+  const v = normalizarTexto(valor);
+  switch (campo) {
+    case "nombre":
+    case "apellido":
+      return capitalizarNombre(valor.trim());
+    case "direccion":
+    case "observaciones":
+      return valor.trim();
+    case "dni": {
+      const digitos = valor.replace(/\D/g, "");
+      return digitos.length >= 7 && digitos.length <= 8 ? digitos : null;
+    }
+    case "fechaNacimiento":
+      return fechaRespuestaAISO(valor);
+    case "manoHabil":
+      if (/zurd|izquierd/.test(v)) return "Zurdo";
+      if (/diestr|derech/.test(v)) return "Diestro";
+      return null;
+    case "tipoSangre": {
+      const t = v.replace(/\s+/g, "").replace(/positivo|pos/, "+").replace(/negativo|neg/, "-").replace(/^cero/, "0").toUpperCase().replace(/^0/, "O");
+      return TIPOS_SANGRE.includes(t) ? t : null;
+    }
+    case "tarjetaIeric":
+      if (/^(si|tengo|yes)\b/.test(v)) return "Sí";
+      if (/^no\b/.test(v)) return "No";
+      return null;
+    case "especialidad": {
+      const alias = Object.entries(ALIAS_ESPECIALIDAD).find(([palabra]) => v.includes(palabra));
+      if (alias) return alias[1];
+      return ESPECIALIDADES.find((e) => v.includes(normalizarTexto(e).slice(0, 4))) || null;
+    }
+    case "tallePantalon":
+    case "talleCalzado": {
+      const n = (v.match(/\d{2}/) || [])[0];
+      const opciones = campo === "tallePantalon" ? TALLES_PANTALON : TALLES_CALZADO;
+      return opciones.includes(n) ? n : null;
+    }
+    case "talleCamisa":
+      return talleLetra(valor, TALLES_CAMISA);
+    case "talleGuantes":
+      return talleLetra(valor, TALLES_GUANTES);
+    default:
+      return null;
+  }
+}
+
+function parsearRespuestaAltaPersonal(texto) {
+  const lineas = String(texto)
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\[[^\]]*\]\s*[^:]{1,40}:\s*/, "").replace(/[*_~]/g, "").replace(/^\s*[-•]\s*/, "").trim());
+  const datos = {};
+  const completados = [];
+  const sinReconocer = [];
+  lineas.forEach((linea, i) => {
+    const dosPuntos = linea.indexOf(":");
+    if (dosPuntos === -1) return;
+    // Sin las opciones entre paréntesis (ej. "(Diestro / Zurdo)") — así la etiqueta
+    // queda corta y la línea de saludo, que es larga, no se confunde con un dato.
+    const etiqueta = normalizarTexto(linea.slice(0, dosPuntos)).replace(/\([^)]*\)/g, "").trim();
+    if (etiqueta.length > 60) return;
+    const def = CAMPOS_RESPUESTA_ALTA.find((c) => c.claves.some((k) => new RegExp(`\\b${k}`).test(etiqueta)));
+    if (!def || def.campo in datos) return;
+    let valor = linea.slice(dosPuntos + 1).trim();
+    if (!valor) {
+      const siguiente = lineas.slice(i + 1).find((l) => l);
+      if (siguiente && !siguiente.includes(":")) valor = siguiente;
+    }
+    if (!valor || /^no se$/.test(normalizarTexto(valor))) return;
+    const convertido = valorRespuestaAlta(def.campo, valor);
+    if (convertido) {
+      datos[def.campo] = convertido;
+      completados.push(def.etiqueta);
+    } else {
+      sinReconocer.push(`${def.etiqueta} ("${valor}")`);
+    }
+  });
+  return { datos, completados, sinReconocer };
+}
 const ICONO_ESPECIALIDAD = {
   Civil: HardHat,
   "Metalúrgico": Wrench,
@@ -370,6 +504,80 @@ function BotonCopiarMensaje({ texto, label }) {
       {estado === "copiado" ? <Check size={15} /> : <Copy size={15} />}
       {estado === "copiado" ? "¡Copiado! Pegalo en WhatsApp" : estado === "error" ? "No se pudo copiar" : label}
     </button>
+  );
+}
+
+// Ida y vuelta del alta por WhatsApp: copiar el mensaje para la persona que entra
+// y, cuando contesta, pegar su respuesta para que el formulario se complete solo.
+function AsistenteAltaWhatsApp({ onCompletar }) {
+  const [pegando, setPegando] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [resultado, setResultado] = useState(null);
+
+  function completar() {
+    const r = parsearRespuestaAltaPersonal(texto);
+    onCompletar(r.datos);
+    setResultado(r);
+    setPegando(false);
+    setTexto("");
+  }
+
+  return (
+    <div className="mb-4 space-y-2 rounded-lg border border-dashed border-stone-300 bg-stone-50 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <BotonCopiarMensaje texto={MENSAJE_ALTA_PERSONAL} label="Copiar mensaje para WhatsApp" />
+        <button
+          type="button"
+          onClick={() => { setPegando((v) => !v); setResultado(null); }}
+          className="flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50"
+        >
+          <ClipboardCheck size={15} /> Pegar respuesta
+        </button>
+      </div>
+      <div className="text-xs text-slate-500">
+        Copiá el mensaje y mandáselo a quien entra. Cuando te conteste, copiá su respuesta, tocá "Pegar respuesta" y el formulario se completa solo.
+      </div>
+
+      {pegando && (
+        <div className="space-y-2">
+          <textarea
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            rows={8}
+            autoFocus
+            placeholder="Pegá acá el mensaje que te mandó por WhatsApp..."
+            className={inputCls}
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={completar}
+              disabled={!texto.trim()}
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Completar formulario
+            </button>
+            <button type="button" onClick={() => { setPegando(false); setTexto(""); }} className={btnGhost}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {resultado && (
+        <div className={`space-y-1 rounded-md border px-3 py-2 text-xs ${resultado.completados.length > 0 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+          {resultado.completados.length > 0 ? (
+            <div>
+              <span className="font-semibold">Se completaron {resultado.completados.length} datos:</span> {resultado.completados.join(", ")}. Revisalos antes de guardar.
+            </div>
+          ) : (
+            <div className="font-semibold">No encontré datos en el texto. Fijate que sea su respuesta al mensaje (con "Nombre:", "DNI:", etc.).</div>
+          )}
+          {resultado.sinReconocer.length > 0 && (
+            <div className="text-amber-800">No pude entender: {resultado.sinReconocer.join(", ")} — cargalos a mano.</div>
+          )}
+          <div className="text-slate-600">Las fotos (la suya y las del DNI) guardalas del WhatsApp y subilas abajo.</div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -8727,10 +8935,7 @@ export default function ConcretarApp() {
             {showPersonalForm && canCrearPersonal && (
               <Panel title={editingPersonalId ? "Editar personal" : "Añadir personal"} action={<button onClick={cancelPersonalForm}><X size={16} /></button>}>
                 {!editingPersonalId && (
-                  <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-stone-300 bg-stone-50 p-3">
-                    <BotonCopiarMensaje texto={MENSAJE_ALTA_PERSONAL} label="Copiar mensaje para WhatsApp" />
-                    <span className="text-xs text-slate-500">Mandáselo a quien entra para que te complete sus datos, talles y fotos del DNI.</span>
-                  </div>
+                  <AsistenteAltaWhatsApp onCompletar={(datos) => setPersonalForm((f) => ({ ...f, ...datos }))} />
                 )}
                 <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitPersonalForm}>
                   <Field label="Nombre">
