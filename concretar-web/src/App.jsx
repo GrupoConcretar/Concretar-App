@@ -9,7 +9,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy
 } from "lucide-react";
 
 // Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
@@ -196,6 +196,38 @@ const TALLES_CAMISA = ["S", "M", "L", "XL", "XXL"];
 const TALLES_GUANTES = ["S", "M", "L", "XL"];
 const TALLES_CALZADO = ["37", "38", "39", "40", "41", "42", "43", "44", "45", "46"];
 const ESPECIALIDADES = ["Civil", "Metalúrgico", "Eléctrico", "Pintor", "Plomería", "Carpintero", "Hierrero"];
+// Mensaje para mandarle por WhatsApp a quien entra, así completa sus propios datos
+// antes del alta. Solo pide lo que sabe la persona — categoría, tipo de trabajador,
+// seguro y estado los define la empresa. Las opciones salen de las mismas listas
+// que el formulario, para que el mensaje no quede desactualizado.
+const MENSAJE_ALTA_PERSONAL = [
+  "Hola! Para darte de alta en *Concretar* necesito que me completes estos datos y me los mandes por acá:",
+  "",
+  "*Nombre:* ",
+  "*Apellido:* ",
+  "*DNI:* ",
+  "*Fecha de nacimiento:* ",
+  "*Dirección:* ",
+  `*Mano hábil* (${MANO_HABIL.join(" / ")}): `,
+  `*Tipo de sangre* (${TIPOS_SANGRE.join(", ")} o "no sé"): `,
+  "*¿Tenés tarjeta IERIC?* (Sí / No): ",
+  `*Especialidad* (${ESPECIALIDADES.join(", ")}): `,
+  "",
+  "*Talles de ropa de trabajo:*",
+  `- Pantalón (${TALLES_PANTALON[0]} a ${TALLES_PANTALON.at(-1)}): `,
+  `- Camisa (${TALLES_CAMISA.join(", ")}): `,
+  `- Guantes (${TALLES_GUANTES.join(", ")}): `,
+  `- Calzado (${TALLES_CALZADO[0]} a ${TALLES_CALZADO.at(-1)}): `,
+  "",
+  "*Alergias, lesiones previas o algo que tengamos que saber:* ",
+  "",
+  "Y además mandame estas fotos:",
+  "- Una foto tuya de frente (tipo carnet)",
+  "- DNI de frente",
+  "- DNI de dorso",
+  "",
+  "¡Gracias!",
+].join("\n");
 const ICONO_ESPECIALIDAD = {
   Civil: HardHat,
   "Metalúrgico": Wrench,
@@ -298,6 +330,47 @@ function readFileAsDataURL(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+// El navegador interno de algunas apps (y celulares viejos) no tiene
+// navigator.clipboard — ahí se copia con el método clásico de un textarea oculto.
+async function copiarAlPortapapeles(texto) {
+  try {
+    await navigator.clipboard.writeText(texto);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = texto;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
+
+function BotonCopiarMensaje({ texto, label }) {
+  const [estado, setEstado] = useState(null);
+  async function copiar() {
+    const ok = await copiarAlPortapapeles(texto);
+    setEstado(ok ? "copiado" : "error");
+    setTimeout(() => setEstado(null), 2500);
+  }
+  return (
+    <button
+      type="button"
+      onClick={copiar}
+      className={`flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold ${
+        estado === "copiado" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-stone-300 bg-white text-slate-700 hover:bg-stone-50"
+      }`}
+    >
+      {estado === "copiado" ? <Check size={15} /> : <Copy size={15} />}
+      {estado === "copiado" ? "¡Copiado! Pegalo en WhatsApp" : estado === "error" ? "No se pudo copiar" : label}
+    </button>
+  );
 }
 
 const BADGE_STYLES = {
@@ -8653,6 +8726,12 @@ export default function ConcretarApp() {
 
             {showPersonalForm && canCrearPersonal && (
               <Panel title={editingPersonalId ? "Editar personal" : "Añadir personal"} action={<button onClick={cancelPersonalForm}><X size={16} /></button>}>
+                {!editingPersonalId && (
+                  <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-stone-300 bg-stone-50 p-3">
+                    <BotonCopiarMensaje texto={MENSAJE_ALTA_PERSONAL} label="Copiar mensaje para WhatsApp" />
+                    <span className="text-xs text-slate-500">Mandáselo a quien entra para que te complete sus datos, talles y fotos del DNI.</span>
+                  </div>
+                )}
                 <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitPersonalForm}>
                   <Field label="Nombre">
                     <input value={personalForm.nombre} onChange={(e) => pf("nombre")(e.target.value)} required className={inputCls} />
