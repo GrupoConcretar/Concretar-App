@@ -8253,8 +8253,9 @@ export default function ConcretarApp() {
                       <option value="A">A</option>
                       <option value="B">B</option>
                       <option value="C">C (monotributo)</option>
+                      <option value="Sin factura">Sin factura</option>
                     </select>
-                    <div className="mt-1 text-[11px] text-slate-400">Se usa como valor por defecto al cargar los cobros de esta obra. La C es cuando se factura por monotributo: cuenta como ingreso de dinero pero no entra en el cálculo de IVA ni Ingresos Brutos.</div>
+                    <div className="mt-1 text-[11px] text-slate-400">Se usa como valor por defecto al cargar los cobros de esta obra. La C es cuando se factura por monotributo y "Sin factura" cuando no se factura: las dos cuentan como ingreso de dinero pero no entran en el cálculo de IVA ni Ingresos Brutos.</div>
                   </Field>
                   <Field label="Posible día de factura (opcional)">
                     <input name="facturaFecha" type="date" className={inputCls} />
@@ -8811,7 +8812,7 @@ export default function ConcretarApp() {
                         </Field>
                         <Field label="Factura">
                           <select value={facturaVentaProyectadaForm.tipoFactura} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
-                            {["A", "B", "C"].map((t) => <option key={t}>{t}</option>)}
+                            {["A", "B", "C", "Sin factura"].map((t) => <option key={t}>{t}</option>)}
                           </select>
                         </Field>
                         <Field label="Cuenta">
@@ -8868,7 +8869,11 @@ export default function ConcretarApp() {
                                   {f.cuenta && (
                                     <span className="flex items-center gap-1 text-slate-400"><CuentaIcon cuenta={f.cuenta} />{f.cuenta}{f.medioBancario ? ` · ${f.medioBancario}` : ""}</span>
                                   )}
-                                  <span className="rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">Factura {f.tipoFactura}</span>
+                                  {f.tipoFactura === "Sin factura" ? (
+                                    <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Sin factura</span>
+                                  ) : (
+                                    <span className="rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">Factura {f.tipoFactura}</span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <span className="font-mono font-semibold text-slate-800">{fmtARS(f.monto)}</span>
@@ -8876,7 +8881,7 @@ export default function ConcretarApp() {
                                   <BotonEliminar onClick={() => eliminarFacturaVentaProyectada(f.id)} title="Eliminar factura proyectada" />
                                 </div>
                               </div>
-                              {(ivaMes || iibbMes) && (
+                              {esGravableIvaIibb(f.tipoFactura) && (ivaMes || iibbMes) && (
                                 <div className="mt-1.5 space-y-1 border-t border-stone-100 pt-1.5 text-[11px] text-slate-500">
                                   <div>
                                     Esta factura sola aporta {fmtARS(ivaDeMonto(f.monto, f.tipoFactura))} de débito de IVA (21%, ya incluido en el monto)
