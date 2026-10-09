@@ -8701,6 +8701,11 @@ export default function ConcretarApp() {
               const facturasVentaProyectadasObra = facturasVentaProyectadas
                 .filter((f) => f.obraId === obraSel.id)
                 .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+              // Lo que ya se cobró de esta obra (al tocar "Marcar cobrado" pasa de arriba a
+              // esta lista) — se muestra chiquito al pie de "Facturas y cobros".
+              const cobradosObra = ingresos
+                .filter((i) => i.obraId === obraSel.id && i.estado !== "Pendiente")
+                .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha) || (a.id - b.id));
 
               return (
                 <>
@@ -8983,6 +8988,25 @@ export default function ConcretarApp() {
                             </div>
                           );
                         })}
+                      </div>
+                    )}
+                    {cobradosObra.length > 0 && (
+                      <div className="mt-3 border-t border-stone-100 pt-2">
+                        <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                          <CheckCircle2 size={11} /> Cobrado · {fmtARS(cobradosObra.reduce((s, i) => s + (i.monto || 0), 0))}
+                        </div>
+                        <div className="mt-1 space-y-0.5">
+                          {cobradosObra.map((i) => (
+                            <div key={i.id} className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-slate-500">
+                              <span>
+                                {fmtFecha(i.fecha)} · {i.concepto || "Cobro"}
+                                {i.cuenta && <span className="text-slate-400"> · {i.cuenta}{i.medioBancario ? ` (${i.medioBancario})` : ""}</span>}
+                                {i.tipoFactura && <span className="text-slate-400"> · {i.tipoFactura === "Sin factura" ? "Sin factura" : `Factura ${i.tipoFactura}`}</span>}
+                              </span>
+                              <span className="font-mono text-emerald-700">{fmtARS(i.monto)}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </Panel>
