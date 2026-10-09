@@ -4797,6 +4797,8 @@ export default function ConcretarApp() {
     setViewingObraId(obra.id);
     setSelectedObraId(obra.id);
     setEditandoObraId(null);
+    setEditandoFacturaVentaProyectadaId(null);
+    setShowFacturaVentaProyectadaForm(false);
   }
   function iniciarEdicionObra(obra) {
     setEditandoObraId(obra.id);
@@ -5001,10 +5003,35 @@ export default function ConcretarApp() {
   // (100% = precio total de la obra) — no se guarda en la base, el monto final siempre
   // es el que quedó en el campo Monto al enviar el formulario.
   const [facturaVentaProyectadaPct, setFacturaVentaProyectadaPct] = useState("");
+  // Id de la factura de venta futura que se está modificando (null = el formulario
+  // está en modo "agregar una nueva"). Se edita con el mismo formulario del alta,
+  // abierto en el lugar de esa factura en la lista.
+  const [editandoFacturaVentaProyectadaId, setEditandoFacturaVentaProyectadaId] = useState(null);
+  function iniciarEdicionFacturaVentaProyectada(f) {
+    setFacturaVentaProyectadaForm({
+      fecha: f.fecha || hoyISO(),
+      fechaCobroEstimada: f.fechaCobroEstimada || f.fecha || hoyISO(),
+      concepto: f.concepto || "",
+      monto: f.monto || 0,
+      tipoFactura: f.tipoFactura || "A",
+      cuenta: f.cuenta || CUENTAS[0],
+      medioBancario: f.medioBancario || "Transferencia",
+    });
+    setFacturaVentaProyectadaPct("");
+    setFacturaVentaProyectadaMontoResetKey((k) => k + 1);
+    setShowFacturaVentaProyectadaForm(false);
+    setEditandoFacturaVentaProyectadaId(f.id);
+  }
+  function cerrarFormFacturaVentaProyectada() {
+    setFacturaVentaProyectadaForm(emptyFacturaVentaProyectadaForm);
+    setFacturaVentaProyectadaPct("");
+    setFacturaVentaProyectadaMontoResetKey((k) => k + 1);
+    setShowFacturaVentaProyectadaForm(false);
+    setEditandoFacturaVentaProyectadaId(null);
+  }
   function submitFacturaVentaProyectadaForm(e) {
     e.preventDefault();
-    addRecord("facturas_venta_proyectadas", {
-      obraId: obraSel.id,
+    const datos = {
       fecha: facturaVentaProyectadaForm.fecha,
       fechaCobroEstimada: facturaVentaProyectadaForm.fechaCobroEstimada,
       concepto: facturaVentaProyectadaForm.concepto,
@@ -5012,11 +5039,80 @@ export default function ConcretarApp() {
       tipoFactura: facturaVentaProyectadaForm.tipoFactura,
       cuenta: facturaVentaProyectadaForm.cuenta,
       medioBancario: facturaVentaProyectadaForm.cuenta === "Banco" ? facturaVentaProyectadaForm.medioBancario : null,
-    }, setFacturasVentaProyectadas);
-    setFacturaVentaProyectadaForm(emptyFacturaVentaProyectadaForm);
-    setFacturaVentaProyectadaPct("");
-    setFacturaVentaProyectadaMontoResetKey((k) => k + 1);
-    setShowFacturaVentaProyectadaForm(false);
+    };
+    if (editandoFacturaVentaProyectadaId) {
+      updateRecord("facturas_venta_proyectadas", editandoFacturaVentaProyectadaId, datos, setFacturasVentaProyectadas);
+    } else {
+      addRecord("facturas_venta_proyectadas", { obraId: obraSel.id, ...datos }, setFacturasVentaProyectadas);
+    }
+    cerrarFormFacturaVentaProyectada();
+  }
+  // Formulario de "Factura de venta futura" (alta o modificación). Es una función y
+  // no un componente para que los inputs no se vuelvan a montar en cada render.
+  function renderFormFacturaVentaProyectada() {
+    const editando = !!editandoFacturaVentaProyectadaId;
+    return (
+      <form className={`grid grid-cols-1 gap-3 rounded-lg border p-3 sm:grid-cols-5 ${editando ? "border-amber-300 bg-amber-50/40" : "mb-4 border-stone-200 bg-stone-50"}`} onSubmit={submitFacturaVentaProyectadaForm}>
+        {editando && <div className="text-xs font-semibold text-slate-700 sm:col-span-5">Modificar factura de venta futura</div>}
+        <Field label="Posible día de factura">
+          <input type="date" value={facturaVentaProyectadaForm.fecha} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+          <div className="mt-1 text-[11px] text-slate-400">Decide el mes de IVA/Ingresos Brutos.</div>
+        </Field>
+        <Field label="Posible día de cobro">
+          <input type="date" value={facturaVentaProyectadaForm.fechaCobroEstimada} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, fechaCobroEstimada: e.target.value }))} required className={inputCls} />
+          <div className="mt-1 text-[11px] text-slate-400">Decide el mes en Próximos pagos e ingresos.</div>
+        </Field>
+        <Field label="Concepto">
+          <input value={facturaVentaProyectadaForm.concepto} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, concepto: e.target.value }))} placeholder="Ej: Certificado de avance 3" className={inputCls} />
+        </Field>
+        <Field label="% del precio de obra">
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={facturaVentaProyectadaPct}
+            onChange={(e) => {
+              const pct = e.target.value;
+              setFacturaVentaProyectadaPct(pct);
+              if (pct === "") return;
+              const precioObra = resumenPorObra.find((x) => x.obra.id === obraSel?.id)?.precioObra || 0;
+              setFacturaVentaProyectadaForm((f) => ({ ...f, monto: Math.round(precioObra * (Number(pct) / 100)) }));
+              setFacturaVentaProyectadaMontoResetKey((k) => k + 1);
+            }}
+            placeholder="Ej: 100"
+            className={inputCls}
+          />
+          <div className="mt-1 text-[11px] text-slate-400">
+            100% = precio total de la obra ({fmtARS(resumenPorObra.find((x) => x.obra.id === obraSel?.id)?.precioObra || 0)}).
+          </div>
+        </Field>
+        <Field label="Monto ($)">
+          <MoneyInput key={facturaVentaProyectadaMontoResetKey} value={facturaVentaProyectadaForm.monto} onChange={(v) => setFacturaVentaProyectadaForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+        </Field>
+        <Field label="Factura">
+          <select value={facturaVentaProyectadaForm.tipoFactura} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
+            {["A", "B", "C", "Sin factura"].map((t) => <option key={t}>{t}</option>)}
+          </select>
+        </Field>
+        <Field label="Cuenta">
+          <select value={facturaVentaProyectadaForm.cuenta} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+            {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+          </select>
+        </Field>
+        {facturaVentaProyectadaForm.cuenta === "Banco" && (
+          <Field label="Medio">
+            <select value={facturaVentaProyectadaForm.medioBancario} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, medioBancario: e.target.value }))} className={inputCls}>
+              <option value="Transferencia">Transferencia</option>
+              <option value="eCheq">eCheq</option>
+            </select>
+          </Field>
+        )}
+        <div className="flex items-end gap-2">
+          <button type="submit" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">{editando ? "Guardar cambios" : "Agregar"}</button>
+          <button type="button" onClick={cerrarFormFacturaVentaProyectada} className={btnGhost}>Cancelar</button>
+        </div>
+      </form>
+    );
   }
   function eliminarFacturaVentaProyectada(id) {
     deleteRecord("facturas_venta_proyectadas", id, setFacturasVentaProyectadas);
@@ -8784,12 +8880,15 @@ export default function ConcretarApp() {
                     action={
                       <button
                         onClick={() => {
-                          if (!showFacturaVentaProyectadaForm) {
+                          if (!showFacturaVentaProyectadaForm || editandoFacturaVentaProyectadaId) {
                             setFacturaVentaProyectadaForm(emptyFacturaVentaProyectadaForm);
                             setFacturaVentaProyectadaPct("");
                             setFacturaVentaProyectadaMontoResetKey((k) => k + 1);
+                            setEditandoFacturaVentaProyectadaId(null);
+                            setShowFacturaVentaProyectadaForm(true);
+                          } else {
+                            setShowFacturaVentaProyectadaForm(false);
                           }
-                          setShowFacturaVentaProyectadaForm((v) => !v);
                         }}
                         className={btnGhost}
                       >
@@ -8798,67 +8897,7 @@ export default function ConcretarApp() {
                     }
                   >
                     <div className="mb-3 text-xs text-slate-500">Cargá acá una factura de venta que todavía no emitiste, con su posible día de factura (decide el mes de IVA/Ingresos Brutos) y su posible día de cobro (decide el mes en Próximos pagos e ingresos) — ya queda proyectada, sin necesidad de ningún paso más. Cuando la factures de verdad, adjuntale el PDF o foto de la factura. Cuando se cobre, usá "Marcar cobrado" para que pase a ser un ingreso real de esta obra.</div>
-                    {showFacturaVentaProyectadaForm && (
-                      <form className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-5" onSubmit={submitFacturaVentaProyectadaForm}>
-                        <Field label="Posible día de factura">
-                          <input type="date" value={facturaVentaProyectadaForm.fecha} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
-                          <div className="mt-1 text-[11px] text-slate-400">Decide el mes de IVA/Ingresos Brutos.</div>
-                        </Field>
-                        <Field label="Posible día de cobro">
-                          <input type="date" value={facturaVentaProyectadaForm.fechaCobroEstimada} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, fechaCobroEstimada: e.target.value }))} required className={inputCls} />
-                          <div className="mt-1 text-[11px] text-slate-400">Decide el mes en Próximos pagos e ingresos.</div>
-                        </Field>
-                        <Field label="Concepto">
-                          <input value={facturaVentaProyectadaForm.concepto} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, concepto: e.target.value }))} placeholder="Ej: Certificado de avance 3" className={inputCls} />
-                        </Field>
-                        <Field label="% del precio de obra">
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={facturaVentaProyectadaPct}
-                            onChange={(e) => {
-                              const pct = e.target.value;
-                              setFacturaVentaProyectadaPct(pct);
-                              if (pct === "") return;
-                              const precioObra = resumenPorObra.find((x) => x.obra.id === obraSel?.id)?.precioObra || 0;
-                              setFacturaVentaProyectadaForm((f) => ({ ...f, monto: Math.round(precioObra * (Number(pct) / 100)) }));
-                              setFacturaVentaProyectadaMontoResetKey((k) => k + 1);
-                            }}
-                            placeholder="Ej: 100"
-                            className={inputCls}
-                          />
-                          <div className="mt-1 text-[11px] text-slate-400">
-                            100% = precio total de la obra ({fmtARS(resumenPorObra.find((x) => x.obra.id === obraSel?.id)?.precioObra || 0)}).
-                          </div>
-                        </Field>
-                        <Field label="Monto ($)">
-                          <MoneyInput key={facturaVentaProyectadaMontoResetKey} value={facturaVentaProyectadaForm.monto} onChange={(v) => setFacturaVentaProyectadaForm((f) => ({ ...f, monto: v }))} className={inputCls} />
-                        </Field>
-                        <Field label="Factura">
-                          <select value={facturaVentaProyectadaForm.tipoFactura} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
-                            {["A", "B", "C", "Sin factura"].map((t) => <option key={t}>{t}</option>)}
-                          </select>
-                        </Field>
-                        <Field label="Cuenta">
-                          <select value={facturaVentaProyectadaForm.cuenta} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
-                            {CUENTAS.map((c) => <option key={c}>{c}</option>)}
-                          </select>
-                        </Field>
-                        {facturaVentaProyectadaForm.cuenta === "Banco" && (
-                          <Field label="Medio">
-                            <select value={facturaVentaProyectadaForm.medioBancario} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, medioBancario: e.target.value }))} className={inputCls}>
-                              <option value="Transferencia">Transferencia</option>
-                              <option value="eCheq">eCheq</option>
-                            </select>
-                          </Field>
-                        )}
-                        <div className="flex items-end gap-2">
-                          <button type="submit" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Agregar</button>
-                          <button type="button" onClick={() => setShowFacturaVentaProyectadaForm(false)} className={btnGhost}>Cancelar</button>
-                        </div>
-                      </form>
-                    )}
+                    {showFacturaVentaProyectadaForm && !editandoFacturaVentaProyectadaId && renderFormFacturaVentaProyectada()}
                     {cobrosPendientesObra.length === 0 && facturasVentaProyectadasObra.length === 0 ? (
                       <div className="text-xs text-slate-400">No hay facturas de venta futuras ni cobros pendientes cargados para esta obra.</div>
                     ) : (
@@ -8885,6 +8924,9 @@ export default function ConcretarApp() {
                           const clave = claveMesCuentas(f.fecha);
                           const ivaMes = ivaMensual.find((m) => m.clave === clave);
                           const iibbMes = iibbMensual.find((m) => m.clave === clave);
+                          if (editandoFacturaVentaProyectadaId === f.id) {
+                            return <div key={f.id}>{renderFormFacturaVentaProyectada()}</div>;
+                          }
                           return (
                             <div key={f.id} className="rounded-md border border-stone-200 bg-white px-3 py-2 text-xs">
                               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -8902,6 +8944,9 @@ export default function ConcretarApp() {
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <span className="font-mono font-semibold text-slate-800">{fmtARS(f.monto)}</span>
+                                  <button onClick={() => iniciarEdicionFacturaVentaProyectada(f)} className={btnGhost} title="Cambiar fechas, monto, cuenta, tipo de factura o concepto">
+                                    <span className="flex items-center gap-1"><Pencil size={12} /> Modificar</span>
+                                  </button>
                                   <button onClick={() => marcarFacturaProyectadaCobrada(f)} className={btnGhost}>Marcar cobrado</button>
                                   <BotonEliminar onClick={() => eliminarFacturaVentaProyectada(f.id)} title="Eliminar factura proyectada" />
                                 </div>
