@@ -4808,13 +4808,26 @@ export default function ConcretarApp() {
     e.preventDefault();
     const f = new FormData(e.target);
     const nuevoClienteId = f.get("clienteId") ? Number(f.get("clienteId")) : null;
+    const nuevoTipoFacturacion = f.get("tipoFacturacion") || "A";
     await updateRecord("obras", obra.id, {
       nombre: f.get("nombre"),
       clienteId: nuevoClienteId,
       cliente: nombreComercial(clientes.find((c) => c.id === nuevoClienteId)) || obra.cliente,
       presupuesto: Number(f.get("presupuesto")) || obra.presupuesto,
       encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
+      tipoFacturacion: nuevoTipoFacturacion,
     }, setObras);
+    // Las facturas de venta futuras todavía no se emitieron, así que si cambia el tipo
+    // de factura de la obra se ofrece pasarlas al tipo nuevo (si no, seguirían sumando
+    // o dejando de sumar IVA/Ingresos Brutos con el tipo viejo). Los cobros ya
+    // registrados no se tocan: esos ya se facturaron (o no) como se cargaron.
+    if (nuevoTipoFacturacion !== (obra.tipoFacturacion || "A")) {
+      const proyectadasConOtroTipo = facturasVentaProyectadas.filter((fv) => fv.obraId === obra.id && fv.tipoFactura !== nuevoTipoFacturacion);
+      const nombreTipo = (t) => (t === "Sin factura" ? "Sin factura" : `Factura ${t}`);
+      if (proyectadasConOtroTipo.length > 0 && window.confirm(`"${obra.nombre}" tiene ${proyectadasConOtroTipo.length} factura${proyectadasConOtroTipo.length > 1 ? "s" : ""} de venta futura con otro tipo de factura. ¿Pasarla${proyectadasConOtroTipo.length > 1 ? "s" : ""} también a "${nombreTipo(nuevoTipoFacturacion)}"? Los cobros ya registrados no se modifican.`)) {
+        await Promise.all(proyectadasConOtroTipo.map((fv) => updateRecord("facturas_venta_proyectadas", fv.id, { tipoFactura: nuevoTipoFacturacion }, setFacturasVentaProyectadas)));
+      }
+    }
     await importarPresupuestoAObra(obra.id);
     quitarExcelNuevaObra();
     setEditandoObraId(null);
@@ -8384,6 +8397,14 @@ export default function ConcretarApp() {
                             {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
                           </select>
                         </Field>
+                        <Field label="Tipo de factura de la obra">
+                          <select name="tipoFacturacion" defaultValue={o.tipoFacturacion || "A"} className={inputCls}>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C (monotributo)</option>
+                            <option value="Sin factura">Sin factura</option>
+                          </select>
+                        </Field>
 
                         {!presupuestoGeneral.some((p) => p.obraId === o.id) && (
                           <div className="rounded-md border border-dashed border-amber-300 bg-amber-50 p-4">
@@ -8466,6 +8487,10 @@ export default function ConcretarApp() {
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Encargado</span>
                           <span>{encargado ? nombreCompletoDe(encargado) : <span className="text-slate-400">Sin asignar</span>}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-500">Factura</span>
+                          <span>{(o.tipoFacturacion || "A") === "Sin factura" ? "Sin factura" : `Tipo ${o.tipoFacturacion || "A"}`}</span>
                         </div>
                         {o.estado === "En curso" && (
                           <div className="flex justify-between text-sm">
