@@ -466,6 +466,39 @@ function readFileAsDataURL(file) {
   });
 }
 
+// Los comprobantes se guardan en la base como "data URL" (el archivo entero en
+// texto). Los navegadores no dejan abrir una data URL directo en una pestaña nueva
+// (el link no hace nada), así que se convierte a un archivo temporal del navegador
+// (blob) y se abre ese — el PDF o la foto se ve con el visor normal.
+function abrirArchivo(archivo) {
+  if (!archivo) return;
+  if (!archivo.startsWith("data:")) {
+    window.open(archivo, "_blank", "noopener");
+    return;
+  }
+  try {
+    const coma = archivo.indexOf(",");
+    const meta = archivo.slice(5, coma);
+    const datos = archivo.slice(coma + 1);
+    const mime = meta.split(";")[0] || "application/octet-stream";
+    let bytes;
+    if (meta.includes(";base64")) {
+      const bin = atob(datos);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    } else {
+      bytes = new TextEncoder().encode(decodeURIComponent(datos));
+    }
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+    const ventana = window.open(url, "_blank");
+    if (!ventana) alert("El navegador bloqueó la ventana nueva. Permití las ventanas emergentes para esta página y volvé a intentar.");
+    // Se libera después de un rato largo, cuando el visor ya terminó de cargarlo.
+    setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
+  } catch {
+    alert("No se pudo abrir el archivo.");
+  }
+}
+
 // El navegador interno de algunas apps (y celulares viejos) no tiene
 // navigator.clipboard — ahí se copia con el método clásico de un textarea oculto.
 async function copiarAlPortapapeles(texto) {
@@ -3211,7 +3244,7 @@ function ModalHistorialCobrosSocios({ cobrosSocios, onEditar, onEliminar, onClos
                                 <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600">{fmtARS(c.monto)}</td>
                                 <td className="px-2 py-1">
                                   {c.archivo && (
-                                    <a href={c.archivo} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-slate-500 hover:underline">
+                                    <a href={c.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(c.archivo); }} className="flex items-center gap-1 text-slate-500 hover:underline">
                                       <FileDown size={12} /> Ver
                                     </a>
                                   )}
@@ -3377,7 +3410,7 @@ function ArchivoInput({ label, value, nombreArchivo, onChange }) {
           esImagen ? (
             <img src={value} alt={label} className="h-14 w-14 rounded-md border border-stone-300 object-cover" />
           ) : (
-            <a href={value} target="_blank" rel="noreferrer" className="flex h-14 w-14 flex-col items-center justify-center rounded-md border border-stone-300 text-center text-[9px] text-slate-500 hover:bg-stone-50">
+            <a href={value} onClick={(e) => { e.preventDefault(); abrirArchivo(value); }} className="flex h-14 w-14 flex-col items-center justify-center rounded-md border border-stone-300 text-center text-[9px] text-slate-500 hover:bg-stone-50">
               <FileDown size={16} className="text-slate-400" />
               PDF
             </a>
@@ -12446,7 +12479,7 @@ export default function ConcretarApp() {
                   <span className="flex items-center gap-1.5">
                     {i.concepto}
                     {i.archivo && (
-                      <a href={i.archivo} target="_blank" rel="noreferrer" title={i.nombreArchivo || "Ver comprobante"} className="text-slate-400 hover:text-slate-700">
+                      <a href={i.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(i.archivo); }} title={i.nombreArchivo || "Ver comprobante"} className="text-slate-400 hover:text-slate-700">
                         <FileDown size={13} />
                       </a>
                     )}
@@ -13682,7 +13715,7 @@ export default function ConcretarApp() {
                                               <span className="flex items-center gap-1">
                                                 {f.comprobante || "sin comprobante"}
                                                 {f.archivo ? (
-                                                  <a href={f.archivo} target="_blank" rel="noreferrer" title={f.nombreArchivo || "Ver comprobante"} className="text-slate-400 hover:text-slate-700">
+                                                  <a href={f.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(f.archivo); }} title={f.nombreArchivo || "Ver comprobante"} className="text-slate-400 hover:text-slate-700">
                                                     <FileDown size={12} />
                                                   </a>
                                                 ) : (
@@ -13847,7 +13880,7 @@ export default function ConcretarApp() {
                                   <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5 text-xs">
                                     <span className="flex items-center gap-1.5">
                                       <span className="rounded-full border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">{nombreMesCuentas(f.mes)}</span>
-                                      <a href={f.archivo} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-slate-600 hover:underline">
+                                      <a href={f.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(f.archivo); }} className="flex items-center gap-1 text-slate-600 hover:underline">
                                         <FileDown size={12} className="text-slate-400" />
                                         {f.nombreArchivo || "Ver factura"}
                                       </a>
