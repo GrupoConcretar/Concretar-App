@@ -7230,7 +7230,7 @@ export default function ConcretarApp() {
   const [agregandoNotaCreditoId, setAgregandoNotaCreditoId] = useState(null);
   // Id del proveedor cuyo formulario de "Entrega a cuenta" está abierto.
   const [agregandoEntregaId, setAgregandoEntregaId] = useState(null);
-  // Id del proveedor con el formulario de "Cargar factura" abierto (el mismo de Gastos
+  // Id del proveedor con el formulario de "Cargar compra" abierto (el mismo de Gastos
   // y Facturas, con el proveedor fijo).
   const [cargandoCompraProveedorId, setCargandoCompraProveedorId] = useState(null);
   function abrirCargaCompraProveedor(p) {
@@ -13798,7 +13798,7 @@ export default function ConcretarApp() {
                             <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
                           </div>
                           <button onClick={() => abrirCargaCompraProveedor(p)} className="rounded-md border border-amber-400 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100">
-                            <span className="flex items-center gap-1"><Receipt size={13} /> Cargar factura</span>
+                            <span className="flex items-center gap-1"><Receipt size={13} /> Cargar compra</span>
                           </button>
                           <button onClick={() => { setAgregandoEntregaId((id) => (id === p.id ? null : p.id)); setAgregandoNotaCreditoId(null); setCargandoCompraProveedorId(null); }} className="rounded-md border border-emerald-400 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
                             <span className="flex items-center gap-1"><Banknote size={13} /> Entrega a cuenta</span>
@@ -13824,7 +13824,7 @@ export default function ConcretarApp() {
                         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
                           <div className="mb-2 flex items-start justify-between gap-2">
                             <div className="text-xs text-slate-600">
-                              <span className="font-semibold text-slate-800">Cargar factura de compra</span> — queda en Gastos y Facturas igual que si la cargaras desde ahí. Al guardar, el formulario queda abierto con los mismos datos: cambiá solo lo distinto (monto, N° de factura, fecha…) y guardá la siguiente.
+                              <span className="font-semibold text-slate-800">Cargar compra</span> — queda en Gastos y Facturas igual que si la cargaras desde ahí. Al guardar, el formulario queda abierto con los mismos datos: cambiá solo lo distinto (monto, N° de factura, fecha…) y guardá la siguiente.
                             </div>
                             <button onClick={() => setCargandoCompraProveedorId(null)} title="Cerrar"><X size={16} /></button>
                           </div>
