@@ -4911,6 +4911,196 @@ export default function ConcretarApp() {
   const [facturaArchivo, setFacturaArchivo] = useState(null);
   const [facturaNombreArchivo, setFacturaNombreArchivo] = useState(null);
   const [facturaTipoArchivo, setFacturaTipoArchivo] = useState(null);
+  // Formulario de "Cargar gasto / factura": el mismo se usa en Gastos y Facturas y en
+  // la ficha de un proveedor (con el proveedor ya fijo, para ir cargando las facturas
+  // que falten mirando su resumen de cuenta corriente).
+  const [formularioCompraKey, setFormularioCompraKey] = useState(0);
+  const [ultimaCompraCargada, setUltimaCompraCargada] = useState(null);
+  async function guardarFormularioCompra(e, seguirAbierto) {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    if (!f.get("proveedor")) { alert("Elegí un proveedor o escribí uno nuevo."); return; }
+    const formaPago = f.get("formaPago");
+    const medioBancario = formaPago === "Banco" ? f.get("medioBancario") : null;
+    const fechaPagoEcheq = medioBancario === "eCheq" ? f.get("fechaPagoEcheq") : null;
+    // "Cuenta corriente" es una deuda con el proveedor, no un canal real de pago:
+    // al cargarla se elige si ya se saldó (y por qué medio) o si queda pendiente
+    // para una fecha futura.
+    let cuenta = formaPago;
+    let medioBancarioFinal = medioBancario;
+    let estado = medioBancario === "eCheq" ? "Pendiente" : "Pagada";
+    let fechaVencimientoCc = null;
+    if (formaPago === "Cuenta corriente") {
+      const estadoCC = f.get("estadoCC");
+      if (estadoCC === "Pendiente") {
+        cuenta = null;
+        medioBancarioFinal = null;
+        estado = "Pendiente";
+        fechaVencimientoCc = f.get("fechaVencimientoCc");
+      } else {
+        const medioPagoCC = f.get("medioPagoCC");
+        cuenta = medioPagoCC === "Transferencia" ? "Banco" : "Efectivo";
+        medioBancarioFinal = medioPagoCC === "Transferencia" ? "Débito/Transferencia" : null;
+        estado = "Pagada";
+      }
+    }
+    const nuevaCompra = await addRecord("compras_facturas", {
+      fecha: f.get("fecha"),
+      obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
+      ordenCompraId: null,
+      proveedor: f.get("proveedor"),
+      categoria: f.get("categoria"),
+      descripcion: f.get("descripcion") || "",
+      monto: Number(f.get("monto")) || 0,
+      comprobante: (f.get("comprobante") || "").trim(),
+      tipoFactura: f.get("tipoFactura"),
+      formaPago,
+      medioBancario: medioBancarioFinal,
+      fechaPagoEcheq,
+      fechaVencimientoCc,
+      cuenta,
+      estado,
+      archivo: facturaArchivo,
+      nombreArchivo: facturaNombreArchivo,
+      tipoArchivo: facturaTipoArchivo,
+    }, setComprasFacturas);
+    if (!nuevaCompra) return;
+    setFacturaArchivo(null);
+    setFacturaNombreArchivo(null);
+    setFacturaTipoArchivo(null);
+    setFormularioCompraKey((k) => k + 1);
+    if (seguirAbierto) {
+      // Cargando desde la ficha del proveedor: el formulario queda abierto
+      // (con la misma forma de pago y obra) para cargar la siguiente factura.
+      setUltimaCompraCargada(nuevaCompra);
+      // Si ese proveedor tiene entregas a cuenta, lo que sobraba de ellas
+      // puede alcanzar para saldar esta factura nueva.
+      if (entregasProveedores.some((x) => nombreProveedorKey(x.proveedor) === nombreProveedorKey(nuevaCompra.proveedor))) {
+        saldarFacturasConEntregas(nuevaCompra.proveedor, entregasProveedores, [nuevaCompra]);
+      }
+      return;
+    }
+    setFacturaObraId("");
+    setFacturaFormaPago("Efectivo");
+    setFacturaMedioBancario("Débito/Transferencia");
+    setFacturaPlazoEcheq("30");
+    setFacturaEstadoCC("Pendiente");
+    setFacturaMedioPagoCC("Efectivo");
+    setShowFacturaForm(false);
+  }
+  function renderFormularioCompra({ proveedorFijo = null }) {
+    return (
+      <form
+        key={formularioCompraKey}
+        className="grid grid-cols-1 gap-4 md:grid-cols-3"
+        onSubmit={(e) => guardarFormularioCompra(e, !!proveedorFijo)}
+      >
+        <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
+        <Field label="Obra">
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: colorDeObra(obras.find((o) => String(o.id) === facturaObraId)) }} />
+            <select name="obraId" value={facturaObraId} onChange={(e) => setFacturaObraId(e.target.value)} className={inputCls}>
+              <option value="">General (sin obra específica)</option>
+              {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+            </select>
+          </div>
+        </Field>
+        <Field label="Proveedor - Nombre de fantasía">
+          {proveedorFijo ? (
+            <>
+              <input type="hidden" name="proveedor" value={proveedorFijo} />
+              <div className={`${inputCls} bg-stone-100 text-slate-600`}>{proveedorFijo}</div>
+            </>
+          ) : (
+            <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} />
+          )}
+        </Field>
+        <Field label="Categoría">
+          <select name="categoria" className={inputCls}>{CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}</select>
+        </Field>
+        <Field label="Descripción">
+          <input name="descripcion" placeholder="Ej: Nafta camioneta, cemento para losa..." className={inputCls} />
+        </Field>
+        <Field label="N° de factura / comprobante (opcional)">
+          <input name="comprobante" placeholder="Ej: A-0019-00056013" className={inputCls} />
+        </Field>
+        <Field label="Precio final ($)">
+          <MoneyInput name="monto" className={inputCls} />
+          <div className="mt-1 text-[11px] text-slate-400">Con IVA incluido.</div>
+        </Field>
+        <Field label="Factura">
+          <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
+        </Field>
+        <Field label="Forma de pago">
+          <select name="formaPago" value={facturaFormaPago} onChange={(e) => setFacturaFormaPago(e.target.value)} className={inputCls}>
+            {FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}
+          </select>
+        </Field>
+        {facturaFormaPago === "Banco" && (
+          <Field label="Medio">
+            <select name="medioBancario" value={facturaMedioBancario} onChange={(e) => setFacturaMedioBancario(e.target.value)} className={inputCls}>
+              {MEDIOS_BANCARIOS.map((m) => <option key={m}>{m}</option>)}
+            </select>
+          </Field>
+        )}
+        {facturaFormaPago === "Banco" && facturaMedioBancario === "eCheq" && (
+          <>
+            <Field label="Plazo">
+              <select value={facturaPlazoEcheq} onChange={(e) => setFacturaPlazoEcheq(e.target.value)} className={inputCls}>
+                <option value="30">30 días</option>
+                <option value="60">60 días</option>
+                <option value="90">90 días</option>
+                <option value="personalizado">Otro (elegir fecha)</option>
+              </select>
+            </Field>
+            <Field label="Fecha de pago">
+              <input
+                key={facturaPlazoEcheq}
+                name="fechaPagoEcheq"
+                type="date"
+                defaultValue={fechaMasDias(facturaPlazoEcheq === "personalizado" ? 30 : Number(facturaPlazoEcheq))}
+                required
+                className={inputCls}
+              />
+              <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esta fecha — ese día pasa solo a "Pagado".</div>
+            </Field>
+          </>
+        )}
+        {facturaFormaPago === "Cuenta corriente" && (
+          <>
+            <Field label="Estado">
+              <select name="estadoCC" value={facturaEstadoCC} onChange={(e) => setFacturaEstadoCC(e.target.value)} className={inputCls}>
+                <option value="Pendiente">Pendiente de pago</option>
+                <option value="Pagado">Pagado</option>
+              </select>
+            </Field>
+            {facturaEstadoCC === "Pendiente" ? (
+              <Field label="Fecha de pago">
+                <input name="fechaVencimientoCc" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
+                <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esa fecha — la marcás como "Pagada" a mano desde la tabla cuando la saldemos.</div>
+              </Field>
+            ) : (
+              <Field label="Medio de pago">
+                <select name="medioPagoCC" value={facturaMedioPagoCC} onChange={(e) => setFacturaMedioPagoCC(e.target.value)} className={inputCls}>
+                  <option value="Efectivo">Efectivo</option>
+                  <option value="Transferencia">Transferencia</option>
+                </select>
+              </Field>
+            )}
+          </>
+        )}
+        <div className="md:col-span-2">
+          <ArchivoInput
+            label="Factura / comprobante (opcional acá, se puede agregar después)"
+            value={facturaArchivo}
+            nombreArchivo={facturaNombreArchivo}
+            onChange={(archivo, nombreArchivo, tipoArchivo) => { setFacturaArchivo(archivo); setFacturaNombreArchivo(nombreArchivo); setFacturaTipoArchivo(tipoArchivo); }}
+          />
+        </div>
+        <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+      </form>
+    );
+  }
   // ---------- PDF mensual para el contador (Gastos y Facturas + Cobros de socios) ----------
   const [mesReporteContador, setMesReporteContador] = useState(hoyISO().slice(0, 7));
   const [mostrarMenuMesContador, setMostrarMenuMesContador] = useState(false);
@@ -6486,7 +6676,7 @@ export default function ConcretarApp() {
   // Recalcula qué facturas del proveedor quedan saldadas con lo entregado (+ notas de
   // crédito) y actualiza solo las que cambian. Se llama al cargar o borrar una entrega,
   // así borrar una entrega vuelve a dejar pendientes las facturas que había saldado.
-  function saldarFacturasConEntregas(nombre, entregasLista) {
+  function saldarFacturasConEntregas(nombre, entregasLista, comprasNuevas = []) {
     const key = nombreProveedorKey(nombre);
     const notas = notasCredito
       .filter((n) => nombreProveedorKey(n.proveedor) === key && !obraIdsPapelera.has(n.obraId))
@@ -6494,7 +6684,8 @@ export default function ConcretarApp() {
     let disponible = notas + entregasLista
       .filter((e) => nombreProveedorKey(e.proveedor) === key)
       .reduce((s, e) => s + (e.monto || 0), 0);
-    const candidatas = comprasFacturas
+    // comprasNuevas: facturas recién cargadas que todavía no llegaron al estado.
+    const candidatas = [...comprasFacturas, ...comprasNuevas.filter((n) => !comprasFacturas.some((c) => c.id === n.id))]
       .filter((c) => nombreProveedorKey(c.proveedor) === key && esDeudaSaldablePorEntrega(c) && (c.estado === "Pendiente" || c.pagadaConEntrega))
       .sort(ordenFacturasDeuda);
     let alcanza = true;
@@ -6989,6 +7180,24 @@ export default function ConcretarApp() {
   const [agregandoNotaCreditoId, setAgregandoNotaCreditoId] = useState(null);
   // Id del proveedor cuyo formulario de "Entrega a cuenta" está abierto.
   const [agregandoEntregaId, setAgregandoEntregaId] = useState(null);
+  // Id del proveedor con el formulario de "Cargar factura" abierto (el mismo de Gastos
+  // y Facturas, con el proveedor fijo).
+  const [cargandoCompraProveedorId, setCargandoCompraProveedorId] = useState(null);
+  function abrirCargaCompraProveedor(p) {
+    if (cargandoCompraProveedorId === p.id) { setCargandoCompraProveedorId(null); return; }
+    // Lo habitual acá es ir cargando facturas del resumen de cuenta corriente.
+    setFacturaObraId("");
+    setFacturaFormaPago("Cuenta corriente");
+    setFacturaEstadoCC("Pendiente");
+    setFacturaArchivo(null);
+    setFacturaNombreArchivo(null);
+    setFacturaTipoArchivo(null);
+    setUltimaCompraCargada(null);
+    setFormularioCompraKey((k) => k + 1);
+    setAgregandoEntregaId(null);
+    setAgregandoNotaCreditoId(null);
+    setCargandoCompraProveedorId(p.id);
+  }
   // Proveedor abierto en la vista de detalle (lista de proveedores tipo
   // planilla -> click en una fila -> entra acá, con su historial de compras
   // filtrable por fecha y por obra).
@@ -7012,6 +7221,7 @@ export default function ConcretarApp() {
     setViewingProveedorId(p.id);
     setAgregandoNotaCreditoId(null);
     setAgregandoEntregaId(null);
+    setCargandoCompraProveedorId(null);
     setHistorialFiltroDesde("");
     setHistorialFiltroHasta("");
     setHistorialFiltroObraId("");
@@ -12291,7 +12501,23 @@ export default function ConcretarApp() {
                 <button onClick={() => setShowGastosRecurrentesModal(true)} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50">
                   + Gastos recurrentes
                 </button>
-                <button onClick={() => setShowFacturaForm((v) => !v)} className={btnPrimary}>
+                <button
+                  onClick={() => {
+                    // El mismo formulario se usa desde la ficha de un proveedor (que arranca
+                    // en Cuenta corriente): al abrirlo acá vuelve a los valores de siempre.
+                    if (!showFacturaForm) {
+                      setFacturaObraId("");
+                      setFacturaFormaPago("Efectivo");
+                      setFacturaEstadoCC("Pendiente");
+                      setFacturaArchivo(null);
+                      setFacturaNombreArchivo(null);
+                      setFacturaTipoArchivo(null);
+                      setFormularioCompraKey((k) => k + 1);
+                    }
+                    setShowFacturaForm((v) => !v);
+                  }}
+                  className={btnPrimary}
+                >
                   <Plus size={16} /> Cargar gasto
                 </button>
               </div>
@@ -12299,163 +12525,7 @@ export default function ConcretarApp() {
 
             {showFacturaForm && (
               <Panel title="Cargar gasto / factura" action={<button onClick={() => setShowFacturaForm(false)}><X size={16} /></button>}>
-                <form
-                  className="grid grid-cols-1 gap-4 md:grid-cols-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const f = new FormData(e.target);
-                    if (!f.get("proveedor")) { alert("Elegí un proveedor o escribí uno nuevo."); return; }
-                    const formaPago = f.get("formaPago");
-                    const medioBancario = formaPago === "Banco" ? f.get("medioBancario") : null;
-                    const fechaPagoEcheq = medioBancario === "eCheq" ? f.get("fechaPagoEcheq") : null;
-                    // "Cuenta corriente" es una deuda con el proveedor, no un canal real de pago:
-                    // al cargarla se elige si ya se saldó (y por qué medio) o si queda pendiente
-                    // para una fecha futura.
-                    let cuenta = formaPago;
-                    let medioBancarioFinal = medioBancario;
-                    let estado = medioBancario === "eCheq" ? "Pendiente" : "Pagada";
-                    let fechaVencimientoCc = null;
-                    if (formaPago === "Cuenta corriente") {
-                      const estadoCC = f.get("estadoCC");
-                      if (estadoCC === "Pendiente") {
-                        cuenta = null;
-                        medioBancarioFinal = null;
-                        estado = "Pendiente";
-                        fechaVencimientoCc = f.get("fechaVencimientoCc");
-                      } else {
-                        const medioPagoCC = f.get("medioPagoCC");
-                        cuenta = medioPagoCC === "Transferencia" ? "Banco" : "Efectivo";
-                        medioBancarioFinal = medioPagoCC === "Transferencia" ? "Débito/Transferencia" : null;
-                        estado = "Pagada";
-                      }
-                    }
-                    addRecord("compras_facturas", {
-                      fecha: f.get("fecha"),
-                      obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
-                      ordenCompraId: null,
-                      proveedor: f.get("proveedor"),
-                      categoria: f.get("categoria"),
-                      descripcion: f.get("descripcion") || "",
-                      monto: Number(f.get("monto")) || 0,
-                      comprobante: "",
-                      tipoFactura: f.get("tipoFactura"),
-                      formaPago,
-                      medioBancario: medioBancarioFinal,
-                      fechaPagoEcheq,
-                      fechaVencimientoCc,
-                      cuenta,
-                      estado,
-                      archivo: facturaArchivo,
-                      nombreArchivo: facturaNombreArchivo,
-                      tipoArchivo: facturaTipoArchivo,
-                    }, setComprasFacturas);
-                    e.target.reset();
-                    setFacturaObraId("");
-                    setFacturaFormaPago("Efectivo");
-                    setFacturaMedioBancario("Débito/Transferencia");
-                    setFacturaPlazoEcheq("30");
-                    setFacturaEstadoCC("Pendiente");
-                    setFacturaMedioPagoCC("Efectivo");
-                    setFacturaArchivo(null);
-                    setFacturaNombreArchivo(null);
-                    setFacturaTipoArchivo(null);
-                    setShowFacturaForm(false);
-                  }}
-                >
-                  <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
-                  <Field label="Obra">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: colorDeObra(obras.find((o) => String(o.id) === facturaObraId)) }} />
-                      <select name="obraId" value={facturaObraId} onChange={(e) => setFacturaObraId(e.target.value)} className={inputCls}>
-                        <option value="">General (sin obra específica)</option>
-                        {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                      </select>
-                    </div>
-                  </Field>
-                  <Field label="Proveedor - Nombre de fantasía">
-                    <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} />
-                  </Field>
-                  <Field label="Categoría">
-                    <select name="categoria" className={inputCls}>{CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}</select>
-                  </Field>
-                  <Field label="Descripción">
-                    <input name="descripcion" placeholder="Ej: Nafta camioneta, cemento para losa..." className={inputCls} />
-                  </Field>
-                  <Field label="Precio final ($)">
-                    <MoneyInput name="monto" className={inputCls} />
-                    <div className="mt-1 text-[11px] text-slate-400">Con IVA incluido.</div>
-                  </Field>
-                  <Field label="Factura">
-                    <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
-                  </Field>
-                  <Field label="Forma de pago">
-                    <select name="formaPago" value={facturaFormaPago} onChange={(e) => setFacturaFormaPago(e.target.value)} className={inputCls}>
-                      {FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}
-                    </select>
-                  </Field>
-                  {facturaFormaPago === "Banco" && (
-                    <Field label="Medio">
-                      <select name="medioBancario" value={facturaMedioBancario} onChange={(e) => setFacturaMedioBancario(e.target.value)} className={inputCls}>
-                        {MEDIOS_BANCARIOS.map((m) => <option key={m}>{m}</option>)}
-                      </select>
-                    </Field>
-                  )}
-                  {facturaFormaPago === "Banco" && facturaMedioBancario === "eCheq" && (
-                    <>
-                      <Field label="Plazo">
-                        <select value={facturaPlazoEcheq} onChange={(e) => setFacturaPlazoEcheq(e.target.value)} className={inputCls}>
-                          <option value="30">30 días</option>
-                          <option value="60">60 días</option>
-                          <option value="90">90 días</option>
-                          <option value="personalizado">Otro (elegir fecha)</option>
-                        </select>
-                      </Field>
-                      <Field label="Fecha de pago">
-                        <input
-                          key={facturaPlazoEcheq}
-                          name="fechaPagoEcheq"
-                          type="date"
-                          defaultValue={fechaMasDias(facturaPlazoEcheq === "personalizado" ? 30 : Number(facturaPlazoEcheq))}
-                          required
-                          className={inputCls}
-                        />
-                        <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esta fecha — ese día pasa solo a "Pagado".</div>
-                      </Field>
-                    </>
-                  )}
-                  {facturaFormaPago === "Cuenta corriente" && (
-                    <>
-                      <Field label="Estado">
-                        <select name="estadoCC" value={facturaEstadoCC} onChange={(e) => setFacturaEstadoCC(e.target.value)} className={inputCls}>
-                          <option value="Pendiente">Pendiente de pago</option>
-                          <option value="Pagado">Pagado</option>
-                        </select>
-                      </Field>
-                      {facturaEstadoCC === "Pendiente" ? (
-                        <Field label="Fecha de pago">
-                          <input name="fechaVencimientoCc" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
-                          <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esa fecha — la marcás como "Pagada" a mano desde la tabla cuando la saldemos.</div>
-                        </Field>
-                      ) : (
-                        <Field label="Medio de pago">
-                          <select name="medioPagoCC" value={facturaMedioPagoCC} onChange={(e) => setFacturaMedioPagoCC(e.target.value)} className={inputCls}>
-                            <option value="Efectivo">Efectivo</option>
-                            <option value="Transferencia">Transferencia</option>
-                          </select>
-                        </Field>
-                      )}
-                    </>
-                  )}
-                  <div className="md:col-span-2">
-                    <ArchivoInput
-                      label="Factura / comprobante (opcional acá, se puede agregar después)"
-                      value={facturaArchivo}
-                      nombreArchivo={facturaNombreArchivo}
-                      onChange={(archivo, nombreArchivo, tipoArchivo) => { setFacturaArchivo(archivo); setFacturaNombreArchivo(nombreArchivo); setFacturaTipoArchivo(tipoArchivo); }}
-                    />
-                  </div>
-                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
-                </form>
+                {renderFormularioCompra({})}
               </Panel>
             )}
 
@@ -13671,10 +13741,13 @@ export default function ConcretarApp() {
                             <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Saldo — le debés</div>
                             <div className={`font-mono text-lg font-bold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
                           </div>
-                          <button onClick={() => { setAgregandoEntregaId((id) => (id === p.id ? null : p.id)); setAgregandoNotaCreditoId(null); }} className="rounded-md border border-emerald-400 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
+                          <button onClick={() => abrirCargaCompraProveedor(p)} className="rounded-md border border-amber-400 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100">
+                            <span className="flex items-center gap-1"><Receipt size={13} /> Cargar factura</span>
+                          </button>
+                          <button onClick={() => { setAgregandoEntregaId((id) => (id === p.id ? null : p.id)); setAgregandoNotaCreditoId(null); setCargandoCompraProveedorId(null); }} className="rounded-md border border-emerald-400 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
                             <span className="flex items-center gap-1"><Banknote size={13} /> Entrega a cuenta</span>
                           </button>
-                          <button onClick={() => { setAgregandoNotaCreditoId((id) => (id === p.id ? null : p.id)); setAgregandoEntregaId(null); }} className={btnGhost}>
+                          <button onClick={() => { setAgregandoNotaCreditoId((id) => (id === p.id ? null : p.id)); setAgregandoEntregaId(null); setCargandoCompraProveedorId(null); }} className={btnGhost}>
                             <span className="flex items-center gap-1"><Plus size={13} /> Nota de crédito</span>
                           </button>
                           <button onClick={() => editarProveedor(p)} className={btnGhost}>
@@ -13691,6 +13764,22 @@ export default function ConcretarApp() {
                         {p.cbu && <span>CBU: <span className="font-mono text-slate-700">{p.cbu}</span></span>}
                         {p.numeroCuenta && <span>Cuenta: <span className="font-mono text-slate-700">{p.numeroCuenta}</span></span>}
                       </div>
+                      {cargandoCompraProveedorId === p.id && (
+                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+                          <div className="mb-2 flex items-start justify-between gap-2">
+                            <div className="text-xs text-slate-600">
+                              <span className="font-semibold text-slate-800">Cargar factura de compra</span> — queda en Gastos y Facturas igual que si la cargaras desde ahí. El formulario queda abierto para seguir cargando las que falten.
+                            </div>
+                            <button onClick={() => setCargandoCompraProveedorId(null)} title="Cerrar"><X size={16} /></button>
+                          </div>
+                          {ultimaCompraCargada && nombreProveedorKey(ultimaCompraCargada.proveedor) === nombreProveedorKey(nombreComercial(p)) && (
+                            <div className="mb-2 flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
+                              <CheckCircle2 size={13} /> Cargada: {fmtFecha(ultimaCompraCargada.fecha)} · {ultimaCompraCargada.comprobante || "sin N° de comprobante"} · <span className="font-mono font-semibold">{fmtARS(ultimaCompraCargada.monto)}</span>
+                            </div>
+                          )}
+                          {renderFormularioCompra({ proveedorFijo: nombreComercial(p) })}
+                        </div>
+                      )}
                       {agregandoEntregaId === p.id && (
                         <FormularioEntregaProveedor
                           saldo={saldo}
@@ -13943,6 +14032,7 @@ export default function ConcretarApp() {
                                       <span className="text-slate-600">{fmtFecha(c.fecha)}</span>
                                       <span className="flex items-center gap-1 text-slate-500"><ObraDot obra={obra} />{obra?.nombre || "General"}</span>
                                       <span className="text-slate-600">{c.categoria}{c.descripcion ? ` — ${c.descripcion}` : ""}</span>
+                                      {c.comprobante && <span className="font-mono text-[10px] text-slate-400">{c.comprobante}</span>}
                                       <Badge estado={c.estado} />
                                     </div>
                                     <span className="font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</span>
