@@ -2332,6 +2332,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         proveedor: form.proveedor,
         categoria: form.categoria,
         descripcion: form.descripcion || "",
+        comprobante: (form.comprobante || "").trim(),
         monto: Number(form.monto) || 0,
         tipoFactura: form.tipoFactura,
         formaPago: form.formaPago,
@@ -2435,6 +2436,14 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                   value={form.descripcion || ""}
                   onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))}
                   placeholder="Ej: Nafta camioneta, cemento para losa..."
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="N° de factura / comprobante">
+                <input
+                  value={form.comprobante || ""}
+                  onChange={(e) => setForm((f) => ({ ...f, comprobante: e.target.value }))}
+                  placeholder="Ej: A-0019-00056013"
                   className={inputCls}
                 />
               </Field>
@@ -14034,8 +14043,18 @@ export default function ConcretarApp() {
                                       <span className="text-slate-600">{c.categoria}{c.descripcion ? ` — ${c.descripcion}` : ""}</span>
                                       {c.comprobante && <span className="font-mono text-[10px] text-slate-400">{c.comprobante}</span>}
                                       <Badge estado={c.estado} />
+                                      {c.pagadaConEntrega && c.estado === "Pagada" && <span className="text-[10px] text-emerald-700">saldada con entregas a cuenta</span>}
                                     </div>
-                                    <span className="font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</span>
+                                    <span className="flex items-center gap-2">
+                                      <span className="font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</span>
+                                      <button
+                                        onClick={() => setEditandoMovimiento({ origen: "compras_facturas", origenId: c.id })}
+                                        title="Modificar esta compra (fecha, obra, monto, factura, forma de pago, estado...)"
+                                        className={btnGhostSm}
+                                      >
+                                        <span className="flex items-center gap-1"><Pencil size={11} /> Modificar</span>
+                                      </button>
+                                    </span>
                                   </div>
                                 );
                               })}
