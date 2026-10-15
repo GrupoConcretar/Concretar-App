@@ -721,7 +721,19 @@ const btnPrimary = "flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 te
 // dígito genuino cada vez (antes quedaba "pegado" en el ",00" fijo del final,
 // así que Borrar no achicaba el número).
 // Funciona tanto con formularios controlados (value+onChange) como con FormData (name).
-function MoneyInput({ name, value, onChange, onBlur, className, placeholder, required, disabled }) {
+// Montos copiados de afuera (PDF de una factura, home banking, Excel) suelen venir con
+// punto decimal, ej "265500.31". Si el punto tiene 1 o 2 dígitos atrás se lo toma
+// como coma decimal (y las comas, si hay, como miles: "265,500.31"); con 3 dígitos
+// atrás ("265.500") sigue siendo separador de miles, como se escribe acá.
+function normalizarMontoPegado(texto) {
+  const t = String(texto || "").replace(/[^\d.,]/g, "");
+  const ultimoPunto = t.lastIndexOf(".");
+  if (ultimoPunto === -1 || ultimoPunto < t.lastIndexOf(",")) return t;
+  const decimales = t.slice(ultimoPunto + 1);
+  if (decimales.length < 1 || decimales.length > 2) return t;
+  return `${t.slice(0, ultimoPunto).replace(/[.,]/g, "")},${decimales}`;
+}
+function MoneyInput({ name, value, onChange, onBlur, className, placeholder, required, disabled, puntoDecimalAlPegar = false }) {
   const [raw, setRaw] = useState(() => {
     if (value === undefined || value === null || value === "") return "";
     const n = Number(value);
@@ -731,9 +743,25 @@ function MoneyInput({ name, value, onChange, onBlur, className, placeholder, req
   // se va tipeando — así el Backspace siempre borra un carácter real y nunca un
   // ",00" fijo que el usuario no escribió.
   function handleChange(e) {
+    aplicarTexto(e.target.value);
+  }
+  // Con puntoDecimalAlPegar, lo que se pega reemplaza la selección (o todo, si el
+  // campo estaba vacío) leyendo el punto decimal como coma.
+  function handlePaste(e) {
+    if (!puntoDecimalAlPegar) return;
+    const pegado = e.clipboardData?.getData("text");
+    if (!pegado) return;
+    e.preventDefault();
+    const el = e.target;
+    const actual = el.value || "";
+    const desde = el.selectionStart ?? actual.length;
+    const hasta = el.selectionEnd ?? actual.length;
+    aplicarTexto(actual.slice(0, desde) + normalizarMontoPegado(pegado) + actual.slice(hasta));
+  }
+  function aplicarTexto(texto) {
     // El punto se descarta junto con el resto de la puntuación: es el separador de
     // miles que ya puso el propio formateo, no algo que haya tipeado el usuario.
-    let v = e.target.value.replace(/[^\d,]/g, "");
+    let v = texto.replace(/[^\d,]/g, "");
     const primeraComa = v.indexOf(",");
     if (primeraComa !== -1) v = v.slice(0, primeraComa + 1) + v.slice(primeraComa + 1).replace(/,/g, "");
     let [entero, decimales] = v.split(",");
@@ -753,6 +781,7 @@ function MoneyInput({ name, value, onChange, onBlur, className, placeholder, req
         inputMode="decimal"
         value={display}
         onChange={handleChange}
+        onPaste={handlePaste}
         onBlur={() => onBlur && onBlur(num, raw !== "")}
         placeholder={placeholder || "0"}
         disabled={disabled}
@@ -2448,7 +2477,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                 />
               </Field>
               <Field label="Precio final ($)">
-                <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+                <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} puntoDecimalAlPegar className={inputCls} />
               </Field>
               <Field label="Factura">
                 <select value={form.tipoFactura || "Sin factura"} onChange={(e) => setForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
@@ -5075,7 +5104,7 @@ export default function ConcretarApp() {
           <input name="comprobante" placeholder="Ej: A-0019-00056013" className={inputCls} />
         </Field>
         <Field label="Precio final ($)">
-          <MoneyInput name="monto" className={inputCls} />
+          <MoneyInput name="monto" puntoDecimalAlPegar className={inputCls} />
           <div className="mt-1 text-[11px] text-slate-400">Con IVA incluido.</div>
         </Field>
         <Field label="Factura">
