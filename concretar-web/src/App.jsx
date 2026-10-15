@@ -7382,6 +7382,10 @@ export default function ConcretarApp() {
   async function crearProveedorRapido(nombre) {
     return await addRecord("proveedores", { ...emptyProveedorForm, razonSocial: nombre, nombreFantasia: nombre, diaPago: null }, setProveedores);
   }
+  // Una compra con factura A/B/C "tiene factura" si tiene el PDF/foto adjunto o una de
+  // "Facturas varias" vinculada; si no, hay que pedírsela al proveedor.
+  const tieneFacturaAdjunta = (c) => !!c.archivo || facturasVarias.some((fv) => fv.compraFacturaId === c.id);
+  const faltaFacturaCompra = (c) => !!c.tipoFactura && c.tipoFactura !== "Sin factura" && !tieneFacturaAdjunta(c);
   function balanceProveedor(prov) {
     const facturas = comprasFacturas.filter((c) => c.proveedor === nombreComercial(prov) && !obraIdsPapelera.has(c.obraId));
     const totalFacturado = facturas.reduce((s, c) => s + (c.monto || 0), 0);
@@ -7400,6 +7404,7 @@ export default function ConcretarApp() {
       saldo: totalFacturado - totalPagado - totalNotasCredito,
       facturasPendientes: facturas.filter((c) => c.estado !== "Pagada"),
       historialCompras: [...facturas].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)),
+      comprasSinFactura: facturas.filter(faltaFacturaCompra).sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha) || (a.id - b.id)),
     };
   }
   function agregarNotaCredito(proveedor, datos) {
@@ -13793,7 +13798,7 @@ export default function ConcretarApp() {
 
               if (proveedorSel) {
                 const p = proveedorSel;
-                const { totalFacturado, totalPagado, saldo, facturasPendientes, totalNotasCredito, notasDeEsteProveedor, entregasDeEsteProveedor, totalEntregas, historialCompras } = balanceProveedor(p);
+                const { totalFacturado, totalPagado, saldo, facturasPendientes, totalNotasCredito, notasDeEsteProveedor, entregasDeEsteProveedor, totalEntregas, historialCompras, comprasSinFactura } = balanceProveedor(p);
                 const aplicacionCredito = aplicacionCreditoProveedor(nombreComercial(p));
                 const facturasSaldablesOrdenadas = facturasPendientes.filter((f) => f.estado === "Pendiente" && esDeudaSaldablePorEntrega(f)).sort(ordenFacturasDeuda);
                 const historialFiltrado = historialCompras.filter((c) => {
@@ -13849,6 +13854,46 @@ export default function ConcretarApp() {
                         {p.cbu && <span>CBU: <span className="font-mono text-slate-700">{p.cbu}</span></span>}
                         {p.numeroCuenta && <span>Cuenta: <span className="font-mono text-slate-700">{p.numeroCuenta}</span></span>}
                       </div>
+                      {comprasSinFactura.length > 0 && (
+                        <div className="mt-3 rounded-lg border-2 border-rose-300 bg-rose-50 p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-1.5 text-sm font-semibold text-rose-800">
+                                <AlertTriangle size={15} /> Faltan {comprasSinFactura.length} factura{comprasSinFactura.length > 1 ? "s" : ""} — pedíselas a {nombreComercial(p)}
+                              </div>
+                              <div className="text-[11px] text-rose-700">Compras con factura A/B/C que todavía no tienen el PDF o la foto (ni una de "Facturas varias" vinculada).</div>
+                            </div>
+                            <BotonCopiarMensaje
+                              label="Copiar pedido para WhatsApp"
+                              texto={[
+                                `Hola! Somos de Concretar. Nos faltan estas facturas de ${nombreComercial(p)}:`,
+                                ...comprasSinFactura.map((c) => `- ${fmtFecha(c.fecha)}${c.comprobante ? ` · ${c.comprobante}` : ""} · ${fmtARS(c.monto)}${!c.comprobante && c.descripcion ? ` (${c.descripcion})` : ""}`),
+                                "¿Nos las podés mandar? ¡Gracias!",
+                              ].join("\n")}
+                            />
+                          </div>
+                          <div className="mt-2 max-h-48 space-y-0.5 overflow-y-auto">
+                            {comprasSinFactura.map((c) => (
+                              <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded px-1.5 py-0.5 text-xs text-rose-900 hover:bg-rose-100/60">
+                                <span>
+                                  {fmtFecha(c.fecha)} · {c.comprobante || <span className="italic text-rose-700">sin N°</span>}{c.descripcion ? <span className="text-rose-700"> — {c.descripcion}</span> : null}
+                                </span>
+                                <span className="flex items-center gap-2">
+                                  <span className="font-mono font-semibold">{fmtARS(c.monto)}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditandoMovimiento({ origen: "compras_facturas", origenId: c.id })}
+                                    title="Abrir la compra para subirle la factura o vincularle una de Facturas varias"
+                                    className="flex items-center gap-0.5 rounded border border-rose-300 bg-white px-1.5 py-px text-[10px] font-semibold text-rose-700 hover:bg-rose-100"
+                                  >
+                                    <Upload size={10} /> Subir
+                                  </button>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {cargandoCompraProveedorId === p.id && (
                         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
                           <div className="mb-2 flex items-start justify-between gap-2">
@@ -14007,18 +14052,23 @@ export default function ConcretarApp() {
                                             <td className="px-1.5 py-1 whitespace-nowrap text-slate-500">
                                               <span className="flex items-center gap-1">
                                                 {f.comprobante || "sin comprobante"}
-                                                {f.archivo ? (
-                                                  <a href={f.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(f.archivo); }} title={f.nombreArchivo || "Ver comprobante"} className="text-slate-400 hover:text-slate-700">
-                                                    <FileDown size={12} />
-                                                  </a>
+                                                {tieneFacturaAdjunta(f) ? (
+                                                  [
+                                                    ...(f.archivo ? [{ key: "propia", archivo: f.archivo, nombre: f.nombreArchivo }] : []),
+                                                    ...facturasVarias.filter((fv) => fv.compraFacturaId === f.id).map((fv) => ({ key: fv.id, archivo: fv.archivo, nombre: fv.nombreArchivo })),
+                                                  ].map((a) => (
+                                                    <a key={a.key} href={a.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(a.archivo); }} title={a.nombre || "Ver comprobante"} className="text-slate-400 hover:text-slate-700">
+                                                      <FileDown size={12} />
+                                                    </a>
+                                                  ))
                                                 ) : (
                                                   <button
                                                     type="button"
                                                     onClick={() => setEditandoMovimiento({ origen: "compras_facturas", origenId: f.id })}
-                                                    title="Subir factura / comprobante"
-                                                    className="flex items-center gap-0.5 rounded border border-amber-300 bg-amber-50 px-1 py-px text-[9px] font-semibold text-amber-700 hover:bg-amber-100"
+                                                    title={faltaFacturaCompra(f) ? "Falta la factura — subila o vinculá una de Facturas varias" : "Subir factura / comprobante"}
+                                                    className={`flex items-center gap-0.5 rounded border px-1 py-px text-[9px] font-semibold ${faltaFacturaCompra(f) ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100" : "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"}`}
                                                   >
-                                                    <Upload size={10} /> Subir
+                                                    <Upload size={10} /> {faltaFacturaCompra(f) ? "Falta factura" : "Subir"}
                                                   </button>
                                                 )}
                                               </span>
@@ -14128,7 +14178,7 @@ export default function ConcretarApp() {
                                         ];
                                         if (archivos.length === 0) {
                                           return (c.tipoFactura && c.tipoFactura !== "Sin factura")
-                                            ? <span className="text-[10px] text-amber-700">sin factura adjunta</span>
+                                            ? <span className="rounded border border-rose-300 bg-rose-50 px-1 text-[10px] font-semibold text-rose-700">falta factura</span>
                                             : null;
                                         }
                                         return (
@@ -14368,6 +14418,11 @@ export default function ConcretarApp() {
                                 {b.facturasPendientes.length > 0 && (
                                   <span className="ml-1 rounded-full bg-amber-100 px-1 py-0.5 text-[9px] font-semibold text-amber-800">
                                     {b.facturasPendientes.length} pend.
+                                  </span>
+                                )}
+                                {b.comprasSinFactura.length > 0 && (
+                                  <span className="ml-1 rounded-full bg-rose-100 px-1 py-0.5 text-[9px] font-semibold text-rose-700" title="Compras con factura A/B/C sin el PDF o la foto adjunta">
+                                    {b.comprasSinFactura.length} sin factura
                                   </span>
                                 )}
                               </td>
