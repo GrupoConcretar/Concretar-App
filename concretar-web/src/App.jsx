@@ -4961,6 +4961,7 @@ export default function ConcretarApp() {
   // que falten mirando su resumen de cuenta corriente).
   const [formularioCompraKey, setFormularioCompraKey] = useState(0);
   const [ultimaCompraCargada, setUltimaCompraCargada] = useState(null);
+  const [cantidadComprasCargadasTanda, setCantidadComprasCargadasTanda] = useState(0);
   async function guardarFormularioCompra(e, seguirAbierto) {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -5013,11 +5014,14 @@ export default function ConcretarApp() {
     setFacturaArchivo(null);
     setFacturaNombreArchivo(null);
     setFacturaTipoArchivo(null);
-    setFormularioCompraKey((k) => k + 1);
     if (seguirAbierto) {
-      // Cargando desde la ficha del proveedor: el formulario queda abierto
-      // (con la misma forma de pago y obra) para cargar la siguiente factura.
+      // Cargando desde la ficha del proveedor: el formulario queda abierto y con
+      // todos los datos tal cual (fecha, obra, monto, N°, factura, forma de pago...)
+      // para cargar la siguiente cambiando solo lo distinto. No se lo vuelve a montar
+      // (eso lo dejaría en blanco); solo se saca el archivo adjunto, que es propio de
+      // cada factura.
       setUltimaCompraCargada(nuevaCompra);
+      setCantidadComprasCargadasTanda((n) => n + 1);
       // Si ese proveedor tiene entregas a cuenta, lo que sobraba de ellas
       // puede alcanzar para saldar esta factura nueva.
       if (entregasProveedores.some((x) => nombreProveedorKey(x.proveedor) === nombreProveedorKey(nuevaCompra.proveedor))) {
@@ -5031,6 +5035,7 @@ export default function ConcretarApp() {
     setFacturaPlazoEcheq("30");
     setFacturaEstadoCC("Pendiente");
     setFacturaMedioPagoCC("Efectivo");
+    setFormularioCompraKey((k) => k + 1);
     setShowFacturaForm(false);
   }
   function renderFormularioCompra({ proveedorFijo = null }) {
@@ -7238,6 +7243,7 @@ export default function ConcretarApp() {
     setFacturaNombreArchivo(null);
     setFacturaTipoArchivo(null);
     setUltimaCompraCargada(null);
+    setCantidadComprasCargadasTanda(0);
     setFormularioCompraKey((k) => k + 1);
     setAgregandoEntregaId(null);
     setAgregandoNotaCreditoId(null);
@@ -13818,13 +13824,13 @@ export default function ConcretarApp() {
                         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
                           <div className="mb-2 flex items-start justify-between gap-2">
                             <div className="text-xs text-slate-600">
-                              <span className="font-semibold text-slate-800">Cargar factura de compra</span> — queda en Gastos y Facturas igual que si la cargaras desde ahí. El formulario queda abierto para seguir cargando las que falten.
+                              <span className="font-semibold text-slate-800">Cargar factura de compra</span> — queda en Gastos y Facturas igual que si la cargaras desde ahí. Al guardar, el formulario queda abierto con los mismos datos: cambiá solo lo distinto (monto, N° de factura, fecha…) y guardá la siguiente.
                             </div>
                             <button onClick={() => setCargandoCompraProveedorId(null)} title="Cerrar"><X size={16} /></button>
                           </div>
                           {ultimaCompraCargada && nombreProveedorKey(ultimaCompraCargada.proveedor) === nombreProveedorKey(nombreComercial(p)) && (
                             <div className="mb-2 flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
-                              <CheckCircle2 size={13} /> Cargada: {fmtFecha(ultimaCompraCargada.fecha)} · {ultimaCompraCargada.comprobante || "sin N° de comprobante"} · <span className="font-mono font-semibold">{fmtARS(ultimaCompraCargada.monto)}</span>
+                              <CheckCircle2 size={13} /> {cantidadComprasCargadasTanda > 1 ? `${cantidadComprasCargadasTanda} cargadas — última:` : "Cargada:"} {fmtFecha(ultimaCompraCargada.fecha)} · {ultimaCompraCargada.comprobante || "sin N° de comprobante"} · <span className="font-mono font-semibold">{fmtARS(ultimaCompraCargada.monto)}</span>
                             </div>
                           )}
                           {renderFormularioCompra({ proveedorFijo: nombreComercial(p) })}
