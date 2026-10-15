@@ -9,7 +9,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard
 } from "lucide-react";
 
 // Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
@@ -395,6 +395,12 @@ const ROLES_VEN_PRECIOS_PEDIDO = ["Gerente", "Contador", "Logística"];
 // Hay dos cuentas de Mercado Pago (una por socio) — van separadas para no mezclar
 // la plata de una con la de la otra.
 const CUENTAS = ["Efectivo", "Banco", "MP Pablo", "MP Ricardo"];
+// Tarjetas de crédito personales de los socios. No son cuentas de la empresa: si se
+// le paga algo a un proveedor con una de ellas, no sale plata de ninguna cuenta —
+// queda como deuda de la empresa con ese socio (un préstamo sin interés, a
+// devolverle antes del vencimiento de la tarjeta).
+const TARJETAS_SOCIOS = { "Tarjeta Ricardo": "Ricardo", "Tarjeta Pablo": "Pablo" };
+const esTarjetaSocio = (cuenta) => Object.prototype.hasOwnProperty.call(TARJETAS_SOCIOS, cuenta || "");
 // "Cuenta corriente" es su propia forma de pago (no es un medio del Banco: es una
 // deuda con el proveedor, todavía no se sabe por qué canal real se va a saldar).
 const FORMAS_PAGO = ["Banco", "MP Pablo", "MP Ricardo", "Efectivo", "Cuenta corriente"];
@@ -671,7 +677,7 @@ function EspecialidadIcon({ especialidad, size = 13 }) {
   );
 }
 
-const ICONO_CUENTA = { Efectivo: Banknote, Banco: Landmark, "MP Pablo": Smartphone, "MP Ricardo": Smartphone, "Mercado Pago": Smartphone };
+const ICONO_CUENTA = { Efectivo: Banknote, Banco: Landmark, "MP Pablo": Smartphone, "MP Ricardo": Smartphone, "Mercado Pago": Smartphone, "Tarjeta Ricardo": CreditCard, "Tarjeta Pablo": CreditCard };
 
 function CuentaIcon({ cuenta, size = 13 }) {
   const IconComp = ICONO_CUENTA[cuenta];
@@ -2189,6 +2195,7 @@ function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
           <Field label="Cuenta donde entró">
             <select value={form.cuenta} onChange={(e) => setForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
               {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+              {esTarjetaSocio(form.cuenta) && <option value={form.cuenta}>Tarjeta de crédito de {TARJETAS_SOCIOS[form.cuenta]}</option>}
             </select>
           </Field>
           <Field label="Fecha estimada de devolución">
@@ -2210,7 +2217,9 @@ function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
 function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
   const [fecha, setFecha] = useState(hoyISO());
   const [monto, setMonto] = useState(0);
-  const [cuenta, setCuenta] = useState(prestamo?.cuenta);
+  // Si el préstamo nació de la tarjeta de un socio, esa "cuenta" no es de la empresa:
+  // la devolución tiene que salir de una cuenta real.
+  const [cuenta, setCuenta] = useState(CUENTAS.includes(prestamo?.cuenta) ? prestamo.cuenta : CUENTAS[0]);
   // MoneyInput solo lee su prop "value" al montarse (para no pelearle al usuario
   // mientras tipea) — cambiar esta key fuerza que lo tome de nuevo cuando lo
   // llenamos nosotros con el botón de acceso rápido, en vez de tipeándolo.
@@ -2942,8 +2951,10 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
   const [fecha, setFecha] = useState(hoyISO());
   const [monto, setMonto] = useState(0);
   const [cuenta, setCuenta] = useState(CUENTAS[0]);
+  const [fechaPagoTarjeta, setFechaPagoTarjeta] = useState("");
   const [nota, setNota] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const socioTarjeta = TARJETAS_SOCIOS[cuenta];
 
   let disponible = creditoActual + (monto || 0);
   const saldadas = [];
@@ -2968,7 +2979,7 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
         e.preventDefault();
         if (!(monto > 0)) { alert("Cargá el monto que le entregaste al proveedor."); return; }
         setGuardando(true);
-        const ok = await onGuardar({ fecha, monto, cuenta, nota: nota.trim() });
+        const ok = await onGuardar({ fecha, monto, cuenta, nota: nota.trim(), fechaPagoTarjeta: socioTarjeta ? fechaPagoTarjeta : null });
         setGuardando(false);
         if (ok) onCancelar();
       }}
@@ -2982,10 +2993,24 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
         <Field label="Sale de">
           <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={inputCls}>
             {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+            <optgroup label="Tarjeta de crédito de un socio">
+              {Object.entries(TARJETAS_SOCIOS).map(([t, socio]) => <option key={t} value={t}>Tarjeta de crédito de {socio}</option>)}
+            </optgroup>
           </select>
         </Field>
+        {socioTarjeta && (
+          <Field label="Fecha de pago de la tarjeta">
+            <input type="date" value={fechaPagoTarjeta} onChange={(e) => setFechaPagoTarjeta(e.target.value)} required className={inputCls} />
+          </Field>
+        )}
         <Field label="Nota (opcional)"><input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: recibo N° 1234" className={inputCls} /></Field>
       </div>
+      {socioTarjeta && (
+        <div className="flex items-start gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs text-sky-900">
+          <CreditCard size={14} className="mt-0.5 shrink-0" />
+          <span>No sale plata de las cuentas de la empresa: queda anotado que la empresa le debe <span className="font-mono font-semibold">{fmtARS(monto || 0)}</span> a {socioTarjeta}, con aviso en General antes de la fecha de pago de la tarjeta. Cuando se lo devuelvan, se registra desde "Cobros Ricardo y Pablo" o desde Cuentas → Préstamos.</span>
+        </div>
+      )}
       {monto > 0 && (
         <div className="space-y-1 rounded-md border border-stone-200 bg-white px-2.5 py-2 text-xs text-slate-600">
           <div className="flex flex-wrap items-center gap-x-2">
@@ -4631,6 +4656,12 @@ export default function ConcretarApp() {
   const gastosRecurrentesProximos = gastosRecurrentes.filter(
     (g) => g.fechaPagoAproximada && diasHasta(g.fechaPagoAproximada) <= 3 && diasHasta(g.fechaPagoAproximada) >= -1
   );
+  // Lo que la empresa le debe a un socio por algo que pagó con su tarjeta de crédito:
+  // avisa desde 5 días antes de la fecha de pago de la tarjeta y sigue avisando si ya
+  // venció, hasta que se le devuelva todo.
+  const deudasTarjetaSocioPorVencer = prestamos
+    .filter((p) => p.estado !== "Pagado" && esTarjetaSocio(p.cuenta) && p.fechaEstimadaDevolucion && diasHasta(p.fechaEstimadaDevolucion) <= 5)
+    .sort((a, b) => fechaLocal(a.fechaEstimadaDevolucion) - fechaLocal(b.fechaEstimadaDevolucion));
 
   // "Visto bueno" de alertas: una vez descartada (tick) no vuelve a aparecer,
   // salvo que cambie lo que la generó — se identifica con un tipo fijo más
@@ -4654,7 +4685,7 @@ export default function ConcretarApp() {
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
     (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + asistenciasEliminadasRecientes.length +
     materialesVencidos.length + materialesProximos.length + pedidosPorAprobar.length + personalSinObra5Dias.length +
-    gastosRecurrentesProximos.length;
+    gastosRecurrentesProximos.length + deudasTarjetaSocioPorVencer.length;
 
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
@@ -6480,6 +6511,26 @@ export default function ConcretarApp() {
     });
   }
   async function agregarEntregaProveedor(prov, datos) {
+    // Pagado con la tarjeta de crédito de un socio: la plata no sale de ninguna cuenta
+    // de la empresa, así que en vez de restar de la caja queda una deuda con ese socio
+    // (un préstamo sin interés con la fecha de pago de la tarjeta como devolución
+    // estimada). La entrega queda con "Tarjeta X" como cuenta, que no es una cuenta
+    // de la empresa y por lo tanto no resta de ningún saldo.
+    let prestamo = null;
+    if (esTarjetaSocio(datos.cuenta)) {
+      prestamo = await addRecord("prestamos", {
+        fecha: datos.fecha,
+        acreedor: `${TARJETAS_SOCIOS[datos.cuenta]} (tarjeta de crédito) — ${nombreComercial(prov)}`,
+        capital: datos.monto,
+        tasaAnualPct: 0,
+        cuenta: datos.cuenta,
+        fechaEstimadaDevolucion: datos.fechaPagoTarjeta || null,
+        estado: "Vigente",
+        fechaPago: null,
+        montoPagado: null,
+      }, setPrestamos);
+      if (!prestamo) return false;
+    }
     const row = await addRecord("entregas_proveedores", {
       fecha: datos.fecha,
       proveedor: nombreComercial(prov),
@@ -6487,13 +6538,15 @@ export default function ConcretarApp() {
       cuenta: datos.cuenta,
       medioBancario: datos.cuenta === "Banco" ? "Débito/Transferencia" : null,
       nota: datos.nota || "",
+      prestamoId: prestamo?.id ?? null,
     }, setEntregasProveedores);
     if (!row) return false;
     saldarFacturasConEntregas(nombreComercial(prov), [...entregasProveedores, row]);
     return true;
   }
   async function eliminarEntregaProveedor(entrega) {
-    if (!window.confirm(`¿Eliminar la entrega a cuenta de ${fmtARS(entrega.monto)} a ${entrega.proveedor}? Las facturas que había saldado vuelven a quedar pendientes.`)) return;
+    const socioTarjeta = TARJETAS_SOCIOS[entrega.cuenta];
+    if (!window.confirm(`¿Eliminar la entrega a cuenta de ${fmtARS(entrega.monto)} a ${entrega.proveedor}? Las facturas que había saldado vuelven a quedar pendientes.${socioTarjeta && entrega.prestamoId ? ` También se borra la deuda con ${socioTarjeta} por esa tarjeta.` : ""}`)) return;
     if (isSupabaseConfigured) {
       try {
         await sbDelete("entregas_proveedores", entrega.id);
@@ -6504,6 +6557,10 @@ export default function ConcretarApp() {
     }
     setEntregasProveedores((prev) => prev.filter((e) => e.id !== entrega.id));
     saldarFacturasConEntregas(entrega.proveedor, entregasProveedores.filter((e) => e.id !== entrega.id));
+    // La deuda con el socio nació con esta entrega: va a la Papelera junto con ella.
+    if (entrega.prestamoId) {
+      updateRecord("prestamos", entrega.prestamoId, { eliminadoEn: new Date().toISOString() }, setPrestamos);
+    }
   }
 
   // Agrupa la deuda con proveedores por proveedor Y por mes de vencimiento — antes se
@@ -8169,6 +8226,29 @@ export default function ConcretarApp() {
                         {asistenciasEliminadasRecientes.slice(0, 5).map((a) => (
                           <li key={a.id} className="truncate">{a.nombre} ({fmtFecha(a.fecha)}) — eliminado por {a.eliminadoPor}</li>
                         ))}
+                      </ul>
+                    </AlertCard>
+                  )}
+                  {deudasTarjetaSocioPorVencer.length > 0 && (
+                    <AlertCard
+                      tone={deudasTarjetaSocioPorVencer.some((p) => diasHasta(p.fechaEstimadaDevolucion) < 0) ? "rose" : "amber"}
+                      icon={CreditCard}
+                      title={`${deudasTarjetaSocioPorVencer.length} pago(s) con tarjeta de un socio por devolver antes del vencimiento de la tarjeta.`}
+                    >
+                      <ul className="space-y-1 text-xs">
+                        {deudasTarjetaSocioPorVencer.map((p) => {
+                          const dias = diasHasta(p.fechaEstimadaDevolucion);
+                          const debe = calcularEstadoPrestamo(p, prestamosPagos).totalADevolver;
+                          return (
+                            <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="truncate">Devolverle a {TARJETAS_SOCIOS[p.cuenta]} — {fmtARS(debe)} <span className="opacity-70">({p.acreedor.split(" — ")[1] || "tarjeta"})</span></span>
+                              <span className="flex shrink-0 items-center gap-2">
+                                <span className="font-semibold">{fmtFecha(p.fechaEstimadaDevolucion)}{dias < 0 ? ` · vencida hace ${Math.abs(dias)} día(s)` : dias === 0 ? " · hoy" : ` · en ${dias} día(s)`}</span>
+                                <button onClick={() => setPagandoPrestamoId(p.id)} className="rounded-md border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-white">Registrar devolución</button>
+                              </span>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </AlertCard>
                   )}
@@ -13307,6 +13387,45 @@ export default function ConcretarApp() {
               </div>
             </div>
 
+            {(() => {
+              // Lo que la empresa le debe a cada socio por pagos hechos con su tarjeta de
+              // crédito (se cargan como "Entrega a cuenta" a un proveedor con "Sale de:
+              // Tarjeta de crédito de ..."). La devolución sale de una cuenta real.
+              const deudasTarjeta = prestamos
+                .filter((p) => p.estado !== "Pagado" && esTarjetaSocio(p.cuenta))
+                .sort((a, b) => fechaLocal(a.fechaEstimadaDevolucion || a.fecha) - fechaLocal(b.fechaEstimadaDevolucion || b.fecha));
+              if (deudasTarjeta.length === 0) return null;
+              return (
+                <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-sky-800">
+                    <CreditCard size={13} /> La empresa les debe — pagos con tarjeta de crédito
+                  </div>
+                  <div className="mt-1.5 space-y-1">
+                    {deudasTarjeta.map((p) => {
+                      const debe = calcularEstadoPrestamo(p, prestamosPagos).totalADevolver;
+                      const dias = p.fechaEstimadaDevolucion ? diasHasta(p.fechaEstimadaDevolucion) : null;
+                      return (
+                        <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700">
+                          <span>
+                            <span className="font-semibold">{TARJETAS_SOCIOS[p.cuenta]}</span> · {p.acreedor.split(" — ")[1] || "tarjeta"} ({fmtFecha(p.fecha)})
+                            {p.fechaEstimadaDevolucion && (
+                              <span className={dias < 0 ? "font-semibold text-rose-600" : dias <= 5 ? "font-semibold text-amber-700" : "text-slate-500"}>
+                                {" "}· paga la tarjeta el {fmtFecha(p.fechaEstimadaDevolucion)}{dias < 0 ? ` (vencida hace ${Math.abs(dias)} día(s))` : dias === 0 ? " (hoy)" : ` (en ${dias} día(s))`}
+                              </span>
+                            )}
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono font-semibold text-rose-600">{fmtARS(debe)}</span>
+                            <button onClick={() => setPagandoPrestamoId(p.id)} className={btnGhost}>Registrar devolución</button>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {SOCIOS.map((s) => (
                 <div key={s} className="rounded-lg border border-stone-200 bg-white p-3">
@@ -13628,7 +13747,7 @@ export default function ConcretarApp() {
                                 {entregasDeEsteProveedor.map((e) => (
                                   <tr key={e.id} className="border-t border-stone-100">
                                     <td className="px-1.5 py-1 whitespace-nowrap text-slate-600">{fmtFecha(e.fecha)}</td>
-                                    <td className="px-1.5 py-1 whitespace-nowrap text-slate-500"><span className="flex items-center gap-1"><CuentaIcon cuenta={e.cuenta} />{e.cuenta}</span></td>
+                                    <td className="px-1.5 py-1 whitespace-nowrap text-slate-500"><span className="flex items-center gap-1"><CuentaIcon cuenta={e.cuenta} />{esTarjetaSocio(e.cuenta) ? `Tarjeta de crédito de ${TARJETAS_SOCIOS[e.cuenta]}` : e.cuenta}</span></td>
                                     <td className="px-1.5 py-1 text-slate-500">{e.nota || "—"}</td>
                                     <td className="px-1.5 py-1 text-right font-mono font-semibold whitespace-nowrap text-emerald-700">-{fmtARS(e.monto)}</td>
                                     <td className="px-1.5 py-1 text-right"><BotonEliminar onClick={() => eliminarEntregaProveedor(e)} title="Eliminar entrega" /></td>
