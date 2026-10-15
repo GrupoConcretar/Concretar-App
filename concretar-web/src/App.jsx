@@ -2288,7 +2288,7 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
 // desde su propia tabla y desde el ledger de Movimientos en Cuentas. Sirve sobre
 // todo para agregar la factura (tipo A/B/C, o el archivo) cuando al cargarlo
 // todavía no se tenía.
-function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingresos, movimientosManual, obras, onClose, onGuardarCompra, onGuardarCobro, onGuardarIngreso, onGuardarManual, onEliminar }) {
+function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingresos, movimientosManual, obras, proveedores = [], facturasVarias = [], onVincularFacturaVaria, onClose, onGuardarCompra, onGuardarCobro, onGuardarIngreso, onGuardarManual, onEliminar }) {
   const registroInicial =
     editando.origen === "compras_facturas" ? comprasFacturas.find((c) => c.id === editando.origenId)
     : editando.origen === "cobros_socios" ? cobrosSocios.find((c) => c.id === editando.origenId)
@@ -2713,6 +2713,42 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               />
             </div>
           )}
+          {editando.origen === "compras_facturas" && onVincularFacturaVaria && (() => {
+            // Facturas subidas en "Facturas varias" del proveedor que corresponden a esta
+            // compra (una compra puede juntar varias facturas). Se vinculan/desvinculan al
+            // toque, sin esperar a "Guardar".
+            const prov = proveedores.find((p) => nombreComercial(p) === form.proveedor);
+            const vinculadas = facturasVarias.filter((f) => f.compraFacturaId === editando.origenId);
+            const disponibles = prov ? facturasVarias.filter((f) => f.proveedorId === prov.id && !comprasFacturas.some((c) => c.id === f.compraFacturaId)) : [];
+            if (vinculadas.length === 0 && disponibles.length === 0) return null;
+            return (
+              <div className="space-y-1.5 rounded-md border border-stone-200 bg-stone-50/60 p-2.5 md:col-span-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Facturas de esta compra (de "Facturas varias" del proveedor)</div>
+                {vinculadas.length === 0 ? (
+                  <div className="text-xs text-slate-400">Todavía no tiene ninguna vinculada.</div>
+                ) : (
+                  vinculadas.map((f) => (
+                    <div key={f.id} className="flex items-center justify-between gap-2 text-xs">
+                      <a href={f.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(f.archivo); }} className="flex items-center gap-1 text-slate-700 hover:underline">
+                        <FileDown size={12} className="text-slate-400" /> {f.nombreArchivo || "Ver factura"}
+                      </a>
+                      <button type="button" onClick={() => onVincularFacturaVaria(f.id, null)} className={btnGhostSm}>Quitar</button>
+                    </div>
+                  ))
+                )}
+                {disponibles.length > 0 && (
+                  <select
+                    value=""
+                    onChange={(e) => { if (e.target.value) onVincularFacturaVaria(Number(e.target.value), editando.origenId); }}
+                    className={`${inputCls} text-xs`}
+                  >
+                    <option value="">+ Vincular una factura de "Facturas varias"…</option>
+                    {disponibles.map((f) => <option key={f.id} value={f.id}>{f.nombreArchivo || `Factura ${f.id}`}{f.mes ? ` (${nombreMesDeClave(f.mes)})` : ""}</option>)}
+                  </select>
+                )}
+              </div>
+            );
+          })()}
           <div className="flex flex-wrap items-center gap-2 md:col-span-2">
             {editando.origen !== "arreglo_caja" && (
               <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
@@ -7260,6 +7296,11 @@ export default function ConcretarApp() {
   }
   function eliminarFacturaVaria(id) {
     deleteRecord("facturas_varias", id, setFacturasVarias);
+  }
+  // Vincula (o desvincula, con compraId null) una factura de "Facturas varias" a la
+  // compra a la que corresponde, para verla dentro de esa compra.
+  function vincularFacturaVaria(facturaVariaId, compraId) {
+    updateRecord("facturas_varias", facturaVariaId, { compraFacturaId: compraId }, setFacturasVarias);
   }
   // Orden de la planilla de proveedores: por defecto el que más le debemos
   // primero. Un click en el mismo encabezado invierte el sentido; un click en
@@ -14044,6 +14085,28 @@ export default function ConcretarApp() {
                                       {c.comprobante && <span className="font-mono text-[10px] text-slate-400">{c.comprobante}</span>}
                                       <Badge estado={c.estado} />
                                       {c.pagadaConEntrega && c.estado === "Pagada" && <span className="text-[10px] text-emerald-700">saldada con entregas a cuenta</span>}
+                                      {(() => {
+                                        // La factura propia de la compra + las de "Facturas varias" vinculadas a ella.
+                                        const archivos = [
+                                          ...(c.archivo ? [{ key: "propia", archivo: c.archivo, nombre: c.nombreArchivo }] : []),
+                                          ...facturasVarias.filter((fv) => fv.compraFacturaId === c.id).map((fv) => ({ key: fv.id, archivo: fv.archivo, nombre: fv.nombreArchivo })),
+                                        ];
+                                        if (archivos.length === 0) {
+                                          return (c.tipoFactura && c.tipoFactura !== "Sin factura")
+                                            ? <span className="text-[10px] text-amber-700">sin factura adjunta</span>
+                                            : null;
+                                        }
+                                        return (
+                                          <span className="flex items-center gap-0.5 text-[10px] text-slate-500">
+                                            {archivos.map((a) => (
+                                              <a key={a.key} href={a.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(a.archivo); }} title={a.nombre || "Ver factura"} className="text-slate-400 hover:text-slate-700">
+                                                <FileDown size={12} />
+                                              </a>
+                                            ))}
+                                            {archivos.length} factura{archivos.length > 1 ? "s" : ""}
+                                          </span>
+                                        );
+                                      })()}
                                     </div>
                                     <span className="flex items-center gap-2">
                                       <span className="font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</span>
@@ -14104,18 +14167,35 @@ export default function ConcretarApp() {
                               <div className="text-xs text-slate-400">Todavía no se subió ninguna factura suelta para este proveedor.</div>
                             ) : (
                               <div className="divide-y divide-stone-100 rounded-md border border-stone-200">
-                                {facturasVariasDelProveedor.map((f) => (
-                                  <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5 text-xs">
-                                    <span className="flex items-center gap-1.5">
-                                      <span className="rounded-full border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">{nombreMesCuentas(f.mes)}</span>
-                                      <a href={f.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(f.archivo); }} className="flex items-center gap-1 text-slate-600 hover:underline">
-                                        <FileDown size={12} className="text-slate-400" />
-                                        {f.nombreArchivo || "Ver factura"}
-                                      </a>
-                                    </span>
-                                    <BotonEliminar onClick={() => eliminarFacturaVaria(f.id)} title="Eliminar factura" />
-                                  </div>
-                                ))}
+                                {facturasVariasDelProveedor.map((f) => {
+                                  // Una factura vinculada a una compra que ya no existe (borrada) cuenta como sin vincular.
+                                  const compraVinculada = historialCompras.find((c) => c.id === f.compraFacturaId);
+                                  return (
+                                    <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                                      <span className="flex items-center gap-1.5">
+                                        <span className="rounded-full border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">{nombreMesCuentas(f.mes)}</span>
+                                        <a href={f.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(f.archivo); }} className="flex items-center gap-1 text-slate-600 hover:underline">
+                                          <FileDown size={12} className="text-slate-400" />
+                                          {f.nombreArchivo || "Ver factura"}
+                                        </a>
+                                      </span>
+                                      <span className="flex items-center gap-2">
+                                        <select
+                                          value={compraVinculada ? String(compraVinculada.id) : ""}
+                                          onChange={(e) => vincularFacturaVaria(f.id, e.target.value ? Number(e.target.value) : null)}
+                                          title="Compra a la que corresponde esta factura"
+                                          className={`w-72 rounded-md border px-2 py-1 text-[11px] ${compraVinculada ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-amber-300 bg-amber-50 text-amber-800"}`}
+                                        >
+                                          <option value="">Sin vincular a una compra…</option>
+                                          {historialCompras.map((c) => (
+                                            <option key={c.id} value={c.id}>{fmtFecha(c.fecha)} · {c.descripcion || c.categoria} · {fmtARS(c.monto)}</option>
+                                          ))}
+                                        </select>
+                                        <BotonEliminar onClick={() => eliminarFacturaVaria(f.id)} title="Eliminar factura" />
+                                      </span>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -14534,6 +14614,9 @@ export default function ConcretarApp() {
           ingresos={ingresos}
           movimientosManual={movimientosManual}
           obras={obras}
+          proveedores={proveedores}
+          facturasVarias={facturasVarias}
+          onVincularFacturaVaria={vincularFacturaVaria}
           onClose={() => setEditandoMovimiento(null)}
           onGuardarCompra={guardarEdicionCompra}
           onGuardarCobro={guardarEdicionCobro}
