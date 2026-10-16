@@ -765,8 +765,14 @@ function EditorRetenciones({ value, onChange, montoFactura }) {
 }
 
 // "Marcar cobrado": confirma el cobro y deja anotar las retenciones que hizo el cliente.
-function ModalMarcarCobrado({ titulo, monto, retencionesIniciales, onConfirmar, onClose }) {
+function ModalMarcarCobrado({ titulo, monto, retencionesIniciales, avisoInicial, onConfirmar, onClose }) {
   const [retenciones, setRetenciones] = useState(Array.isArray(retencionesIniciales) ? retencionesIniciales : []);
+  const [fechaCobro, setFechaCobro] = useState(hoyISO());
+  const [aviso, setAviso] = useState({
+    archivo: avisoInicial?.avisoPagoArchivo || null,
+    nombre: avisoInicial?.avisoPagoNombreArchivo || null,
+    tipo: avisoInicial?.avisoPagoTipoArchivo || null,
+  });
   const [guardando, setGuardando] = useState(false);
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
@@ -776,13 +782,28 @@ function ModalMarcarCobrado({ titulo, monto, retencionesIniciales, onConfirmar, 
           <button onClick={onClose}><X size={18} /></button>
         </div>
         <div className="text-sm text-slate-700">{titulo} — <span className="font-mono font-semibold">{fmtARS(monto)}</span></div>
+        <Field label="Fecha de cobro">
+          <input type="date" value={fechaCobro} onChange={(e) => setFechaCobro(e.target.value)} className={inputCls} />
+        </Field>
+        <ArchivoInput
+          label="Aviso de pago del cliente (PDF o foto, opcional)"
+          value={aviso.archivo}
+          nombreArchivo={aviso.nombre}
+          onChange={(archivo, nombre, tipo) => setAviso({ archivo, nombre, tipo })}
+        />
         <EditorRetenciones value={retenciones} onChange={setRetenciones} montoFactura={monto} />
         <div className="flex items-center gap-2">
           <button
             disabled={guardando}
             onClick={async () => {
               setGuardando(true);
-              await onConfirmar(retenciones.filter((r) => (Number(r.monto) || 0) > 0));
+              await onConfirmar({
+                retenciones: retenciones.filter((r) => (Number(r.monto) || 0) > 0),
+                fechaCobro: fechaCobro || hoyISO(),
+                avisoPagoArchivo: aviso.archivo,
+                avisoPagoNombreArchivo: aviso.nombre,
+                avisoPagoTipoArchivo: aviso.tipo,
+              });
               setGuardando(false);
             }}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
@@ -2484,6 +2505,10 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         nombreArchivo: form.nombreArchivo,
         tipoArchivo: form.tipoArchivo,
         retenciones: retencionesDe(form).filter((r) => (Number(r.monto) || 0) > 0),
+        fechaCobro: form.estado === "Pendiente" ? null : (form.fechaCobro || form.fecha),
+        avisoPagoArchivo: form.avisoPagoArchivo || null,
+        avisoPagoNombreArchivo: form.avisoPagoNombreArchivo || null,
+        avisoPagoTipoArchivo: form.avisoPagoTipoArchivo || null,
       });
     } else {
       onGuardarManual(editando.origenId, {
@@ -2767,8 +2792,21 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                   <input type="date" value={form.fechaCobroEstimada || ""} onChange={(e) => setForm((f) => ({ ...f, fechaCobroEstimada: e.target.value }))} className={inputCls} />
                 </Field>
               )}
+              {form.estado !== "Pendiente" && (
+                <Field label="Fecha de cobro">
+                  <input type="date" value={form.fechaCobro || form.fecha || ""} onChange={(e) => setForm((f) => ({ ...f, fechaCobro: e.target.value }))} className={inputCls} />
+                </Field>
+              )}
               <div className="md:col-span-2">
                 <EditorRetenciones value={retencionesDe(form)} onChange={(retenciones) => setForm((f) => ({ ...f, retenciones }))} montoFactura={Number(form.monto) || 0} />
+              </div>
+              <div className="md:col-span-2">
+                <ArchivoInput
+                  label="Aviso de pago del cliente (PDF o foto)"
+                  value={form.avisoPagoArchivo}
+                  nombreArchivo={form.avisoPagoNombreArchivo}
+                  onChange={(archivo, nombre, tipo) => setForm((f) => ({ ...f, avisoPagoArchivo: archivo, avisoPagoNombreArchivo: nombre, avisoPagoTipoArchivo: tipo }))}
+                />
               </div>
             </>
           )}
@@ -5290,7 +5328,10 @@ export default function ConcretarApp() {
       </form>
     );
   }
-  // ---------- PDF mensual para el contador (Gastos y Facturas + Cobros de socios) ----------
+  // ---------- PDF mensual para el contador (Gastos y Facturas + Cobros de socios + Cobros de obras) ----------
+  // Un cobro de obra cuenta para el mes en que se cobró (fecha de cobro); los viejos,
+  // cargados antes de que existiera ese dato, usan la fecha del ingreso.
+  const mesCobroIngreso = (i) => (i.fechaCobro || i.fecha || "").slice(0, 7);
   const [mesReporteContador, setMesReporteContador] = useState(hoyISO().slice(0, 7));
   const [mostrarMenuMesContador, setMostrarMenuMesContador] = useState(false);
   // Meses para elegir en el desplegable: el actual siempre está, más
@@ -5301,6 +5342,7 @@ export default function ConcretarApp() {
     ...comprasFacturas.map((c) => c.fecha?.slice(0, 7)).filter(Boolean),
     ...cobrosSocios.map((c) => c.fecha?.slice(0, 7)).filter(Boolean),
     ...facturasVarias.map((f) => f.mes).filter(Boolean),
+    ...ingresos.filter((i) => i.estado !== "Pendiente").map(mesCobroIngreso).filter(Boolean),
   ])].sort((a, b) => b.localeCompare(a));
   async function generarPdfContadores(mesElegido) {
     const mes = mesElegido || mesReporteContador;
@@ -5313,8 +5355,13 @@ export default function ConcretarApp() {
     // Facturas físicas subidas de a varias juntas para un proveedor (no atadas
     // a un gasto puntual) — se suman como páginas extra al final del PDF.
     const facturasVariasDelMes = facturasVarias.filter((f) => f.mes === mes);
+    // Cobros de obras del mes, con su aviso de pago (se adjunta al final del PDF).
+    const ingresosDelMes = ingresos
+      .filter((i) => i.estado !== "Pendiente" && !obraIdsPapelera.has(i.obraId) && mesCobroIngreso(i) === mes)
+      .sort((a, b) => fechaLocal(a.fechaCobro || a.fecha) - fechaLocal(b.fechaCobro || b.fecha));
+    const avisosDelMes = ingresosDelMes.filter((i) => i.avisoPagoArchivo);
 
-    if (gastosDelMes.length === 0 && cobrosDelMes.length === 0 && facturasVariasDelMes.length === 0) {
+    if (gastosDelMes.length === 0 && cobrosDelMes.length === 0 && facturasVariasDelMes.length === 0 && ingresosDelMes.length === 0) {
       alert("No hay gastos, cobros ni facturas sueltas cargadas en ese mes.");
       return;
     }
@@ -5369,29 +5416,66 @@ export default function ConcretarApp() {
         footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
         styles: { fontSize: 8 },
       });
+      y = (doc.lastAutoTable.finalY || y) + 12;
+    }
+
+    const totalIngresosMes = ingresosDelMes.reduce((s, i) => s + (i.monto || 0), 0);
+    if (ingresosDelMes.length > 0) {
+      doc.setFontSize(12);
+      doc.text("Cobros de obras", 14, y);
+      autoTable(doc, {
+        startY: y + 4,
+        head: [["Fecha de cobro", "Obra", "Concepto", "Cuenta", "Factura", "Monto", "Retenciones", "Aviso de pago"]],
+        body: ingresosDelMes.map((i) => {
+          const obra = obras.find((o) => o.id === i.obraId);
+          return [
+            fmtFecha(i.fechaCobro || i.fecha), obra?.nombre || "General", i.concepto || "",
+            (i.cuenta || "—") + (i.medioBancario ? ` (${i.medioBancario})` : ""),
+            i.tipoFactura || "—", fmtARS(i.monto),
+            totalRetenciones(i) > 0 ? retencionesDe(i).map((r) => `${r.tipo} ${fmtARS(r.monto)}`).join(" · ") : "—",
+            i.avisoPagoArchivo ? "Adjunto" : "No",
+          ];
+        }),
+        foot: [["", "", "", "", "TOTAL", fmtARS(totalIngresosMes), "", ""]],
+        headStyles: { fillColor: [2, 29, 52] },
+        footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
+        styles: { fontSize: 8 },
+      });
       y = doc.lastAutoTable.finalY || y;
     }
 
     doc.setFontSize(10);
     doc.setFont(undefined, "bold");
     doc.text(`Total egresos del mes: ${fmtARS(totalGastos + totalCobros)}`, 14, y + 10);
+    if (ingresosDelMes.length > 0) {
+      y += 6;
+      doc.text(`Total cobrado de obras: ${fmtARS(totalIngresosMes)}`, 14, y + 10);
+    }
     doc.setFont(undefined, "normal");
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
     doc.text("Generado desde Concretar App — Gastos y Facturas.", 14, y + 18);
-    if (facturasVariasDelMes.length > 0) {
-      doc.text(`Se adjuntan a continuación ${facturasVariasDelMes.length} factura(s) suelta(s) de proveedores.`, 14, y + 24);
+    const adjuntos = [
+      avisosDelMes.length > 0 ? `${avisosDelMes.length} aviso(s) de pago de clientes` : null,
+      facturasVariasDelMes.length > 0 ? `${facturasVariasDelMes.length} factura(s) suelta(s) de proveedores` : null,
+    ].filter(Boolean);
+    if (adjuntos.length > 0) {
+      doc.text(`Se adjuntan a continuación ${adjuntos.join(" y ")}.`, 14, y + 24);
     }
 
-    // Si hay facturas sueltas subidas para el mes, se adjuntan como páginas
-    // extra al final (copiando sus páginas si son PDF, o como una página con
-    // la imagen si son foto) en vez de solo mencionarlas en el resumen.
-    if (facturasVariasDelMes.length === 0) {
+    // Los avisos de pago y las facturas sueltas del mes se adjuntan como páginas
+    // extra al final (copiando sus páginas si son PDF, o como una página con la
+    // imagen si son foto) en vez de solo mencionarlos en el resumen.
+    const archivosAdjuntos = [
+      ...avisosDelMes.map((i) => ({ archivo: i.avisoPagoArchivo, tipoArchivo: i.avisoPagoTipoArchivo, nombreArchivo: i.avisoPagoNombreArchivo })),
+      ...facturasVariasDelMes,
+    ];
+    if (archivosAdjuntos.length === 0) {
       doc.save(`Comprobantes_${mes}.pdf`);
       return;
     }
     const merged = await PDFDocument.load(doc.output("arraybuffer"));
-    for (const f of facturasVariasDelMes) {
+    for (const f of archivosAdjuntos) {
       if (!f.archivo) continue;
       try {
         const bytes = await (await fetch(f.archivo)).arrayBuffer();
@@ -5428,6 +5512,7 @@ export default function ConcretarApp() {
   const [ingresoEstado, setIngresoEstado] = useState("Cobrado");
   const [ingresoArchivo, setIngresoArchivo] = useState(null);
   const [ingresoRetenciones, setIngresoRetenciones] = useState([]);
+  const [ingresoAviso, setIngresoAviso] = useState({ archivo: null, nombre: null, tipo: null });
   const [ingresoMontoForm, setIngresoMontoForm] = useState(0);
   const [ingresoNombreArchivo, setIngresoNombreArchivo] = useState(null);
   const [ingresoTipoArchivo, setIngresoTipoArchivo] = useState(null);
@@ -5579,13 +5664,14 @@ export default function ConcretarApp() {
   function marcarFacturaProyectadaCobrada(f) {
     setCobrandoItem({ tipo: "proyectada", item: f });
   }
-  async function confirmarCobro(retenciones) {
+  // datosCobro: { retenciones, fechaCobro, avisoPagoArchivo, avisoPagoNombreArchivo, avisoPagoTipoArchivo }
+  async function confirmarCobro(datosCobro) {
     if (!cobrandoItem) return;
-    if (cobrandoItem.tipo === "proyectada") await confirmarFacturaProyectadaCobrada(cobrandoItem.item, retenciones);
-    else await updateRecord("ingresos", cobrandoItem.item.id, { estado: "Cobrado", retenciones }, setIngresos);
+    if (cobrandoItem.tipo === "proyectada") await confirmarFacturaProyectadaCobrada(cobrandoItem.item, datosCobro);
+    else await updateRecord("ingresos", cobrandoItem.item.id, { estado: "Cobrado", ...datosCobro }, setIngresos);
     setCobrandoItem(null);
   }
-  async function confirmarFacturaProyectadaCobrada(f, retenciones = []) {
+  async function confirmarFacturaProyectadaCobrada(f, datosCobro = {}) {
     await addRecord("ingresos", {
       fecha: f.fecha,
       obraId: f.obraId,
@@ -5599,7 +5685,11 @@ export default function ConcretarApp() {
       archivo: f.archivo || null,
       nombreArchivo: f.nombreArchivo || null,
       tipoArchivo: f.tipoArchivo || null,
-      retenciones,
+      retenciones: datosCobro.retenciones || [],
+      fechaCobro: datosCobro.fechaCobro || hoyISO(),
+      avisoPagoArchivo: datosCobro.avisoPagoArchivo || null,
+      avisoPagoNombreArchivo: datosCobro.avisoPagoNombreArchivo || null,
+      avisoPagoTipoArchivo: datosCobro.avisoPagoTipoArchivo || null,
     }, setIngresos);
     setFacturasVentaProyectadas((prev) => prev.filter((x) => x.id !== f.id));
     if (isSupabaseConfigured) sbDelete("facturas_venta_proyectadas", f.id).catch(() => {});
@@ -7107,7 +7197,7 @@ export default function ConcretarApp() {
   // retenciones quedan guardadas y se vuelven a ofrecer al marcarlo cobrado de nuevo.
   function deshacerCobro(ingreso) {
     if (!window.confirm(`¿Volver "${ingreso.concepto || "este cobro"}" (${fmtARS(ingreso.monto)}) a pendiente de cobro? Deja de sumar en la cuenta hasta que lo marques cobrado de nuevo.`)) return;
-    updateRecord("ingresos", ingreso.id, { estado: "Pendiente", fechaCobroEstimada: ingreso.fechaCobroEstimada || ingreso.fecha }, setIngresos);
+    updateRecord("ingresos", ingreso.id, { estado: "Pendiente", fechaCobro: null, fechaCobroEstimada: ingreso.fechaCobroEstimada || ingreso.fecha }, setIngresos);
   }
 
   // Obras "En curso": lo que todavía queda disponible para gastar (mano de obra + Eq. y
@@ -9609,6 +9699,9 @@ export default function ConcretarApp() {
                                 {fmtFecha(i.fecha)} · {i.concepto || "Cobro"}
                                 {i.cuenta && <span className="text-slate-400"> · {i.cuenta}{i.medioBancario ? ` (${i.medioBancario})` : ""}</span>}
                                 {i.tipoFactura && <span className="text-slate-400"> · {i.tipoFactura === "Sin factura" ? "Sin factura" : `Factura ${i.tipoFactura}`}</span>}
+                                {i.avisoPagoArchivo && (
+                                  <a href={i.avisoPagoArchivo} onClick={(e) => { e.preventDefault(); abrirArchivo(i.avisoPagoArchivo); }} title={i.avisoPagoNombreArchivo || "Aviso de pago"} className="ml-1 text-emerald-700 underline decoration-dotted hover:text-emerald-900">aviso de pago</a>
+                                )}
                               </span>
                               <span className="flex items-center gap-2">
                                 <span className="font-mono text-emerald-700">
@@ -12989,6 +13082,11 @@ export default function ConcretarApp() {
                         <FileDown size={13} />
                       </a>
                     )}
+                    {i.avisoPagoArchivo && (
+                      <a href={i.avisoPagoArchivo} onClick={(e) => { e.preventDefault(); abrirArchivo(i.avisoPagoArchivo); }} title={`Aviso de pago: ${i.avisoPagoNombreArchivo || "ver"}`} className="rounded border border-emerald-200 bg-emerald-50 px-1 text-[9px] font-semibold text-emerald-700 hover:bg-emerald-100">
+                        Aviso de pago
+                      </a>
+                    )}
                   </span>
                 </td>
                 <td className="px-2 py-1 text-slate-600">
@@ -13075,9 +13173,14 @@ export default function ConcretarApp() {
                       nombreArchivo: ingresoNombreArchivo,
                       tipoArchivo: ingresoTipoArchivo,
                       retenciones: ingresoRetenciones.filter((r) => (Number(r.monto) || 0) > 0),
+                      fechaCobro: f.get("estado") === "Pendiente" ? null : f.get("fecha"),
+                      avisoPagoArchivo: ingresoAviso.archivo,
+                      avisoPagoNombreArchivo: ingresoAviso.nombre,
+                      avisoPagoTipoArchivo: ingresoAviso.tipo,
                     }, setIngresos);
                     e.target.reset();
                     setIngresoRetenciones([]);
+                    setIngresoAviso({ archivo: null, nombre: null, tipo: null });
                     setIngresoMontoForm(0);
                     setIngresoCuenta(CUENTAS[0]);
                     setIngresoMedioBancario("Transferencia");
@@ -13125,6 +13228,16 @@ export default function ConcretarApp() {
                   <div className="md:col-span-3">
                     <EditorRetenciones value={ingresoRetenciones} onChange={setIngresoRetenciones} montoFactura={ingresoMontoForm} />
                   </div>
+                  {ingresoEstado !== "Pendiente" && (
+                    <div className="md:col-span-3">
+                      <ArchivoInput
+                        label="Aviso de pago del cliente (PDF o foto, opcional)"
+                        value={ingresoAviso.archivo}
+                        nombreArchivo={ingresoAviso.nombre}
+                        onChange={(archivo, nombre, tipo) => setIngresoAviso({ archivo, nombre, tipo })}
+                      />
+                    </div>
+                  )}
                   <div className="md:col-span-2">
                     <ArchivoInput
                       label="Factura / comprobante (opcional)"
@@ -15051,6 +15164,7 @@ export default function ConcretarApp() {
           titulo={cobrandoItem.item.concepto || (cobrandoItem.tipo === "proyectada" ? `Factura ${fmtFecha(cobrandoItem.item.fecha)}` : "Cobro")}
           monto={cobrandoItem.item.monto || 0}
           retencionesIniciales={retencionesDe(cobrandoItem.item)}
+          avisoInicial={cobrandoItem.tipo === "ingreso" ? cobrandoItem.item : null}
           onConfirmar={confirmarCobro}
           onClose={() => setCobrandoItem(null)}
         />
