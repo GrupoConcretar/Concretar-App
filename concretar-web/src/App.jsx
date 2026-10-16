@@ -13017,9 +13017,18 @@ export default function ConcretarApp() {
                 </td>
                 <td className="px-2 py-1">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {i.estado === "Pendiente" && (
+                    {i.estado === "Pendiente" ? (
                       <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
+                    ) : (
+                      <button onClick={() => deshacerCobro(i)} title="Volver a pendiente (si se marcó cobrado por error)" className={btnGhostSm}>Deshacer cobro</button>
                     )}
+                    <button
+                      onClick={() => setEditandoMovimiento({ origen: "ingresos", origenId: i.id })}
+                      title="Modificar (fecha, obra, concepto, monto, cuenta, factura, retenciones, estado)"
+                      className="rounded-md p-1 text-slate-400 hover:bg-stone-100 hover:text-slate-700"
+                    >
+                      <Pencil size={13} />
+                    </button>
                     <BotonEliminar onClick={() => moverAPapelera("ingresos", i.id, setIngresos, `${i.concepto} — ${fmtARS(i.monto)}`)} title="Eliminar ingreso" />
                   </div>
                 </td>
