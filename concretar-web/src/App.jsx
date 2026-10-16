@@ -6997,31 +6997,61 @@ export default function ConcretarApp() {
   // así borrar una entrega vuelve a dejar pendientes las facturas que había saldado.
   // notasLista: para cuando se acaba de cargar o borrar una nota de crédito y el estado
   // todavía no se actualizó (las notas cancelan facturas igual que las entregas).
-  function saldarFacturasConEntregas(nombre, entregasLista, comprasNuevas = [], notasLista = notasCredito) {
-    const key = nombreProveedorKey(nombre);
+  // Devuelve solo las facturas del proveedor (por su clave normalizada) que tienen que
+  // cambiar: las que lo entregado + las notas de crédito alcanzan a cubrir y todavía
+  // figuran pendientes, y las marcadas como saldadas que ya no alcanzan a cubrirse.
+  function cambiosSaldoProveedor(key, compras, entregasLista, notasLista) {
     const notas = notasLista
       .filter((n) => !n.eliminadoEn && nombreProveedorKey(n.proveedor) === key && !obraIdsPapelera.has(n.obraId))
       .reduce((s, n) => s + (n.monto || 0), 0);
     let disponible = notas + entregasLista
       .filter((e) => nombreProveedorKey(e.proveedor) === key)
       .reduce((s, e) => s + (e.monto || 0), 0);
-    // comprasNuevas: facturas recién cargadas que todavía no llegaron al estado.
-    const candidatas = [...comprasFacturas, ...comprasNuevas.filter((n) => !comprasFacturas.some((c) => c.id === n.id))]
-      .filter((c) => nombreProveedorKey(c.proveedor) === key && esDeudaSaldablePorEntrega(c) && (c.estado === "Pendiente" || c.pagadaConEntrega))
-      .sort(ordenFacturasDeuda);
+    const cambios = [];
     let alcanza = true;
-    candidatas.forEach((c) => {
-      const monto = c.monto || 0;
-      // Medio peso de tolerancia por redondeos de centavos.
-      const cubierta = alcanza && disponible + 0.5 >= monto;
-      if (cubierta) disponible -= monto; else alcanza = false;
-      if (cubierta && !(c.pagadaConEntrega && c.estado === "Pagada")) {
-        updateRecord("compras_facturas", c.id, { estado: "Pagada", pagadaConEntrega: true }, setComprasFacturas);
-      } else if (!cubierta && c.pagadaConEntrega) {
-        updateRecord("compras_facturas", c.id, { estado: "Pendiente", pagadaConEntrega: false }, setComprasFacturas);
-      }
-    });
+    compras
+      .filter((c) => !c.eliminadoEn && nombreProveedorKey(c.proveedor) === key && esDeudaSaldablePorEntrega(c) && (c.estado === "Pendiente" || c.pagadaConEntrega))
+      .sort(ordenFacturasDeuda)
+      .forEach((c) => {
+        const monto = c.monto || 0;
+        // Medio peso de tolerancia por redondeos de centavos.
+        const cubierta = alcanza && disponible + 0.5 >= monto;
+        if (cubierta) disponible -= monto; else alcanza = false;
+        if (cubierta && !(c.pagadaConEntrega && c.estado === "Pagada")) {
+          cambios.push({ id: c.id, patch: { estado: "Pagada", pagadaConEntrega: true } });
+        } else if (!cubierta && c.pagadaConEntrega) {
+          cambios.push({ id: c.id, patch: { estado: "Pendiente", pagadaConEntrega: false } });
+        }
+      });
+    return cambios;
   }
+  function saldarFacturasConEntregas(nombre, entregasLista, comprasNuevas = [], notasLista = notasCredito) {
+    // comprasNuevas: facturas recién cargadas que todavía no llegaron al estado.
+    const compras = [...comprasFacturas, ...comprasNuevas.filter((n) => !comprasFacturas.some((c) => c.id === n.id))];
+    cambiosSaldoProveedor(nombreProveedorKey(nombre), compras, entregasLista, notasLista)
+      .forEach(({ id, patch }) => updateRecord("compras_facturas", id, patch, setComprasFacturas));
+  }
+  // Además de recalcular al cargar o borrar una entrega / nota de crédito, se revisa
+  // sola al abrir la app y cada vez que cambian las compras, las entregas o las notas:
+  // así no quedan facturas "Pendiente" que ya están cubiertas (p. ej. notas de crédito
+  // cargadas antes de que cancelaran facturas, o una compra modificada, borrada o
+  // restaurada de la Papelera). Espera un momento a que terminen de guardarse los
+  // cambios en curso, y solo toca las facturas que de verdad cambian.
+  useEffect(() => {
+    if (dbLoading || dbError) return;
+    const timer = setTimeout(() => {
+      const claves = new Set([
+        ...entregasProveedores.map((e) => nombreProveedorKey(e.proveedor)),
+        ...notasCredito.map((n) => nombreProveedorKey(n.proveedor)),
+        ...comprasFacturas.filter((c) => c.pagadaConEntrega).map((c) => nombreProveedorKey(c.proveedor)),
+      ]);
+      claves.forEach((key) => {
+        cambiosSaldoProveedor(key, comprasFacturas, entregasProveedores, notasCredito)
+          .forEach(({ id, patch }) => updateRecord("compras_facturas", id, patch, setComprasFacturas));
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [dbLoading, dbError, comprasFacturasRaw, entregasProveedores, notasCreditoRaw, obras]);
   async function agregarEntregaProveedor(prov, datos) {
     // Pagado con la tarjeta de crédito de un socio: la plata no sale de ninguna cuenta
     // de la empresa, así que en vez de restar de la caja queda una deuda con ese socio
@@ -7182,6 +7212,15 @@ export default function ConcretarApp() {
       if (!b.fechaVencimiento) return -1;
       return fechaLocal(a.fechaVencimiento) - fechaLocal(b.fechaVencimiento);
     });
+  })();
+  // Por id de factura pendiente: cuánto ya está cubierto con entregas a cuenta / notas
+  // de crédito que todavía no alcanzan a saldarla entera, para mostrarlo en la tabla de gastos.
+  const creditoAplicadoPorFactura = (() => {
+    const porFactura = {};
+    new Set(comprasFacturas.filter((c) => c.estado === "Pendiente").map((c) => c.proveedor)).forEach((p) => {
+      Object.assign(porFactura, aplicacionCreditoProveedor(p).porFactura);
+    });
+    return porFactura;
   })();
   const ingresosPendientes = ingresos
     .filter((i) => i.estado === "Pendiente" && !obraIdsPapelera.has(i.obraId))
@@ -13000,6 +13039,11 @@ export default function ConcretarApp() {
                           )}
                           {(c.medioBancario === "Cuenta corriente" || c.formaPago === "Cuenta corriente") && c.estado === "Pendiente" && c.fechaVencimientoCc && (
                             <div className="text-[9px] text-slate-400">Vence el {fmtFecha(c.fechaVencimientoCc)}</div>
+                          )}
+                          {c.estado === "Pendiente" && creditoAplicadoPorFactura[c.id]?.descontado > 0 && (
+                            <div className="text-[9px] text-emerald-700">
+                              Ya descontado {fmtARS(creditoAplicadoPorFactura[c.id].descontado)} con entregas / notas de crédito · falta {fmtARS(creditoAplicadoPorFactura[c.id].falta)}
+                            </div>
                           )}
                           {c.pagadaConEntrega && c.estado === "Pagada" && (
                             <div className="text-[9px] text-emerald-700">Saldada con entregas / notas de crédito</div>
