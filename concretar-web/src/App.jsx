@@ -408,6 +408,16 @@ const FORMAS_PAGO = ["Banco", "MP Pablo", "MP Ricardo", "Efectivo", "Cuenta corr
 // acreditarse al toque como Débito/Transferencia y Crédito.
 const MEDIOS_BANCARIOS = ["Débito/Transferencia", "eCheq", "Crédito"];
 const TIPOS_FACTURA = ["Sin factura", "A", "B", "C"];
+// Retenciones que el cliente puede hacer al pagarnos (agente de retención): esa parte
+// no entra a la cuenta, la deposita el cliente a cuenta de nuestros impuestos — por eso
+// se resta de lo que hay que pagar de IVA, Ingresos Brutos o Ganancias. SUSS es la de
+// seguridad social (cargas sociales), que no entra en ninguno de esos tres cálculos.
+const TIPOS_RETENCION = ["IVA", "Ingresos Brutos", "Ganancias", "SUSS"];
+const retencionesDe = (ingreso) => (Array.isArray(ingreso?.retenciones) ? ingreso.retenciones : []);
+const totalRetenciones = (ingreso, tipo = null) =>
+  retencionesDe(ingreso).filter((r) => !tipo || r.tipo === tipo).reduce((s, r) => s + (Number(r.monto) || 0), 0);
+// Lo que realmente entra a la cuenta: el monto facturado menos lo retenido.
+const montoNetoIngreso = (ingreso) => (ingreso?.monto || 0) - totalRetenciones(ingreso);
 
 // ============================================================
 // CONFIGURACIÓN DE SUPABASE
@@ -721,6 +731,71 @@ const btnPrimary = "flex items-center gap-1 rounded-md bg-amber-500 px-3 py-2 te
 // dígito genuino cada vez (antes quedaba "pegado" en el ",00" fijo del final,
 // así que Borrar no achicaba el número).
 // Funciona tanto con formularios controlados (value+onChange) como con FormData (name).
+// Lista de retenciones de un cobro: tipo + monto, con el total retenido y lo que
+// entra a la cuenta. Controlado: value es el array [{ tipo, monto }].
+function EditorRetenciones({ value, onChange, montoFactura }) {
+  const lista = Array.isArray(value) ? value : [];
+  const total = lista.reduce((s, r) => s + (Number(r.monto) || 0), 0);
+  const cambiar = (idx, patch) => onChange(lista.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  return (
+    <div className="space-y-1.5 rounded-md border border-stone-200 bg-stone-50/60 p-2.5">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Retenciones (si al cobrar te retuvieron algo)</div>
+      {lista.map((r, idx) => (
+        <div key={idx} className="flex flex-wrap items-center gap-2">
+          <select value={r.tipo} onChange={(e) => cambiar(idx, { tipo: e.target.value })} className={`${inputCls} w-52 text-xs`}>
+            {TIPOS_RETENCION.map((t) => <option key={t} value={t}>Retención de {t}</option>)}
+          </select>
+          <MoneyInput value={r.monto} onChange={(v) => cambiar(idx, { monto: v })} puntoDecimalAlPegar className={`${inputCls} w-40 text-xs`} />
+          <button type="button" onClick={() => onChange(lista.filter((_, i) => i !== idx))} title="Quitar retención" className="text-slate-400 hover:text-rose-600"><X size={14} /></button>
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button type="button" onClick={() => onChange([...lista, { tipo: "IVA", monto: 0 }])} className={btnGhostSm}>
+          <span className="flex items-center gap-1"><Plus size={11} /> Agregar retención</span>
+        </button>
+        {total > 0 && (
+          <span className="text-xs text-slate-600">
+            Te retuvieron <span className="font-mono font-semibold text-amber-700">{fmtARS(total)}</span>
+            {montoFactura > 0 && <> · entra a la cuenta <span className="font-mono font-semibold text-emerald-700">{fmtARS(montoFactura - total)}</span></>}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// "Marcar cobrado": confirma el cobro y deja anotar las retenciones que hizo el cliente.
+function ModalMarcarCobrado({ titulo, monto, retencionesIniciales, onConfirmar, onClose }) {
+  const [retenciones, setRetenciones] = useState(Array.isArray(retencionesIniciales) ? retencionesIniciales : []);
+  const [guardando, setGuardando] = useState(false);
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-lg space-y-3 rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-900">Marcar cobrado</h3>
+          <button onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="text-sm text-slate-700">{titulo} — <span className="font-mono font-semibold">{fmtARS(monto)}</span></div>
+        <EditorRetenciones value={retenciones} onChange={setRetenciones} montoFactura={monto} />
+        <div className="flex items-center gap-2">
+          <button
+            disabled={guardando}
+            onClick={async () => {
+              setGuardando(true);
+              await onConfirmar(retenciones.filter((r) => (Number(r.monto) || 0) > 0));
+              setGuardando(false);
+            }}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {retenciones.some((r) => (Number(r.monto) || 0) > 0) ? "Confirmar cobro con retenciones" : "Confirmar cobro (sin retenciones)"}
+          </button>
+          <button type="button" onClick={onClose} className={btnGhost}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Montos copiados de afuera (PDF de una factura, home banking, Excel) suelen venir con
 // punto decimal, ej "265500.31". Si el punto tiene 1 o 2 dígitos atrás se lo toma
 // como coma decimal (y las comas, si hay, como miles: "265,500.31"); con 3 dígitos
@@ -1147,7 +1222,7 @@ function ResumenObrasCuentas({ items }) {
 // agrupan detrás de un "ver meses sin movimiento" en vez de listarlos todos,
 // para que la tabla no quede dominada por filas en $0.
 function mesIvaSinMovimiento(m) {
-  return m.debito === 0 && m.credito === 0 && m.saldoAFavorAnterior === 0 && m.aPagar === 0 && m.saldoAFavorNuevo === 0 && m.real === null;
+  return m.debito === 0 && m.credito === 0 && !m.retenciones && m.saldoAFavorAnterior === 0 && m.aPagar === 0 && m.saldoAFavorNuevo === 0 && m.real === null;
 }
 // Balance de IVA mes a mes (Cuentas → IVA y Ganancias): IVA venta (débito
 // fiscal, de lo facturado a clientes) contra IVA compra (crédito fiscal, de
@@ -1172,6 +1247,7 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
             <th className="px-2 py-1.5">Mes</th>
             <th className="px-2 py-1.5 text-right">IVA venta</th>
             <th className="px-2 py-1.5 text-right">IVA compra</th>
+            <th className="px-2 py-1.5 text-right" title="Retenciones de IVA que nos hicieron los clientes al pagarnos">Retenciones</th>
             <th className="px-2 py-1.5 text-right">IVA a pagar (app)</th>
             <th className="px-2 py-1.5 text-right">IVA real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
@@ -1179,7 +1255,7 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
         </thead>
         <tbody>
           {itemsAMostrar.length === 0 ? (
-            <tr><td colSpan={6} className="px-2 py-3 text-center text-slate-400">Todos los meses están sin movimiento — usá "Ver meses sin movimiento" abajo.</td></tr>
+            <tr><td colSpan={7} className="px-2 py-3 text-center text-slate-400">Todos los meses están sin movimiento — usá "Ver meses sin movimiento" abajo.</td></tr>
           ) : itemsAMostrar.map((m) => (
             <Fragment key={m.clave}>
               <tr className="border-t border-stone-100">
@@ -1191,6 +1267,7 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
                 </td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.debito)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.credito)}</td>
+                <td className={`px-2 py-1 text-right font-mono ${m.retenciones ? "text-amber-700" : "text-slate-300"}`}>{fmtARS(m.retenciones || 0)}</td>
                 <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.aPagar)}</td>
                 <td className="px-2 py-1 text-right">
                   <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
@@ -1201,7 +1278,7 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
               </tr>
               {expandidos[m.clave] && (
                 <tr className="border-t border-stone-100 bg-stone-50">
-                  <td colSpan={6} className="px-2 py-1.5">
+                  <td colSpan={7} className="px-2 py-1.5">
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
                       <span>Saldo a favor usado (del mes anterior): <span className="font-mono text-slate-500">{fmtARS(m.saldoAFavorAnterior)}</span></span>
                       <span>Saldo a favor nuevo (pasa al mes siguiente): <span className={`font-mono ${m.saldoAFavorNuevo > 0 ? "text-emerald-700" : "text-slate-400"}`}>{fmtARS(m.saldoAFavorNuevo)}</span></span>
@@ -1241,6 +1318,7 @@ function TablaGananciasAnual({ items, onActualizarReal, onBorrarReal }) {
             <th className="px-2 py-1.5 text-right">Ingresos netos</th>
             <th className="px-2 py-1.5 text-right">Gastos netos</th>
             <th className="px-2 py-1.5 text-right">Ganancia neta (app)</th>
+            <th className="px-2 py-1.5 text-right" title="Retenciones de Ganancias que nos hicieron los clientes: pagos a cuenta del impuesto del año">Retenciones sufridas</th>
             <th className="px-2 py-1.5 text-right">Ganancia real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
           </tr>
@@ -1252,6 +1330,7 @@ function TablaGananciasAnual({ items, onActualizarReal, onBorrarReal }) {
               <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.ingresos)}</td>
               <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(r.gastos)}</td>
               <td className={`px-2 py-1 text-right font-mono font-semibold ${r.ganancia < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(r.ganancia)}</td>
+              <td className={`px-2 py-1 text-right font-mono ${r.retenciones ? "text-amber-700" : "text-slate-300"}`}>{fmtARS(r.retenciones || 0)}</td>
               <td className="px-2 py-1 text-right">
                 <CampoRealConSigno value={r.real} onGuardar={(v) => onActualizarReal(r.anio, v)} onBorrar={() => onBorrarReal(r.anio)} className="w-32 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
               </td>
@@ -1311,7 +1390,7 @@ function CampoRealConSigno({ value, onGuardar, onBorrar, className }) {
 }
 
 function mesIibbSinMovimiento(m) {
-  return m.ingresos === 0 && m.saldoAFavorAnterior === 0 && m.proyectado === 0 && m.saldoAFavorNuevo === 0 && m.real === null;
+  return m.ingresos === 0 && !m.retenciones && m.saldoAFavorAnterior === 0 && m.proyectado === 0 && m.saldoAFavorNuevo === 0 && m.real === null;
 }
 // Ingresos Brutos mes a mes (Cuentas → IVA y Ganancias): a diferencia de IVA, la app
 // no puede calcular sola cuánto corresponde (depende de la alícuota de la actividad),
@@ -1337,6 +1416,7 @@ function TablaIibbMensual({ items, onActualizarReal, onBorrarReal }) {
         <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-2 py-1.5">Mes</th>
+            <th className="px-2 py-1.5 text-right" title="Retenciones de Ingresos Brutos que nos hicieron los clientes al pagarnos">Retenciones</th>
             <th className="px-2 py-1.5 text-right">Ingresos Brutos a pagar (app)</th>
             <th className="px-2 py-1.5 text-right">Ingresos Brutos real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
@@ -1344,7 +1424,7 @@ function TablaIibbMensual({ items, onActualizarReal, onBorrarReal }) {
         </thead>
         <tbody>
           {itemsAMostrar.length === 0 ? (
-            <tr><td colSpan={4} className="px-2 py-3 text-center text-slate-400">Todos los meses están sin movimiento — usá "Ver meses sin movimiento" abajo.</td></tr>
+            <tr><td colSpan={5} className="px-2 py-3 text-center text-slate-400">Todos los meses están sin movimiento — usá "Ver meses sin movimiento" abajo.</td></tr>
           ) : itemsAMostrar.map((m) => (
             <Fragment key={m.clave}>
               <tr className="border-t border-stone-100">
@@ -1354,6 +1434,7 @@ function TablaIibbMensual({ items, onActualizarReal, onBorrarReal }) {
                     {nombreMesDeClave(m.clave)}
                   </button>
                 </td>
+                <td className={`px-2 py-1 text-right font-mono ${m.retenciones ? "text-amber-700" : "text-slate-300"}`}>{fmtARS(m.retenciones || 0)}</td>
                 <td className={`px-2 py-1 text-right font-mono font-semibold ${m.proyectado > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.proyectado)}</td>
                 <td className="px-2 py-1 text-right">
                   <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
@@ -1364,7 +1445,7 @@ function TablaIibbMensual({ items, onActualizarReal, onBorrarReal }) {
               </tr>
               {expandidos[m.clave] && (
                 <tr className="border-t border-stone-100 bg-stone-50">
-                  <td colSpan={4} className="px-2 py-1.5">
+                  <td colSpan={5} className="px-2 py-1.5">
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
                       <span>Ingresos gravables: <span className="font-mono text-slate-700">{fmtARS(m.ingresos)}</span></span>
                       <span>Alícuota usada: <span className="font-mono text-slate-700">{m.alicuota === null ? "—" : `${(m.alicuota * 100).toFixed(2)}%`}</span></span>
@@ -2402,6 +2483,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         archivo: form.archivo,
         nombreArchivo: form.nombreArchivo,
         tipoArchivo: form.tipoArchivo,
+        retenciones: retencionesDe(form).filter((r) => (Number(r.monto) || 0) > 0),
       });
     } else {
       onGuardarManual(editando.origenId, {
@@ -2685,6 +2767,9 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                   <input type="date" value={form.fechaCobroEstimada || ""} onChange={(e) => setForm((f) => ({ ...f, fechaCobroEstimada: e.target.value }))} className={inputCls} />
                 </Field>
               )}
+              <div className="md:col-span-2">
+                <EditorRetenciones value={retencionesDe(form)} onChange={(retenciones) => setForm((f) => ({ ...f, retenciones }))} montoFactura={Number(form.monto) || 0} />
+              </div>
             </>
           )}
           {editando.origen === "movimientos_cuenta" && (
@@ -4937,6 +5022,7 @@ export default function ConcretarApp() {
     setEditandoObraId(null);
     setEditandoFacturaVentaProyectadaId(null);
     setShowFacturaVentaProyectadaForm(false);
+    setCargandoGastoObraId(null);
   }
   function iniciarEdicionObra(obra) {
     setEditandoObraId(obra.id);
@@ -4991,7 +5077,7 @@ export default function ConcretarApp() {
   const [formularioCompraKey, setFormularioCompraKey] = useState(0);
   const [ultimaCompraCargada, setUltimaCompraCargada] = useState(null);
   const [cantidadComprasCargadasTanda, setCantidadComprasCargadasTanda] = useState(0);
-  async function guardarFormularioCompra(e, seguirAbierto) {
+  async function guardarFormularioCompra(e, seguirAbierto, onGuardado) {
     e.preventDefault();
     const f = new FormData(e.target);
     if (!f.get("proveedor")) { alert("Elegí un proveedor o escribí uno nuevo."); return; }
@@ -5066,13 +5152,29 @@ export default function ConcretarApp() {
     setFacturaMedioPagoCC("Efectivo");
     setFormularioCompraKey((k) => k + 1);
     setShowFacturaForm(false);
+    if (onGuardado) onGuardado(nuevaCompra);
   }
-  function renderFormularioCompra({ proveedorFijo = null }) {
+  // Abre el formulario de gasto dentro de una obra, con esa obra ya elegida.
+  const [cargandoGastoObraId, setCargandoGastoObraId] = useState(null);
+  function abrirCargaGastoObra(obra) {
+    if (cargandoGastoObraId === obra.id) { setCargandoGastoObraId(null); return; }
+    setFacturaObraId(String(obra.id));
+    setFacturaFormaPago("Efectivo");
+    setFacturaMedioBancario("Débito/Transferencia");
+    setFacturaEstadoCC("Pendiente");
+    setFacturaMedioPagoCC("Efectivo");
+    setFacturaArchivo(null);
+    setFacturaNombreArchivo(null);
+    setFacturaTipoArchivo(null);
+    setFormularioCompraKey((k) => k + 1);
+    setCargandoGastoObraId(obra.id);
+  }
+  function renderFormularioCompra({ proveedorFijo = null, onGuardado = null }) {
     return (
       <form
         key={formularioCompraKey}
         className="grid grid-cols-1 gap-4 md:grid-cols-3"
-        onSubmit={(e) => guardarFormularioCompra(e, !!proveedorFijo)}
+        onSubmit={(e) => guardarFormularioCompra(e, !!proveedorFijo, onGuardado)}
       >
         <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
         <Field label="Obra">
@@ -5317,6 +5419,8 @@ export default function ConcretarApp() {
   const [ingresoMedioBancario, setIngresoMedioBancario] = useState("Transferencia");
   const [ingresoEstado, setIngresoEstado] = useState("Cobrado");
   const [ingresoArchivo, setIngresoArchivo] = useState(null);
+  const [ingresoRetenciones, setIngresoRetenciones] = useState([]);
+  const [ingresoMontoForm, setIngresoMontoForm] = useState(0);
   const [ingresoNombreArchivo, setIngresoNombreArchivo] = useState(null);
   const [ingresoTipoArchivo, setIngresoTipoArchivo] = useState(null);
   // ---------- Facturas y cobros de una obra (impacto en IVA/Ingresos Brutos + cobro futuro) ----------
@@ -5461,8 +5565,20 @@ export default function ConcretarApp() {
   // tipo de factura, la cuenta/medio y el comprobante que ya se hubieran cargado
   // en la proyección, y saca la proyección de la lista — así "Marcar cobrado"
   // deja todo resuelto de una, sin tener que editarlo después.
+  // "Marcar cobrado" (de una factura de venta futura o de un ingreso pendiente) abre
+  // primero una ventana para anotar las retenciones que haya hecho el cliente.
+  const [cobrandoItem, setCobrandoItem] = useState(null); // { tipo: "proyectada" | "ingreso", item }
   function marcarFacturaProyectadaCobrada(f) {
-    addRecord("ingresos", {
+    setCobrandoItem({ tipo: "proyectada", item: f });
+  }
+  async function confirmarCobro(retenciones) {
+    if (!cobrandoItem) return;
+    if (cobrandoItem.tipo === "proyectada") await confirmarFacturaProyectadaCobrada(cobrandoItem.item, retenciones);
+    else await updateRecord("ingresos", cobrandoItem.item.id, { estado: "Cobrado", retenciones }, setIngresos);
+    setCobrandoItem(null);
+  }
+  async function confirmarFacturaProyectadaCobrada(f, retenciones = []) {
+    await addRecord("ingresos", {
       fecha: f.fecha,
       obraId: f.obraId,
       concepto: f.concepto || "Factura de venta",
@@ -5475,6 +5591,7 @@ export default function ConcretarApp() {
       archivo: f.archivo || null,
       nombreArchivo: f.nombreArchivo || null,
       tipoArchivo: f.tipoArchivo || null,
+      retenciones,
     }, setIngresos);
     setFacturasVentaProyectadas((prev) => prev.filter((x) => x.id !== f.id));
     if (isSupabaseConfigured) sbDelete("facturas_venta_proyectadas", f.id).catch(() => {});
@@ -6134,9 +6251,10 @@ export default function ConcretarApp() {
 
   function saldoCuenta(cuenta) {
     // Un ingreso "Pendiente" (todavía no cobrado) no suma al saldo hasta que se cobra.
+    // Lo retenido por el cliente (IVA, IIBB, Ganancias...) no entra a la cuenta.
     const totalIngresos = ingresos
       .filter((i) => i.cuenta === cuenta && i.estado !== "Pendiente" && !obraIdsPapelera.has(i.obraId))
-      .reduce((s, i) => s + (i.monto || 0), 0);
+      .reduce((s, i) => s + montoNetoIngreso(i), 0);
     // Un gasto "Pendiente" (eCheq todavía no cobrado, o cuenta corriente sin saldar)
     // no resta hasta que se paga de verdad — hasta entonces solo figura en "Próximos pagos".
     // Una factura saldada con entregas a cuenta no resta de nuevo: la plata ya salió
@@ -6376,7 +6494,7 @@ export default function ConcretarApp() {
   };
   const movimientosCuentas = [
     ...ingresos.filter((i) => !obraIdsPapelera.has(i.obraId)).map((i) => ({
-      id: `ing-${i.id}`, fecha: i.estado === "Pendiente" && i.fechaCobroEstimada ? i.fechaCobroEstimada : i.fecha, creadoEn: i.creadoEn, tipo: "Ingreso", obraId: i.obraId, detalle: i.concepto, cuenta: i.cuenta, monto: i.monto || 0, estado: i.estado === "Pendiente" ? "Pendiente" : null,
+      id: `ing-${i.id}`, fecha: i.estado === "Pendiente" && i.fechaCobroEstimada ? i.fechaCobroEstimada : i.fecha, creadoEn: i.creadoEn, tipo: "Ingreso", obraId: i.obraId, detalle: totalRetenciones(i) > 0 ? `${i.concepto} (retenciones ${fmtARS(totalRetenciones(i))})` : i.concepto, cuenta: i.cuenta, monto: montoNetoIngreso(i), estado: i.estado === "Pendiente" ? "Pendiente" : null,
       origen: "ingresos", origenId: i.id, tipoFactura: i.tipoFactura,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
@@ -6480,10 +6598,18 @@ export default function ConcretarApp() {
     const clave = claveMesCuentas(c.fecha);
     (ivaPorMes[clave] ??= { debito: 0, credito: 0 }).credito += ivaDeMonto(c.monto, c.tipoFactura);
   });
+  // Retenciones de IVA que nos hicieron al cobrar: son pagos a cuenta del IVA del mes
+  // en que se facturó el cobro, así que se descuentan de lo que hay que pagar (y si
+  // sobran, quedan como saldo a favor para el mes siguiente).
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && totalRetenciones(i, "IVA") > 0).forEach((i) => {
+    const clave = claveMesCuentas(i.fecha);
+    const m = (ivaPorMes[clave] ??= { debito: 0, credito: 0 });
+    m.retenciones = (m.retenciones || 0) + totalRetenciones(i, "IVA");
+  });
   let saldoAFavorIvaArrastre = 0;
   const ivaMensual = Array.from(new Set([...Object.keys(ivaPorMes), ...MESES_IVA_IIBB_A_MOSTRAR])).sort().map((clave) => {
-    const { debito = 0, credito = 0 } = ivaPorMes[clave] || {};
-    const disponible = credito + saldoAFavorIvaArrastre;
+    const { debito = 0, credito = 0, retenciones = 0 } = ivaPorMes[clave] || {};
+    const disponible = credito + retenciones + saldoAFavorIvaArrastre;
     const saldoAFavorAnterior = saldoAFavorIvaArrastre;
     const aPagar = Math.max(0, debito - disponible);
     // "real" queda cargado en la convención positivo = a favor, negativo = a pagar
@@ -6494,7 +6620,7 @@ export default function ConcretarApp() {
     // que la app no ve. Sin real, se sigue estimando con disponible - debito.
     const real = ajusteFiscalDe("iva", clave);
     saldoAFavorIvaArrastre = real === null ? Math.max(0, disponible - debito) : Math.max(0, real);
-    return { clave, debito, credito, saldoAFavorAnterior, aPagar, saldoAFavorNuevo: saldoAFavorIvaArrastre, real, diferencia: real === null ? null : aPagar + real };
+    return { clave, debito, credito, retenciones, saldoAFavorAnterior, aPagar, saldoAFavorNuevo: saldoAFavorIvaArrastre, real, diferencia: real === null ? null : aPagar + real };
   }).reverse();
 
   const gananciasPorAnio = {};
@@ -6506,10 +6632,17 @@ export default function ConcretarApp() {
     const anio = (c.fecha || "").slice(0, 4);
     (gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 }).gastos += netoDeIvaMonto(c.monto, c.tipoFactura);
   });
+  // Retenciones de Ganancias sufridas en el año: pagos a cuenta del impuesto anual.
+  const retencionesGananciasPorAnio = {};
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && totalRetenciones(i, "Ganancias") > 0).forEach((i) => {
+    const anio = (i.fecha || "").slice(0, 4);
+    retencionesGananciasPorAnio[anio] = (retencionesGananciasPorAnio[anio] || 0) + totalRetenciones(i, "Ganancias");
+    gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 };
+  });
   const gananciasAnuales = Object.keys(gananciasPorAnio).sort().map((anio) => {
     const ganancia = gananciasPorAnio[anio].ingresos - gananciasPorAnio[anio].gastos;
     const real = ajusteFiscalDe("ganancia", anio);
-    return { anio, ...gananciasPorAnio[anio], ganancia, real, diferencia: real === null ? null : real - ganancia };
+    return { anio, ...gananciasPorAnio[anio], ganancia, retenciones: retencionesGananciasPorAnio[anio] || 0, real, diferencia: real === null ? null : real - ganancia };
   }).reverse();
 
   // ---------- Ingresos Brutos ----------
@@ -6533,8 +6666,16 @@ export default function ConcretarApp() {
     const clave = claveMesCuentas(f.fecha);
     ingresosGravablesPorMes[clave] = (ingresosGravablesPorMes[clave] || 0) + (f.monto || 0);
   });
+  // Retenciones de Ingresos Brutos sufridas al cobrar: se descuentan de lo que hay que
+  // pagar ese mes (y si sobran, quedan como saldo a favor para el siguiente).
+  const retencionesIibbPorMes = {};
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && totalRetenciones(i, "Ingresos Brutos") > 0).forEach((i) => {
+    const clave = claveMesCuentas(i.fecha);
+    retencionesIibbPorMes[clave] = (retencionesIibbPorMes[clave] || 0) + totalRetenciones(i, "Ingresos Brutos");
+  });
   const clavesIibb = Array.from(new Set([
     ...Object.keys(ingresosGravablesPorMes),
+    ...Object.keys(retencionesIibbPorMes),
     ...ajustesFiscales.filter((a) => a.tipo === "iibb").map((a) => a.clave),
     ...MESES_IVA_IIBB_A_MOSTRAR,
   ])).sort();
@@ -6548,13 +6689,14 @@ export default function ConcretarApp() {
     // proporcional a los ingresos de ese mes.
     if (real !== null && real < 0 && ingresosDelMes > 0) alicuotaIibbEfectiva = -real / ingresosDelMes;
     const proyectadoBruto = ingresosDelMes * alicuotaIibbEfectiva;
-    const disponible = saldoAFavorIibbArrastre;
+    const retenciones = retencionesIibbPorMes[clave] || 0;
+    const disponible = saldoAFavorIibbArrastre + retenciones;
     const saldoAFavorAnterior = saldoAFavorIibbArrastre;
     const proyectado = Math.max(0, proyectadoBruto - disponible);
     // Igual que IVA: el real reemplaza por completo la estimación de la app para el
     // saldo a favor que se arrastra, no se le suma ni se le resta.
     saldoAFavorIibbArrastre = real === null ? Math.max(0, disponible - proyectadoBruto) : Math.max(0, real);
-    return { clave, ingresos: ingresosDelMes, alicuota: alicuotaIibbEfectiva, saldoAFavorAnterior, proyectado, saldoAFavorNuevo: saldoAFavorIibbArrastre, real, diferencia: real === null ? null : proyectado + real };
+    return { clave, ingresos: ingresosDelMes, alicuota: alicuotaIibbEfectiva, retenciones, saldoAFavorAnterior, proyectado, saldoAFavorNuevo: saldoAFavorIibbArrastre, real, diferencia: real === null ? null : proyectado + real };
   }).reverse();
 
   // Esta empresa paga IVA e Ingresos Brutos con 3 meses de atraso (el de junio se paga
@@ -6901,7 +7043,7 @@ export default function ConcretarApp() {
     updateRecord("proveedores", proveedorId, { diaPago: dia ? Number(dia) : null }, setProveedores);
   }
   function marcarIngresoCobrado(ingreso) {
-    updateRecord("ingresos", ingreso.id, { estado: "Cobrado" }, setIngresos);
+    setCobrandoItem({ tipo: "ingreso", item: ingreso });
   }
 
   // Obras "En curso": lo que todavía queda disponible para gastar (mano de obra + Eq. y
@@ -6953,7 +7095,7 @@ export default function ConcretarApp() {
     echeqsSalida.forEach((c) => agregar(c.fechaPagoEcheq, c.monto, "egreso"));
     echeqsEntrada.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
     cuentasCorrientesPorProveedor.forEach((g) => agregar(g.fechaVencimiento, g.monto, "egreso"));
-    ingresosPendientes.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
+    ingresosPendientes.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, montoNetoIngreso(i), "ingreso"));
     // Facturación futura: todavía no es un ingreso real, pero si ya se cargó un
     // posible día de cobro, sirve para anticipar el ingreso de plata en el flujo
     // de caja (separado del día en que se piensa emitir la factura, que es el que
@@ -9390,7 +9532,10 @@ export default function ConcretarApp() {
                                 {i.cuenta && <span className="text-slate-400"> · {i.cuenta}{i.medioBancario ? ` (${i.medioBancario})` : ""}</span>}
                                 {i.tipoFactura && <span className="text-slate-400"> · {i.tipoFactura === "Sin factura" ? "Sin factura" : `Factura ${i.tipoFactura}`}</span>}
                               </span>
-                              <span className="font-mono text-emerald-700">{fmtARS(i.monto)}</span>
+                              <span className="font-mono text-emerald-700">
+                                {fmtARS(i.monto)}
+                                {totalRetenciones(i) > 0 && <span className="text-amber-700"> (retenido {fmtARS(totalRetenciones(i))})</span>}
+                              </span>
                             </div>
                           ))}
                         </div>
@@ -9398,7 +9543,25 @@ export default function ConcretarApp() {
                     )}
                   </Panel>
 
-                  <Panel title="Historial de gastos">
+                  <Panel
+                    title="Historial de gastos"
+                    action={
+                      <button onClick={() => abrirCargaGastoObra(obraSel)} className={btnGhost}>
+                        <span className="flex items-center gap-1"><Plus size={13} /> Cargar gasto</span>
+                      </button>
+                    }
+                  >
+                    {cargandoGastoObraId === obraSel.id && (
+                      <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+                        <div className="mb-2 flex items-start justify-between gap-2">
+                          <div className="text-xs text-slate-600">
+                            <span className="font-semibold text-slate-800">Cargar gasto de {obraSel.nombre}</span> — queda en Gastos y Facturas igual que si lo cargaras desde ahí.
+                          </div>
+                          <button onClick={() => setCargandoGastoObraId(null)} title="Cerrar"><X size={16} /></button>
+                        </div>
+                        {renderFormularioCompra({ onGuardado: () => setCargandoGastoObraId(null) })}
+                      </div>
+                    )}
                     <HistorialGastosObra items={historialGastosObra} />
                   </Panel>
 
@@ -12748,7 +12911,14 @@ export default function ConcretarApp() {
                     <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{i.tipoFactura}</span>
                   )}
                 </td>
-                <td className="px-2 py-1 text-right font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</td>
+                <td className="px-2 py-1 text-right font-mono font-semibold text-emerald-700">
+                  {fmtARS(i.monto)}
+                  {totalRetenciones(i) > 0 && (
+                    <div className="text-[10px] font-normal text-amber-700" title={retencionesDe(i).map((r) => `Retención de ${r.tipo}: ${fmtARS(r.monto)}`).join(" · ")}>
+                      -{fmtARS(totalRetenciones(i))} retenido · neto {fmtARS(montoNetoIngreso(i))}
+                    </div>
+                  )}
+                </td>
                 <td className="px-2 py-1">
                   <Badge estado={i.estado === "Pendiente" ? "Pendiente" : "Cobrado"} />
                   {i.estado === "Pendiente" && i.fechaCobroEstimada && (
@@ -12805,8 +12975,11 @@ export default function ConcretarApp() {
                       archivo: ingresoArchivo,
                       nombreArchivo: ingresoNombreArchivo,
                       tipoArchivo: ingresoTipoArchivo,
+                      retenciones: ingresoRetenciones.filter((r) => (Number(r.monto) || 0) > 0),
                     }, setIngresos);
                     e.target.reset();
+                    setIngresoRetenciones([]);
+                    setIngresoMontoForm(0);
                     setIngresoCuenta(CUENTAS[0]);
                     setIngresoMedioBancario("Transferencia");
                     setIngresoEstado("Cobrado");
@@ -12824,7 +12997,7 @@ export default function ConcretarApp() {
                     </select>
                   </Field>
                   <Field label="Concepto"><input name="concepto" required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
-                  <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
+                  <Field label="Monto (ARS)"><MoneyInput name="monto" onChange={setIngresoMontoForm} className={inputCls} /></Field>
                   <Field label="Factura">
                     <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
                   </Field>
@@ -12850,6 +13023,9 @@ export default function ConcretarApp() {
                       <input name="fechaCobroEstimada" type="date" defaultValue={hoyISO()} required className={inputCls} />
                     </Field>
                   )}
+                  <div className="md:col-span-3">
+                    <EditorRetenciones value={ingresoRetenciones} onChange={setIngresoRetenciones} montoFactura={ingresoMontoForm} />
+                  </div>
                   <div className="md:col-span-2">
                     <ArchivoInput
                       label="Factura / comprobante (opcional)"
@@ -13174,19 +13350,19 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">IVA venta: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). IVA compra: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Si IVA venta supera a IVA compra (+ el saldo a favor que venía arrastrando) el mes da en contra (a pagar); si no, da a favor y ese saldo pasa al mes siguiente — no es plata que entra a la cuenta. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−).</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">IVA venta: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). IVA compra: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Si IVA venta supera a IVA compra (+ el saldo a favor que venía arrastrando) el mes da en contra (a pagar); si no, da a favor y ese saldo pasa al mes siguiente — no es plata que entra a la cuenta. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−). Las retenciones de IVA que te hicieron los clientes al cobrar (se cargan en "Marcar cobrado" o en el ingreso) se descuentan de lo que hay que pagar ese mes.</div>
               <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iva", clave)} />
             </div>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ingresos Brutos por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Se proyecta al 2% de los ingresos gravables (incluye facturas de venta futuras proyectadas desde una obra) hasta que cargues el "Ingresos Brutos real (contador)" de algún mes — ahí la alícuota efectiva se recalcula sola y ajusta la proyección de los meses siguientes.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">Se proyecta al 2% de los ingresos gravables (incluye facturas de venta futuras proyectadas desde una obra) hasta que cargues el "Ingresos Brutos real (contador)" de algún mes — ahí la alícuota efectiva se recalcula sola y ajusta la proyección de los meses siguientes. Las retenciones de Ingresos Brutos que te hicieron al cobrar se descuentan de lo que hay que pagar ese mes.</div>
               <TablaIibbMensual items={iibbMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iibb", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iibb", clave)} />
             </div>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ganancias por año</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Ingresos y gastos netos de IVA, de todo lo que tenga Factura A, B o C — base aproximada para el Impuesto a las Ganancias. Cargá en "Ganancia real (contador)" el número que informe el contador para compararlo contra la estimación de la app.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">Ingresos y gastos netos de IVA, de todo lo que tenga Factura A, B o C — base aproximada para el Impuesto a las Ganancias. Cargá en "Ganancia real (contador)" el número que informe el contador para compararlo contra la estimación de la app. "Retenciones sufridas" suma las retenciones de Ganancias que te hicieron al cobrar: son pagos a cuenta del impuesto de ese año.</div>
               <TablaGananciasAnual items={gananciasAnuales} onActualizarReal={(anio, monto) => actualizarAjusteFiscal("ganancia", anio, monto)} onBorrarReal={(anio) => borrarAjusteFiscal("ganancia", anio)} />
             </div>
           </div>
@@ -14743,6 +14919,17 @@ export default function ConcretarApp() {
           prestamo={prestamos.find((p) => p.id === editandoPrestamoId)}
           onClose={() => setEditandoPrestamoId(null)}
           onGuardar={guardarEdicionPrestamo}
+        />
+      )}
+
+      {cobrandoItem && (
+        <ModalMarcarCobrado
+          key={`${cobrandoItem.tipo}-${cobrandoItem.item.id}`}
+          titulo={cobrandoItem.item.concepto || (cobrandoItem.tipo === "proyectada" ? `Factura ${fmtFecha(cobrandoItem.item.fecha)}` : "Cobro")}
+          monto={cobrandoItem.item.monto || 0}
+          retencionesIniciales={retencionesDe(cobrandoItem.item)}
+          onConfirmar={confirmarCobro}
+          onClose={() => setCobrandoItem(null)}
         />
       )}
 
