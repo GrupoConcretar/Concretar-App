@@ -6609,7 +6609,7 @@ export default function ConcretarApp() {
   // Retenciones de IVA que nos hicieron al cobrar: son pagos a cuenta del IVA del mes
   // en que se facturó el cobro, así que se descuentan de lo que hay que pagar (y si
   // sobran, quedan como saldo a favor para el mes siguiente).
-  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && totalRetenciones(i, "IVA") > 0).forEach((i) => {
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && i.estado !== "Pendiente" && totalRetenciones(i, "IVA") > 0).forEach((i) => {
     const clave = claveMesCuentas(i.fecha);
     const m = (ivaPorMes[clave] ??= { debito: 0, credito: 0 });
     m.retenciones = (m.retenciones || 0) + totalRetenciones(i, "IVA");
@@ -6642,7 +6642,7 @@ export default function ConcretarApp() {
   });
   // Retenciones de Ganancias sufridas en el año: pagos a cuenta del impuesto anual.
   const retencionesGananciasPorAnio = {};
-  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && totalRetenciones(i, "Ganancias") > 0).forEach((i) => {
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && i.estado !== "Pendiente" && totalRetenciones(i, "Ganancias") > 0).forEach((i) => {
     const anio = (i.fecha || "").slice(0, 4);
     retencionesGananciasPorAnio[anio] = (retencionesGananciasPorAnio[anio] || 0) + totalRetenciones(i, "Ganancias");
     gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 };
@@ -6677,7 +6677,7 @@ export default function ConcretarApp() {
   // Retenciones de Ingresos Brutos sufridas al cobrar: se descuentan de lo que hay que
   // pagar ese mes (y si sobran, quedan como saldo a favor para el siguiente).
   const retencionesIibbPorMes = {};
-  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && totalRetenciones(i, "Ingresos Brutos") > 0).forEach((i) => {
+  ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && i.estado !== "Pendiente" && totalRetenciones(i, "Ingresos Brutos") > 0).forEach((i) => {
     const clave = claveMesCuentas(i.fecha);
     retencionesIibbPorMes[clave] = (retencionesIibbPorMes[clave] || 0) + totalRetenciones(i, "Ingresos Brutos");
   });
@@ -7101,6 +7101,13 @@ export default function ConcretarApp() {
   }
   function marcarIngresoCobrado(ingreso) {
     setCobrandoItem({ tipo: "ingreso", item: ingreso });
+  }
+  // Para corregir un "Marcar cobrado" tocado por error: vuelve a Pendiente (sale de la
+  // caja y vuelve a figurar en los cobros pendientes y en Próximos pagos). Las
+  // retenciones quedan guardadas y se vuelven a ofrecer al marcarlo cobrado de nuevo.
+  function deshacerCobro(ingreso) {
+    if (!window.confirm(`¿Volver "${ingreso.concepto || "este cobro"}" (${fmtARS(ingreso.monto)}) a pendiente de cobro? Deja de sumar en la cuenta hasta que lo marques cobrado de nuevo.`)) return;
+    updateRecord("ingresos", ingreso.id, { estado: "Pendiente", fechaCobroEstimada: ingreso.fechaCobroEstimada || ingreso.fecha }, setIngresos);
   }
 
   // Obras "En curso": lo que todavía queda disponible para gastar (mano de obra + Eq. y
@@ -9603,9 +9610,21 @@ export default function ConcretarApp() {
                                 {i.cuenta && <span className="text-slate-400"> · {i.cuenta}{i.medioBancario ? ` (${i.medioBancario})` : ""}</span>}
                                 {i.tipoFactura && <span className="text-slate-400"> · {i.tipoFactura === "Sin factura" ? "Sin factura" : `Factura ${i.tipoFactura}`}</span>}
                               </span>
-                              <span className="font-mono text-emerald-700">
-                                {fmtARS(i.monto)}
-                                {totalRetenciones(i) > 0 && <span className="text-amber-700"> (retenido {fmtARS(totalRetenciones(i))})</span>}
+                              <span className="flex items-center gap-2">
+                                <span className="font-mono text-emerald-700">
+                                  {fmtARS(i.monto)}
+                                  {totalRetenciones(i) > 0 && <span className="text-amber-700"> (retenido {fmtARS(totalRetenciones(i))})</span>}
+                                </span>
+                                <button
+                                  onClick={() => setEditandoMovimiento({ origen: "ingresos", origenId: i.id })}
+                                  title="Modificar este cobro (fecha, monto, cuenta, factura, retenciones...)"
+                                  className="rounded p-0.5 text-slate-400 hover:bg-stone-100 hover:text-slate-700"
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                                <button onClick={() => deshacerCobro(i)} title="Volver a pendiente (si se marcó cobrado por error)" className={btnGhostSm}>
+                                  Deshacer cobro
+                                </button>
                               </span>
                             </div>
                           ))}
