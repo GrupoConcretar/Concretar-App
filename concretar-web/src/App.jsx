@@ -7385,6 +7385,19 @@ export default function ConcretarApp() {
   // Una compra con factura A/B/C "tiene factura" si tiene el PDF/foto adjunto o una de
   // "Facturas varias" vinculada; si no, hay que pedírsela al proveedor.
   const tieneFacturaAdjunta = (c) => !!c.archivo || facturasVarias.some((fv) => fv.compraFacturaId === c.id);
+  // Para sugerir a qué compra va cada PDF de "Facturas varias": el número de factura
+  // del nombre del archivo (el último grupo de dígitos, ej "FACTURA-55992-..." o
+  // "FC N° 0019 - 00056013") contra los últimos 8 dígitos del N° de comprobante
+  // cargado en la compra (ej "A 001900055992").
+  const numeroFacturaDeArchivo = (nombre) => {
+    const grupos = String(nombre || "").replace(/\.[a-z0-9]+$/i, "").match(/\d+/g);
+    const n = grupos ? Number(grupos[grupos.length - 1]) : 0;
+    return n > 0 ? n : null;
+  };
+  const numeroFacturaDeComprobante = (comprobante) => {
+    const digitos = String(comprobante || "").replace(/\D/g, "");
+    return digitos.length >= 4 ? Number(digitos.slice(-8)) || null : null;
+  };
   const faltaFacturaCompra = (c) => !!c.tipoFactura && c.tipoFactura !== "Sin factura" && !tieneFacturaAdjunta(c);
   function balanceProveedor(prov) {
     const facturas = comprasFacturas.filter((c) => c.proveedor === nombreComercial(prov) && !obraIdsPapelera.has(c.obraId));
@@ -14255,6 +14268,14 @@ export default function ConcretarApp() {
                                 {facturasVariasDelProveedor.map((f) => {
                                   // Una factura vinculada a una compra que ya no existe (borrada) cuenta como sin vincular.
                                   const compraVinculada = historialCompras.find((c) => c.id === f.compraFacturaId);
+                                  // En el desplegable solo quedan las compras que todavía no tienen factura
+                                  // (más la que ya tiene elegida esta fila), así la lista se va achicando a
+                                  // medida que se vinculan. Primero las que coinciden por N° de factura (★).
+                                  const numeroArchivo = numeroFacturaDeArchivo(f.nombreArchivo);
+                                  const coincide = (c) => numeroArchivo !== null && numeroFacturaDeComprobante(c.comprobante) === numeroArchivo;
+                                  const opcionesCompra = historialCompras
+                                    .filter((c) => c.id === compraVinculada?.id || !tieneFacturaAdjunta(c))
+                                    .sort((a, b) => (coincide(b) - coincide(a)) || (fechaLocal(a.fecha) - fechaLocal(b.fecha)) || (a.id - b.id));
                                   return (
                                     <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5 text-xs">
                                       <span className="flex items-center gap-1.5">
@@ -14272,8 +14293,8 @@ export default function ConcretarApp() {
                                           className={`w-72 rounded-md border px-2 py-1 text-[11px] ${compraVinculada ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-amber-300 bg-amber-50 text-amber-800"}`}
                                         >
                                           <option value="">Sin vincular a una compra…</option>
-                                          {historialCompras.map((c) => (
-                                            <option key={c.id} value={c.id}>{fmtFecha(c.fecha)} · {c.descripcion || c.categoria} · {fmtARS(c.monto)}</option>
+                                          {opcionesCompra.map((c) => (
+                                            <option key={c.id} value={c.id}>{coincide(c) ? "★ " : ""}{fmtFecha(c.fecha)} · {c.comprobante ? `${c.comprobante} · ` : ""}{c.descripcion || c.categoria} · {fmtARS(c.monto)}</option>
                                           ))}
                                         </select>
                                         <BotonEliminar onClick={() => eliminarFacturaVaria(f.id)} title="Eliminar factura" />
