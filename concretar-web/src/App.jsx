@@ -400,6 +400,9 @@ const CUENTAS = ["Efectivo", "Banco", "MP Pablo", "MP Ricardo"];
 // queda como deuda de la empresa con ese socio (un préstamo sin interés, a
 // devolverle antes del vencimiento de la tarjeta).
 const TARJETAS_SOCIOS = { "Tarjeta Ricardo": "Ricardo", "Tarjeta Pablo": "Pablo" };
+// Una factura de proveedor se da por cancelada aunque le falten unos centavos (hasta
+// $1): son diferencias de redondeo entre lo que se cargó y el resumen del proveedor.
+const TOLERANCIA_REDONDEO_DEUDA = 1;
 const esTarjetaSocio = (cuenta) => Object.prototype.hasOwnProperty.call(TARJETAS_SOCIOS, cuenta || "");
 // "Cuenta corriente" es su propia forma de pago (no es un medio del Banco: es una
 // deuda con el proveedor, todavía no se sabe por qué canal real se va a saldar).
@@ -3159,7 +3162,7 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
   const saldadas = [];
   let parcial = null;
   for (const f of facturas) {
-    if (disponible + 0.5 >= (f.monto || 0)) {
+    if (disponible + TOLERANCIA_REDONDEO_DEUDA >= (f.monto || 0)) {
       saldadas.push(f);
       disponible -= f.monto || 0;
     } else {
@@ -3245,6 +3248,66 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
         <button type="submit" disabled={guardando} className={`${btnPrimary} disabled:opacity-50`}>{guardando ? "Guardando..." : editando ? "Guardar cambios" : "Guardar entrega"}</button>
         <button type="button" onClick={onCancelar} className={btnGhost}>Cancelar</button>
       </div>
+    </form>
+  );
+}
+
+// El proveedor manda su resumen de cuenta: se carga el saldo final que figura ahí y,
+// si no coincide con el de la app, la diferencia queda como "Corrección de deuda"
+// (no toca compras, entregas ni notas de crédito).
+function FormularioSaldoProveedor({ saldo, nombreProveedor, onGuardar }) {
+  const [importe, setImporte] = useState(null);
+  const [aFavor, setAFavor] = useState(false);
+  const [fecha, setFecha] = useState(hoyISO());
+  const [nota, setNota] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
+  const saldoInformado = importe === null ? null : (aFavor ? -importe : importe);
+  const diferencia = saldoInformado === null ? null : Math.round((saldoInformado - saldo) * 100) / 100;
+  const coincide = diferencia !== null && Math.abs(diferencia) < 0.005;
+  const textoSaldo = (n) => (n < 0 ? `${fmtARS(-n)} a nuestro favor` : fmtARS(n));
+  return (
+    <form
+      className="mt-3 rounded-lg border border-sky-200 bg-sky-50/50 p-3"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (diferencia === null) { alert(`Cargá el saldo final que figura en el resumen de cuenta de ${nombreProveedor}.`); return; }
+        if (coincide) return;
+        setGuardando(true);
+        const ok = await onGuardar({ fecha, saldoInformado, nota: nota.trim() });
+        setGuardando(false);
+        if (ok) { setImporte(null); setAFavor(false); setNota(""); setResetKey((k) => k + 1); }
+      }}
+    >
+      <div className="text-xs text-slate-600">
+        <span className="font-semibold text-slate-800">Saldo según {nombreProveedor}</span> — poné el saldo final del resumen de cuenta que te mandó. Si no coincide con el de la app, la diferencia se carga como "Corrección de deuda".
+      </div>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-end">
+        <Field label="Saldo que informa el proveedor">
+          <MoneyInput key={resetKey} onChange={setImporte} onBlur={(n, tiene) => setImporte(tiene ? n : null)} puntoDecimalAlPegar placeholder="Ej: 935.999,21" className={inputCls} />
+        </Field>
+        <Field label="Fecha del resumen"><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
+        <Field label="Nota (opcional)"><input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: resumen de cuenta del 15/10" className={inputCls} /></Field>
+        <button type="submit" disabled={guardando || diferencia === null || coincide} className={`${btnPrimary} disabled:opacity-50`}>
+          {guardando ? "Guardando..." : "Corregir deuda"}
+        </button>
+      </div>
+      <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+        <input type="checkbox" checked={aFavor} onChange={(e) => setAFavor(e.target.checked)} />
+        El resumen dice que el saldo es a nuestro favor (no le debemos, nos debe)
+      </label>
+      {diferencia !== null && (
+        <div className="mt-2 rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-xs text-slate-600">
+          La app dice que le debés <span className="font-mono font-semibold text-slate-800">{textoSaldo(saldo)}</span>.{" "}
+          {coincide ? (
+            <span className="font-semibold text-emerald-700">Coincide con el proveedor: no hace falta corregir nada.</span>
+          ) : diferencia > 0 ? (
+            <>Se carga una corrección de deuda de <span className="font-mono font-semibold text-rose-600">+{fmtARS(diferencia)}</span> (le debemos más de lo que figuraba) y la deuda queda en <span className="font-mono font-semibold text-slate-800">{textoSaldo(saldoInformado)}</span>.</>
+          ) : (
+            <>Se carga una corrección de deuda de <span className="font-mono font-semibold text-emerald-700">-{fmtARS(-diferencia)}</span> (le debemos menos de lo que figuraba) y la deuda queda en <span className="font-mono font-semibold text-slate-800">{textoSaldo(saldoInformado)}</span>. Si alcanza, se cancelan las facturas pendientes más viejas.</>
+          )}
+        </div>
+      )}
     </form>
   );
 }
@@ -4077,6 +4140,11 @@ export default function ConcretarApp() {
   // tocar el gasto/factura original — así se conserva el historial de la compra.
   const [notasCreditoRaw, setNotasCredito] = useState(isSupabaseConfigured ? [] : DEMO_NOTAS_CREDITO);
   const [entregasProveedores, setEntregasProveedores] = useState(isSupabaseConfigured ? [] : DEMO_ENTREGAS_PROVEEDORES);
+  // Correcciones de deuda con proveedores: cuando el proveedor manda su resumen de
+  // cuenta y el saldo no coincide con el de la app, se carga el saldo real y la
+  // diferencia queda como "Corrección de deuda" (positiva: le debemos más; negativa:
+  // le debemos menos). Suma o resta del saldo sin tocar compras, entregas ni notas.
+  const [correccionesDeuda, setCorreccionesDeuda] = useState([]);
   const [facturasVarias, setFacturasVarias] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VARIAS);
   const [sueldosPlanificados, setSueldosPlanificados] = useState(isSupabaseConfigured ? [] : DEMO_SUELDOS_PLANIFICADOS);
   const [facturasVentaProyectadas, setFacturasVentaProyectadas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VENTA_PROYECTADAS);
@@ -4140,7 +4208,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -4153,7 +4221,7 @@ export default function ConcretarApp() {
           sbSelect("prestamos_pagos"), sbSelect("etapas_obra"), sbSelect("alertas_descartadas"), sbSelect("extras_pago"),
           sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"), sbSelect("notas_credito"), sbSelect("facturas_varias"),
           sbSelect("sueldos_planificados"), sbSelect("facturas_venta_proyectadas"), sbSelect("gastos_recurrentes"),
-          sbSelect("entregas_proveedores"),
+          sbSelect("entregas_proveedores"), sbSelect("correcciones_deuda_proveedor"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -4200,6 +4268,7 @@ export default function ConcretarApp() {
         setFacturasVentaProyectadas(fvp);
         setGastosRecurrentes(gr);
         setEntregasProveedores(entp);
+        setCorreccionesDeuda(cdp);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -6963,6 +7032,10 @@ export default function ConcretarApp() {
   const nombreProveedorKey = (nombre) => normalizarTexto(nombre || "");
   const esDeudaSaldablePorEntrega = (c) => c.medioBancario !== "eCheq" && c.formaPago !== "eCheq" && !obraIdsPapelera.has(c.obraId);
   const ordenFacturasDeuda = (a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha) || (a.id - b.id);
+  // Suma de las correcciones de deuda del proveedor (positiva: le debemos más).
+  const totalCorreccionesProveedor = (key, lista = correccionesDeuda) => lista
+    .filter((c) => nombreProveedorKey(c.proveedor) === key)
+    .reduce((s, c) => s + (c.monto || 0), 0);
   function creditoAFavorProveedor(nombre) {
     const key = nombreProveedorKey(nombre);
     const notas = notasCredito
@@ -6974,7 +7047,9 @@ export default function ConcretarApp() {
     const yaAplicado = comprasFacturas
       .filter((c) => nombreProveedorKey(c.proveedor) === key && c.pagadaConEntrega && c.estado === "Pagada" && !obraIdsPapelera.has(c.obraId))
       .reduce((s, c) => s + (c.monto || 0), 0);
-    return Math.max(0, notas + entregas - yaAplicado);
+    // Una corrección de deuda positiva (le debemos más de lo que decía la app) achica
+    // lo que hay para cancelar facturas; una negativa lo agranda.
+    return Math.max(0, notas + entregas - totalCorreccionesProveedor(key) - yaAplicado);
   }
   // Reparte el crédito a favor sobre las facturas pendientes (la más vieja primero) y
   // devuelve, por id de factura, cuánto ya está descontado y cuánto falta pagar.
@@ -7000,11 +7075,11 @@ export default function ConcretarApp() {
   // Devuelve solo las facturas del proveedor (por su clave normalizada) que tienen que
   // cambiar: las que lo entregado + las notas de crédito alcanzan a cubrir y todavía
   // figuran pendientes, y las marcadas como saldadas que ya no alcanzan a cubrirse.
-  function cambiosSaldoProveedor(key, compras, entregasLista, notasLista) {
+  function cambiosSaldoProveedor(key, compras, entregasLista, notasLista, correccionesLista = correccionesDeuda) {
     const notas = notasLista
       .filter((n) => !n.eliminadoEn && nombreProveedorKey(n.proveedor) === key && !obraIdsPapelera.has(n.obraId))
       .reduce((s, n) => s + (n.monto || 0), 0);
-    let disponible = notas + entregasLista
+    let disponible = notas - totalCorreccionesProveedor(key, correccionesLista) + entregasLista
       .filter((e) => nombreProveedorKey(e.proveedor) === key)
       .reduce((s, e) => s + (e.monto || 0), 0);
     const cambios = [];
@@ -7014,8 +7089,7 @@ export default function ConcretarApp() {
       .sort(ordenFacturasDeuda)
       .forEach((c) => {
         const monto = c.monto || 0;
-        // Medio peso de tolerancia por redondeos de centavos.
-        const cubierta = alcanza && disponible + 0.5 >= monto;
+        const cubierta = alcanza && disponible + TOLERANCIA_REDONDEO_DEUDA >= monto;
         if (cubierta) disponible -= monto; else alcanza = false;
         if (cubierta && !(c.pagadaConEntrega && c.estado === "Pagada")) {
           cambios.push({ id: c.id, patch: { estado: "Pagada", pagadaConEntrega: true } });
@@ -7044,6 +7118,7 @@ export default function ConcretarApp() {
         ...entregasProveedores.map((e) => nombreProveedorKey(e.proveedor)),
         ...notasCredito.map((n) => nombreProveedorKey(n.proveedor)),
         ...comprasFacturas.filter((c) => c.pagadaConEntrega).map((c) => nombreProveedorKey(c.proveedor)),
+        ...correccionesDeuda.map((c) => nombreProveedorKey(c.proveedor)),
       ]);
       claves.forEach((key) => {
         cambiosSaldoProveedor(key, comprasFacturas, entregasProveedores, notasCredito)
@@ -7051,7 +7126,7 @@ export default function ConcretarApp() {
       });
     }, 1500);
     return () => clearTimeout(timer);
-  }, [dbLoading, dbError, comprasFacturasRaw, entregasProveedores, notasCreditoRaw, obras]);
+  }, [dbLoading, dbError, comprasFacturasRaw, entregasProveedores, notasCreditoRaw, correccionesDeuda, obras]);
   async function agregarEntregaProveedor(prov, datos) {
     // Pagado con la tarjeta de crédito de un socio: la plata no sale de ninguna cuenta
     // de la empresa, así que en vez de restar de la caja queda una deuda con ese socio
@@ -7201,7 +7276,7 @@ export default function ConcretarApp() {
           monto -= descontado;
           creditoRestante -= descontado;
         }
-        if (monto > 0.5) {
+        if (monto > TOLERANCIA_REDONDEO_DEUDA) {
           resultado.push({ proveedor, monto, descontado, cantidad: b.cantidad, facturas: b.facturas, fechaVencimiento: b.fechaVencimiento, proveedorId: prov?.id ?? null, diaPago: prov?.diaPago || null });
         }
       });
@@ -7748,13 +7823,46 @@ export default function ConcretarApp() {
       .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha) || (b.id - a.id));
     const totalEntregas = entregasDeEsteProveedor.reduce((s, e) => s + (e.monto || 0), 0);
     const totalPagado = totalPagadoFacturas + totalEntregas;
+    const correccionesDeEsteProveedor = correccionesDeuda
+      .filter((c) => nombreProveedorKey(c.proveedor) === nombreProveedorKey(nombreComercial(prov)))
+      .sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha) || (b.id - a.id));
+    const totalCorrecciones = correccionesDeEsteProveedor.reduce((s, c) => s + (c.monto || 0), 0);
     return {
       totalFacturado, totalPagado, totalNotasCredito, notasDeEsteProveedor, entregasDeEsteProveedor, totalEntregas,
-      saldo: totalFacturado - totalPagado - totalNotasCredito,
+      correccionesDeEsteProveedor, totalCorrecciones,
+      saldo: totalFacturado - totalPagado - totalNotasCredito + totalCorrecciones,
       facturasPendientes: facturas.filter((c) => c.estado !== "Pagada"),
       historialCompras: [...facturas].sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha)),
       comprasSinFactura: facturas.filter(faltaFacturaCompra).sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha) || (a.id - b.id)),
     };
+  }
+  // Saldo real del resumen de cuenta del proveedor: la diferencia con el saldo de la
+  // app queda como "Corrección de deuda". Qué facturas quedan canceladas lo ajusta
+  // solo el recálculo automático.
+  async function agregarCorreccionDeuda(prov, saldoApp, datos) {
+    const monto = Math.round((datos.saldoInformado - saldoApp) * 100) / 100;
+    if (Math.abs(monto) < 0.005) return true;
+    const row = await addRecord("correcciones_deuda_proveedor", {
+      fecha: datos.fecha,
+      proveedor: nombreComercial(prov),
+      monto,
+      saldoInformado: datos.saldoInformado,
+      saldoApp: Math.round(saldoApp * 100) / 100,
+      nota: datos.nota || "",
+    }, setCorreccionesDeuda);
+    return !!row;
+  }
+  async function eliminarCorreccionDeuda(c) {
+    if (!window.confirm(`¿Eliminar la corrección de deuda de ${c.monto > 0 ? "+" : "-"}${fmtARS(Math.abs(c.monto))}? El saldo con ${c.proveedor} vuelve a calcularse sin ella.`)) return;
+    if (isSupabaseConfigured) {
+      try {
+        await sbDelete("correcciones_deuda_proveedor", c.id);
+      } catch (err) {
+        alert("No se pudo eliminar: " + err.message);
+        return;
+      }
+    }
+    setCorreccionesDeuda((prev) => prev.filter((x) => x.id !== c.id));
   }
   // Una nota de crédito cancela facturas impagas igual que una entrega a cuenta (las
   // más viejas primero), así que al cargarla o borrarla se recalcula qué facturas
@@ -14243,7 +14351,7 @@ export default function ConcretarApp() {
 
               if (proveedorSel) {
                 const p = proveedorSel;
-                const { totalFacturado, totalPagado, saldo, facturasPendientes, totalNotasCredito, notasDeEsteProveedor, entregasDeEsteProveedor, totalEntregas, historialCompras, comprasSinFactura } = balanceProveedor(p);
+                const { totalFacturado, totalPagado, saldo, facturasPendientes, totalNotasCredito, notasDeEsteProveedor, entregasDeEsteProveedor, totalEntregas, correccionesDeEsteProveedor, totalCorrecciones, historialCompras, comprasSinFactura } = balanceProveedor(p);
                 const aplicacionCredito = aplicacionCreditoProveedor(nombreComercial(p));
                 const facturasSaldablesOrdenadas = facturasPendientes.filter((f) => f.estado === "Pendiente" && esDeudaSaldablePorEntrega(f)).sort(ordenFacturasDeuda);
                 const historialFiltrado = historialCompras.filter((c) => {
@@ -14295,10 +14403,17 @@ export default function ConcretarApp() {
                         <span>Facturado: <span className="font-mono text-slate-700">{fmtARS(totalFacturado)}</span></span>
                         <span>Pagado: <span className="font-mono text-slate-700">{fmtARS(totalPagado)}</span>{totalEntregas > 0 && <span className="text-slate-400"> (incluye {fmtARS(totalEntregas)} en entregas a cuenta)</span>}</span>
                         {totalNotasCredito > 0 && <span>Notas de crédito: <span className="font-mono text-emerald-700">-{fmtARS(totalNotasCredito)}</span></span>}
+                        {Math.abs(totalCorrecciones) >= 0.005 && <span>Correcciones de deuda: <span className={`font-mono ${totalCorrecciones > 0 ? "text-rose-600" : "text-emerald-700"}`}>{totalCorrecciones > 0 ? "+" : "-"}{fmtARS(Math.abs(totalCorrecciones))}</span></span>}
                         <span>Día de pago: <span className="font-mono text-slate-700">{p.diaPago ? `${p.diaPago} de cada mes` : "sin definir"}</span></span>
                         {p.cbu && <span>CBU: <span className="font-mono text-slate-700">{p.cbu}</span></span>}
                         {p.numeroCuenta && <span>Cuenta: <span className="font-mono text-slate-700">{p.numeroCuenta}</span></span>}
                       </div>
+                      <FormularioSaldoProveedor
+                        key={p.id}
+                        saldo={saldo}
+                        nombreProveedor={nombreComercial(p)}
+                        onGuardar={(datos) => agregarCorreccionDeuda(p, saldo, datos)}
+                      />
                       {comprasSinFactura.length > 0 && (
                         <div className="mt-3 rounded-lg border-2 border-rose-300 bg-rose-50 p-3">
                           <div className="flex flex-wrap items-start justify-between gap-2">
@@ -14446,6 +14561,40 @@ export default function ConcretarApp() {
                                   <td className="px-1.5 py-1 text-right font-mono text-emerald-700">-{fmtARS(totalEntregas)}</td>
                                   <td></td>
                                 </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                      {correccionesDeEsteProveedor.length > 0 && (
+                        <div className="mt-3 space-y-1.5 border-t border-stone-100 pt-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Correcciones de deuda</div>
+                          <div className="overflow-x-auto rounded-md border border-stone-200">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                <tr>
+                                  <th className="px-1.5 py-1">Fecha</th>
+                                  <th className="px-1.5 py-1">Detalle</th>
+                                  <th className="px-1.5 py-1">Nota</th>
+                                  <th className="px-1.5 py-1 text-right">Monto</th>
+                                  <th className="w-6 px-1.5 py-1"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {correccionesDeEsteProveedor.map((c) => (
+                                  <tr key={c.id} className="border-t border-stone-100">
+                                    <td className="px-1.5 py-1 whitespace-nowrap text-slate-600">{fmtFecha(c.fecha)}</td>
+                                    <td className="px-1.5 py-1 text-slate-700">
+                                      Corrección de deuda
+                                      {c.saldoInformado !== null && c.saldoInformado !== undefined && (
+                                        <span className="text-slate-400"> — el proveedor informó {fmtARS(c.saldoInformado)}{c.saldoApp !== null && c.saldoApp !== undefined ? ` y la app decía ${fmtARS(c.saldoApp)}` : ""}</span>
+                                      )}
+                                    </td>
+                                    <td className="px-1.5 py-1 text-slate-500">{c.nota || "—"}</td>
+                                    <td className={`px-1.5 py-1 text-right font-mono font-semibold whitespace-nowrap ${c.monto > 0 ? "text-rose-600" : "text-emerald-700"}`}>{c.monto > 0 ? "+" : "-"}{fmtARS(Math.abs(c.monto))}</td>
+                                    <td className="px-1.5 py-1 text-right"><BotonEliminar onClick={() => eliminarCorreccionDeuda(c)} title="Eliminar corrección" /></td>
+                                  </tr>
+                                ))}
                               </tbody>
                             </table>
                           </div>
