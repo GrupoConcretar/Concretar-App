@@ -5146,7 +5146,8 @@ export default function ConcretarApp() {
       setCantidadComprasCargadasTanda((n) => n + 1);
       // Si ese proveedor tiene entregas a cuenta, lo que sobraba de ellas
       // puede alcanzar para saldar esta factura nueva.
-      if (entregasProveedores.some((x) => nombreProveedorKey(x.proveedor) === nombreProveedorKey(nuevaCompra.proveedor))) {
+      if (entregasProveedores.some((x) => nombreProveedorKey(x.proveedor) === nombreProveedorKey(nuevaCompra.proveedor))
+        || notasCredito.some((x) => nombreProveedorKey(x.proveedor) === nombreProveedorKey(nuevaCompra.proveedor))) {
         saldarFacturasConEntregas(nuevaCompra.proveedor, entregasProveedores, [nuevaCompra]);
       }
       return;
@@ -6264,7 +6265,7 @@ export default function ConcretarApp() {
       .reduce((s, i) => s + montoNetoIngreso(i), 0);
     // Un gasto "Pendiente" (eCheq todavía no cobrado, o cuenta corriente sin saldar)
     // no resta hasta que se paga de verdad — hasta entonces solo figura en "Próximos pagos".
-    // Una factura saldada con entregas a cuenta no resta de nuevo: la plata ya salió
+    // Una factura saldada con entregas a cuenta / notas de crédito no resta de nuevo: la plata ya salió
     // de la cuenta con la entrega (ver totalEntregasProveedores más abajo).
     const totalEgresos = comprasFacturas
       .filter((c) => c.cuenta === cuenta && c.estado !== "Pendiente" && !c.pagadaConEntrega && !obraIdsPapelera.has(c.obraId))
@@ -6505,7 +6506,7 @@ export default function ConcretarApp() {
       origen: "ingresos", origenId: i.id, tipoFactura: i.tipoFactura,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
-      id: `egr-${c.id}`, fecha: fechaEfectivaMovimiento(c), creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: `${c.descripcion ? `${c.proveedor} — ${c.descripcion}` : c.proveedor}${c.pagadaConEntrega ? " (saldada con entregas a cuenta)" : ""}`, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
+      id: `egr-${c.id}`, fecha: fechaEfectivaMovimiento(c), creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: `${c.descripcion ? `${c.proveedor} — ${c.descripcion}` : c.proveedor}${c.pagadaConEntrega ? " (saldada con entregas / notas de crédito)" : ""}`, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
       origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura, formaPago: c.formaPago, medioBancario: c.medioBancario,
     })),
     ...movimientosManualNormales.flatMap((m) => [
@@ -6904,10 +6905,12 @@ export default function ConcretarApp() {
   // Recalcula qué facturas del proveedor quedan saldadas con lo entregado (+ notas de
   // crédito) y actualiza solo las que cambian. Se llama al cargar o borrar una entrega,
   // así borrar una entrega vuelve a dejar pendientes las facturas que había saldado.
-  function saldarFacturasConEntregas(nombre, entregasLista, comprasNuevas = []) {
+  // notasLista: para cuando se acaba de cargar o borrar una nota de crédito y el estado
+  // todavía no se actualizó (las notas cancelan facturas igual que las entregas).
+  function saldarFacturasConEntregas(nombre, entregasLista, comprasNuevas = [], notasLista = notasCredito) {
     const key = nombreProveedorKey(nombre);
-    const notas = notasCredito
-      .filter((n) => nombreProveedorKey(n.proveedor) === key && !obraIdsPapelera.has(n.obraId))
+    const notas = notasLista
+      .filter((n) => !n.eliminadoEn && nombreProveedorKey(n.proveedor) === key && !obraIdsPapelera.has(n.obraId))
       .reduce((s, n) => s + (n.monto || 0), 0);
     let disponible = notas + entregasLista
       .filter((e) => nombreProveedorKey(e.proveedor) === key)
@@ -7617,8 +7620,11 @@ export default function ConcretarApp() {
       comprasSinFactura: facturas.filter(faltaFacturaCompra).sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha) || (a.id - b.id)),
     };
   }
-  function agregarNotaCredito(proveedor, datos) {
-    addRecord("notas_credito", {
+  // Una nota de crédito cancela facturas impagas igual que una entrega a cuenta (las
+  // más viejas primero), así que al cargarla o borrarla se recalcula qué facturas
+  // quedan saldadas.
+  async function agregarNotaCredito(proveedor, datos) {
+    const nota = await addRecord("notas_credito", {
       fecha: datos.fecha,
       proveedor: nombreComercial(proveedor),
       obraId: datos.obraId,
@@ -7629,6 +7635,16 @@ export default function ConcretarApp() {
       tipoArchivo: null,
     }, setNotasCredito);
     setAgregandoNotaCreditoId(null);
+    if (nota) saldarFacturasConEntregas(nota.proveedor, entregasProveedores, [], [...notasCredito, nota]);
+  }
+  async function eliminarNotaCredito(nota) {
+    if (!window.confirm(`¿Eliminar la nota de crédito de ${fmtARS(nota.monto)}? Las facturas que había saldado vuelven a quedar pendientes. Se puede restaurar desde la Papelera durante 7 días.`)) return;
+    await updateRecord("notas_credito", nota.id, { eliminadoEn: new Date().toISOString() }, setNotasCredito);
+    saldarFacturasConEntregas(nota.proveedor, entregasProveedores, [], notasCredito.filter((n) => n.id !== nota.id));
+  }
+  async function restaurarNotaCredito(nota) {
+    await updateRecord("notas_credito", nota.id, { eliminadoEn: null }, setNotasCredito);
+    saldarFacturasConEntregas(nota.proveedor, entregasProveedores, [], [...notasCredito, { ...nota, eliminadoEn: null }]);
   }
   function marcarFacturaPagada(factura) {
     // Restaura la cuenta real (Banco/Efectivo/MP Pablo/MP Ricardo) para que vuelva a contar
@@ -12874,7 +12890,7 @@ export default function ConcretarApp() {
                             <div className="text-[9px] text-slate-400">Vence el {fmtFecha(c.fechaVencimientoCc)}</div>
                           )}
                           {c.pagadaConEntrega && c.estado === "Pagada" && (
-                            <div className="text-[9px] text-emerald-700">Saldada con entregas a cuenta</div>
+                            <div className="text-[9px] text-emerald-700">Saldada con entregas / notas de crédito</div>
                           )}
                         </td>
                         <td className="px-1.5 py-0.5">
@@ -14259,7 +14275,7 @@ export default function ConcretarApp() {
                                 {fmtFecha(n.fecha)} — {n.motivo || "sin motivo"} — <span className="font-mono font-semibold text-emerald-700">-{fmtARS(n.monto)}</span>
                                 {n.obraId && <span className="ml-1 text-slate-400">({obras.find((o) => o.id === n.obraId)?.nombre || "obra eliminada"})</span>}
                               </span>
-                              <BotonEliminar onClick={() => moverAPapelera("notas_credito", n.id, setNotasCredito, `Nota de crédito — ${fmtARS(n.monto)}`)} title="Eliminar nota de crédito" />
+                              <BotonEliminar onClick={() => eliminarNotaCredito(n)} title="Eliminar nota de crédito" />
                             </div>
                           ))}
                         </div>
@@ -14437,7 +14453,7 @@ export default function ConcretarApp() {
                                       <span className="text-slate-600">{c.categoria}{c.descripcion ? ` — ${c.descripcion}` : ""}</span>
                                       {c.comprobante && <span className="font-mono text-[10px] text-slate-400">{c.comprobante}</span>}
                                       <Badge estado={c.estado} />
-                                      {c.pagadaConEntrega && c.estado === "Pagada" && <span className="text-[10px] text-emerald-700">saldada con entregas a cuenta</span>}
+                                      {c.pagadaConEntrega && c.estado === "Pagada" && <span className="text-[10px] text-emerald-700">saldada con entregas / notas de crédito</span>}
                                       {(() => {
                                         // La factura propia de la compra + las de "Facturas varias" vinculadas a ella.
                                         const archivos = [
@@ -14875,7 +14891,7 @@ export default function ConcretarApp() {
                   items={notasCreditoPapelera}
                   nombreDe={(n) => `${n.proveedor} — ${fmtARS(n.monto)}`}
                   detalleDe={(n) => `${fmtFecha(n.fecha)} · ${n.motivo}`}
-                  onRestaurar={(n) => restaurarDePapelera("notas_credito", n.id, setNotasCredito)}
+                  onRestaurar={(n) => restaurarNotaCredito(n)}
                 />
                 <SeccionPapelera
                   titulo="Clientes"
