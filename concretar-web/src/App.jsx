@@ -3106,12 +3106,14 @@ function FormularioGastoRecurrente({ claveMes, onAgregar }) {
 // Entrega a cuenta a un proveedor: se carga cuánta plata se le llevó y de qué
 // cuenta salió, sin elegir facturas. Antes de guardar muestra qué facturas (las
 // más viejas) quedan saldadas y cuánto le falta a la siguiente.
-function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar, onCancelar }) {
-  const [fecha, setFecha] = useState(hoyISO());
-  const [monto, setMonto] = useState(0);
-  const [cuenta, setCuenta] = useState(CUENTAS[0]);
-  const [fechaPagoTarjeta, setFechaPagoTarjeta] = useState("");
-  const [nota, setNota] = useState("");
+// Con "inicial" el mismo formulario sirve para modificar una entrega ya cargada.
+function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar, onCancelar, inicial = null }) {
+  const editando = !!inicial;
+  const [fecha, setFecha] = useState(inicial?.fecha || hoyISO());
+  const [monto, setMonto] = useState(inicial?.monto || 0);
+  const [cuenta, setCuenta] = useState(inicial?.cuenta || CUENTAS[0]);
+  const [fechaPagoTarjeta, setFechaPagoTarjeta] = useState(inicial?.fechaPagoTarjeta || "");
+  const [nota, setNota] = useState(inicial?.nota || "");
   const [guardando, setGuardando] = useState(false);
   const socioTarjeta = TARJETAS_SOCIOS[cuenta];
 
@@ -3128,7 +3130,8 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
       break;
     }
   }
-  const deudaDespues = saldo - (monto || 0);
+  // Al modificar, el saldo ya tiene descontada la entrega original: solo cambia la diferencia.
+  const deudaDespues = saldo - (monto || 0) + (editando ? (inicial.monto || 0) : 0);
   const totalSaldadas = saldadas.reduce((s, f) => s + (f.monto || 0), 0);
 
   return (
@@ -3144,11 +3147,15 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
       }}
     >
       <div className="text-xs text-slate-600">
-        <span className="font-semibold text-slate-800">Entrega a cuenta</span> — la plata que le llevás para bajar la deuda, sin elegir facturas. Se descuenta de las facturas más viejas.
+        {editando ? (
+          <span className="font-semibold text-slate-800">Modificar entrega a cuenta</span>
+        ) : (
+          <><span className="font-semibold text-slate-800">Entrega a cuenta</span> — la plata que le llevás para bajar la deuda, sin elegir facturas. Se descuenta de las facturas más viejas.</>
+        )}
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
         <Field label="Fecha"><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
-        <Field label="Monto entregado"><MoneyInput name="montoEntrega" onChange={setMonto} placeholder="0" className={inputCls} /></Field>
+        <Field label="Monto entregado"><MoneyInput name="montoEntrega" value={inicial?.monto} onChange={setMonto} puntoDecimalAlPegar placeholder="0" className={inputCls} /></Field>
         <Field label="Sale de">
           <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={inputCls}>
             {CUENTAS.map((c) => <option key={c}>{c}</option>)}
@@ -3176,20 +3183,20 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
             <span>Le debés hoy <span className="font-mono font-semibold text-rose-600">{fmtARS(saldo)}</span></span>
             <span className="text-slate-400">→</span>
             {deudaDespues > 0.5 ? (
-              <span>después de esta entrega <span className="font-mono font-semibold text-rose-600">{fmtARS(deudaDespues)}</span></span>
+              <span>{editando ? "con este cambio" : "después de esta entrega"} <span className="font-mono font-semibold text-rose-600">{fmtARS(deudaDespues)}</span></span>
             ) : deudaDespues < -0.5 ? (
               <span className="font-semibold text-emerald-700">deuda cancelada y te quedan <span className="font-mono">{fmtARS(-deudaDespues)}</span> a favor</span>
             ) : (
               <span className="font-semibold text-emerald-700">deuda cancelada</span>
             )}
           </div>
-          {saldadas.length > 0 && (
+          {!editando && saldadas.length > 0 && (
             <div>
               Quedan saldadas <span className="font-semibold text-emerald-700">{saldadas.length} factura{saldadas.length > 1 ? "s" : ""}</span> ({fmtARS(totalSaldadas)}):{" "}
               <span className="text-slate-500">{saldadas.map((f) => `${fmtFecha(f.fecha)} ${fmtARS(f.monto)}`).join(" · ")}</span>
             </div>
           )}
-          {parcial && parcial.descontado > 0.5 && (
+          {!editando && parcial && parcial.descontado > 0.5 && (
             <div>
               A la factura del {fmtFecha(parcial.factura.fecha)} ({fmtARS(parcial.factura.monto)}) se le descuentan <span className="font-mono font-semibold text-emerald-700">{fmtARS(parcial.descontado)}</span> y le faltan <span className="font-mono font-semibold text-rose-600">{fmtARS(parcial.falta)}</span>.
             </div>
@@ -3197,7 +3204,7 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
         </div>
       )}
       <div className="flex items-center gap-2">
-        <button type="submit" disabled={guardando} className={`${btnPrimary} disabled:opacity-50`}>{guardando ? "Guardando..." : "Guardar entrega"}</button>
+        <button type="submit" disabled={guardando} className={`${btnPrimary} disabled:opacity-50`}>{guardando ? "Guardando..." : editando ? "Guardar cambios" : "Guardar entrega"}</button>
         <button type="button" onClick={onCancelar} className={btnGhost}>Cancelar</button>
       </div>
     </form>
@@ -6974,6 +6981,53 @@ export default function ConcretarApp() {
       updateRecord("prestamos", entrega.prestamoId, { eliminadoEn: new Date().toISOString() }, setPrestamos);
     }
   }
+  // Modificar una entrega: si sale (o pasa a salir) de la tarjeta de un socio, la deuda
+  // con ese socio se ajusta (monto, fecha de pago de la tarjeta, socio); si deja de ser
+  // con tarjeta, esa deuda va a la Papelera. Después se recalcula qué facturas quedan
+  // saldadas con el total entregado.
+  const [editandoEntregaId, setEditandoEntregaId] = useState(null);
+  async function guardarEdicionEntregaProveedor(entrega, datos) {
+    const socio = TARJETAS_SOCIOS[datos.cuenta];
+    let prestamoId = entrega.prestamoId ?? null;
+    const prestamoActual = prestamoId ? prestamos.find((p) => p.id === prestamoId) : null;
+    if (socio) {
+      const devuelto = prestamosPagos.filter((pg) => pg.prestamoId === prestamoId).reduce((s, pg) => s + (pg.monto || 0), 0);
+      const datosPrestamo = {
+        fecha: datos.fecha,
+        acreedor: `${socio} (tarjeta de crédito) — ${entrega.proveedor}`,
+        capital: datos.monto,
+        cuenta: datos.cuenta,
+        fechaEstimadaDevolucion: datos.fechaPagoTarjeta || null,
+      };
+      if (prestamoActual) {
+        // Si con el monto nuevo ya está todo devuelto queda "Pagado"; si no, vuelve a "Vigente".
+        const saldada = devuelto + 0.5 >= datos.monto;
+        await updateRecord("prestamos", prestamoId, {
+          ...datosPrestamo,
+          estado: saldada ? "Pagado" : "Vigente",
+          fechaPago: saldada ? (prestamoActual.fechaPago || hoyISO()) : null,
+        }, setPrestamos);
+      } else {
+        const nuevo = await addRecord("prestamos", { ...datosPrestamo, tasaAnualPct: 0, estado: "Vigente", fechaPago: null, montoPagado: null }, setPrestamos);
+        if (!nuevo) return false;
+        prestamoId = nuevo.id;
+      }
+    } else if (prestamoId) {
+      await updateRecord("prestamos", prestamoId, { eliminadoEn: new Date().toISOString() }, setPrestamos);
+      prestamoId = null;
+    }
+    const patch = {
+      fecha: datos.fecha,
+      monto: datos.monto,
+      cuenta: datos.cuenta,
+      medioBancario: datos.cuenta === "Banco" ? "Débito/Transferencia" : null,
+      nota: datos.nota || "",
+      prestamoId,
+    };
+    await updateRecord("entregas_proveedores", entrega.id, patch, setEntregasProveedores);
+    saldarFacturasConEntregas(entrega.proveedor, entregasProveedores.map((e) => (e.id === entrega.id ? { ...e, ...patch } : e)));
+    return true;
+  }
 
   // Agrupa la deuda con proveedores por proveedor Y por mes de vencimiento — antes se
   // juntaba todo en un solo renglón por proveedor, así que una compra vencida en
@@ -7444,6 +7498,7 @@ export default function ConcretarApp() {
     setAgregandoNotaCreditoId(null);
     setAgregandoEntregaId(null);
     setCargandoCompraProveedorId(null);
+    setEditandoEntregaId(null);
     setHistorialFiltroDesde("");
     setHistorialFiltroHasta("");
     setHistorialFiltroObraId("");
@@ -14152,15 +14207,39 @@ export default function ConcretarApp() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {entregasDeEsteProveedor.map((e) => (
+                                {entregasDeEsteProveedor.map((e) => (editandoEntregaId === e.id ? (
+                                  <tr key={e.id} className="border-t border-stone-100">
+                                    <td colSpan={5} className="px-1.5 pb-2">
+                                      <FormularioEntregaProveedor
+                                        saldo={saldo}
+                                        facturas={facturasSaldablesOrdenadas}
+                                        creditoActual={creditoAFavorProveedor(nombreComercial(p))}
+                                        inicial={{
+                                          fecha: e.fecha,
+                                          monto: e.monto,
+                                          cuenta: e.cuenta,
+                                          nota: e.nota,
+                                          fechaPagoTarjeta: prestamos.find((pr) => pr.id === e.prestamoId)?.fechaEstimadaDevolucion || "",
+                                        }}
+                                        onGuardar={(datos) => guardarEdicionEntregaProveedor(e, datos)}
+                                        onCancelar={() => setEditandoEntregaId(null)}
+                                      />
+                                    </td>
+                                  </tr>
+                                ) : (
                                   <tr key={e.id} className="border-t border-stone-100">
                                     <td className="px-1.5 py-1 whitespace-nowrap text-slate-600">{fmtFecha(e.fecha)}</td>
                                     <td className="px-1.5 py-1 whitespace-nowrap text-slate-500"><span className="flex items-center gap-1"><CuentaIcon cuenta={e.cuenta} />{esTarjetaSocio(e.cuenta) ? `Tarjeta de crédito de ${TARJETAS_SOCIOS[e.cuenta]}` : e.cuenta}</span></td>
                                     <td className="px-1.5 py-1 text-slate-500">{e.nota || "—"}</td>
                                     <td className="px-1.5 py-1 text-right font-mono font-semibold whitespace-nowrap text-emerald-700">-{fmtARS(e.monto)}</td>
-                                    <td className="px-1.5 py-1 text-right"><BotonEliminar onClick={() => eliminarEntregaProveedor(e)} title="Eliminar entrega" /></td>
+                                    <td className="px-1.5 py-1 text-right">
+                                      <span className="flex items-center justify-end gap-1">
+                                        <button onClick={() => setEditandoEntregaId(e.id)} title="Modificar entrega" className="rounded-md p-1 text-slate-400 hover:bg-stone-100 hover:text-slate-700"><Pencil size={13} /></button>
+                                        <BotonEliminar onClick={() => eliminarEntregaProveedor(e)} title="Eliminar entrega" />
+                                      </span>
+                                    </td>
                                   </tr>
-                                ))}
+                                )))}
                                 <tr className="border-t border-stone-200 bg-stone-50 font-semibold text-slate-700">
                                   <td className="px-1.5 py-1" colSpan={3}>Total entregado ({entregasDeEsteProveedor.length})</td>
                                   <td className="px-1.5 py-1 text-right font-mono text-emerald-700">-{fmtARS(totalEntregas)}</td>
