@@ -4929,6 +4929,12 @@ export default function ConcretarApp() {
   const gastosRecurrentesProximos = gastosRecurrentes.filter(
     (g) => g.fechaPagoAproximada && diasHasta(g.fechaPagoAproximada) <= 3 && diasHasta(g.fechaPagoAproximada) >= -1
   );
+  // eCheqs que libramos con la fecha ya cumplida y que todavía no se confirmaron como
+  // debitados: el banco no siempre los debita ese día (el proveedor los deposita cuando
+  // quiere), así que se avisa hasta que se marquen desde Cuentas → Cheques.
+  const echeqsPorConfirmarDebito = comprasFacturas
+    .filter((c) => (c.medioBancario === "eCheq" || c.formaPago === "eCheq") && c.estado === "Pendiente" && !obraIdsPapelera.has(c.obraId) && c.fechaPagoEcheq && diasHasta(c.fechaPagoEcheq) <= 0)
+    .sort((a, b) => fechaLocal(a.fechaPagoEcheq) - fechaLocal(b.fechaPagoEcheq));
   // Lo que la empresa le debe a un socio por algo que pagó con su tarjeta de crédito:
   // avisa desde 5 días antes de la fecha de pago de la tarjeta y sigue avisando si ya
   // venció, hasta que se le devuelva todo.
@@ -4958,7 +4964,7 @@ export default function ConcretarApp() {
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
     (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + asistenciasEliminadasRecientes.length +
     materialesVencidos.length + materialesProximos.length + pedidosPorAprobar.length + personalSinObra5Dias.length +
-    gastosRecurrentesProximos.length + deudasTarjetaSocioPorVencer.length;
+    gastosRecurrentesProximos.length + deudasTarjetaSocioPorVencer.length + echeqsPorConfirmarDebito.length;
 
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
@@ -6656,6 +6662,7 @@ export default function ConcretarApp() {
     const esCC = c.formaPago === "Cuenta corriente" || c.medioBancario === "Cuenta corriente";
     const esECheq = c.medioBancario === "eCheq" || c.formaPago === "eCheq";
     if (esCC && c.fechaVencimientoCc) return c.fechaVencimientoCc;
+    if (esECheq && c.estado !== "Pendiente" && c.fechaDebitoEcheq) return c.fechaDebitoEcheq;
     if (esECheq && c.fechaPagoEcheq) return c.fechaPagoEcheq;
     return c.fecha;
   };
@@ -6987,6 +6994,9 @@ export default function ConcretarApp() {
 
   // ---------- Próximos pagos/ingresos ----------
   const [showProximos, setShowProximos] = useState(false);
+  const [showCheques, setShowCheques] = useState(false);
+  // eCheq que se está por marcar como debitado: { id, fecha } (fecha real del débito).
+  const [debitandoCheque, setDebitandoCheque] = useState(null);
   const [mesProximosSeleccionado, setMesProximosSeleccionado] = useState(null);
   const [showPrestamos, setShowPrestamos] = useState(false);
   const [showIvaGanancias, setShowIvaGanancias] = useState(false);
@@ -7403,6 +7413,10 @@ export default function ConcretarApp() {
   // estimación disponible — así el total refleja la plata real que sabemos que hay.
   const dineroRealTotalCuentas = CUENTAS.reduce((s, c) => s + (dineroRealDe(c) ?? saldoCuenta(c)), 0);
   const diferenciaTotalCuentas = dineroRealTotalCuentas - saldoTotalCuentas;
+  // Diferencia entre la plata real y la de la app: verde si hay plata de más, rojo si
+  // falta, gris si coincide (menos de $1) o todavía no se cargó el dato real.
+  const claseDiferenciaDinero = (d) => (d === null || Math.abs(d) < 1 ? "text-slate-400" : d > 0 ? "text-emerald-700" : "text-rose-600");
+  const fmtDiferenciaDinero = (d) => (d > 0 ? `+${fmtARS(d)}` : fmtARS(d));
 
   // ---------- Ajuste fiscal (IVA/Ganancias real que informa el contador) ----------
   function ajusteFiscalDe(tipo, clave) {
@@ -7890,13 +7904,16 @@ export default function ConcretarApp() {
     await updateRecord("notas_credito", nota.id, { eliminadoEn: null }, setNotasCredito);
     saldarFacturasConEntregas(nota.proveedor, entregasProveedores, [], [...notasCredito, { ...nota, eliminadoEn: null }]);
   }
-  function marcarFacturaPagada(factura) {
+  function marcarFacturaPagada(factura, fechaDebito = null) {
     // Restaura la cuenta real (Banco/Efectivo/MP Pablo/MP Ricardo) para que vuelva a contar
     // en su balance — por si venía de marcarCompraPendiente, que la había vaciado.
     // Los gastos viejos que todavía tienen el formaPago plano "eCheq" (de antes de
     // anidarlo bajo Banco) cuentan igual a la balanza de Banco.
     const cuenta = factura.formaPago === "eCheq" ? "Banco" : factura.formaPago;
-    updateRecord("compras_facturas", factura.id, { estado: "Pagada", cuenta }, setComprasFacturas);
+    const esECheq = factura.medioBancario === "eCheq" || factura.formaPago === "eCheq";
+    // En un eCheq se guarda el día en que el banco lo debitó (Movimientos lo muestra ese día).
+    const patch = esECheq ? { estado: "Pagada", cuenta, fechaDebitoEcheq: fechaDebito || hoyISO() } : { estado: "Pagada", cuenta };
+    return updateRecord("compras_facturas", factura.id, patch, setComprasFacturas);
   }
   // Corrige un gasto cargado como "Pagada" por error (o que en realidad todavía se
   // debe): vuelve a "Pendiente" y deja de contar en el saldo de la cuenta hasta que
@@ -7905,7 +7922,9 @@ export default function ConcretarApp() {
     if (!window.confirm(`¿Marcar "${factura.proveedor}" (${fmtARS(factura.monto)}) como Pendiente? Deja de contar en el saldo de la cuenta hasta que se vuelva a marcar como pagada.`)) return;
     const esECheq = factura.medioBancario === "eCheq" || factura.formaPago === "eCheq";
     const cuenta = esECheq ? "Banco" : null;
-    updateRecord("compras_facturas", factura.id, { estado: "Pendiente", cuenta, pagadaConEntrega: false }, setComprasFacturas);
+    const patch = { estado: "Pendiente", cuenta, pagadaConEntrega: false };
+    if (esECheq) patch.fechaDebitoEcheq = null;
+    updateRecord("compras_facturas", factura.id, patch, setComprasFacturas);
   }
   const esCuentaCorriente = (c) => c.formaPago === "Cuenta corriente" || c.medioBancario === "Cuenta corriente";
   // "Cuenta corriente" no es un canal real de pago — recién al saldarla se sabe si
@@ -7934,15 +7953,10 @@ export default function ConcretarApp() {
     const factura = comprasFacturas.find((c) => c.id === m.origenId);
     if (factura) toggleEstadoCompra(factura);
   }
-  // Un eCheq queda "Pendiente" hasta su fecha de pago; llegado ese día se acredita solo,
-  // sin que nadie tenga que entrar a marcarlo a mano.
-  useEffect(() => {
-    if (dbLoading) return;
-    const hoy = hoyISO();
-    comprasFacturas
-      .filter((c) => (c.formaPago === "eCheq" || c.medioBancario === "eCheq") && c.estado === "Pendiente" && c.fechaPagoEcheq && c.fechaPagoEcheq <= hoy)
-      .forEach((c) => updateRecord("compras_facturas", c.id, { estado: "Pagada" }, setComprasFacturas));
-  }, [dbLoading, comprasFacturas]);
+  // Un eCheq que libramos queda "Pendiente" hasta que el banco lo debita de verdad —
+  // no se marca solo en su fecha, porque el proveedor a veces lo deposita días después.
+  // Se confirma a mano desde Cuentas → Cheques (con aviso en General cuando la fecha ya
+  // se cumplió).
   // Al entrar a un mes nuevo, los gastos recurrentes se copian solos desde el último
   // mes que tenga cargados (mismo concepto/monto/cuenta, con el día de pago trasladado)
   // — así no hay que volver a tipearlos cada mes. Si no hay ningún mes anterior
@@ -8997,6 +9011,28 @@ export default function ConcretarApp() {
                           <li key={a.id} className="truncate">{a.nombre} ({fmtFecha(a.fecha)}) — eliminado por {a.eliminadoPor}</li>
                         ))}
                       </ul>
+                    </AlertCard>
+                  )}
+                  {echeqsPorConfirmarDebito.length > 0 && (
+                    <AlertCard
+                      tone="amber"
+                      icon={Landmark}
+                      title={`${echeqsPorConfirmarDebito.length} cheque(s) a pagar con la fecha cumplida: confirmá si el banco ya los debitó.`}
+                    >
+                      <ul className="space-y-1 text-xs">
+                        {echeqsPorConfirmarDebito.slice(0, 5).map((c) => (
+                          <li key={c.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="truncate">{c.proveedor} — {fmtARS(c.monto)}</span>
+                            <span className="font-semibold">fecha del cheque {fmtFecha(c.fechaPagoEcheq)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        onClick={() => { setTab("cuentas"); setShowProximos(false); setShowPrestamos(false); setShowIvaGanancias(false); setShowCheques(true); }}
+                        className="mt-1.5 rounded-md border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-white"
+                      >
+                        Ir a Cheques
+                      </button>
                     </AlertCard>
                   )}
                   {deudasTarjetaSocioPorVencer.length > 0 && (
@@ -13433,7 +13469,7 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "cuentas" && canVerFinanzas && !showProximos && !showPrestamos && !showIvaGanancias && (
+        {tab === "cuentas" && canVerFinanzas && !showProximos && !showPrestamos && !showIvaGanancias && !showCheques && (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
@@ -13449,6 +13485,15 @@ export default function ConcretarApp() {
                   className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
                 >
                   <Wrench size={16} /> Arreglo de caja
+                </button>
+                <button
+                  onClick={() => setShowCheques(true)}
+                  className={`flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-semibold ${echeqsPorConfirmarDebito.length > 0 ? "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100" : "border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                >
+                  <Receipt size={16} /> Cheques
+                  {echeqsSalida.length + echeqsEntrada.length > 0 && (
+                    <span className="rounded-full bg-slate-900 px-1.5 text-[10px] font-bold text-white">{echeqsSalida.length + echeqsEntrada.length}</span>
+                  )}
                 </button>
                 <button
                   onClick={() => setShowPrestamos(true)}
@@ -13524,8 +13569,8 @@ export default function ConcretarApp() {
                         <span className="text-xs text-slate-500">Real:</span>
                         <MoneyInput value={real ?? 0} onBlur={(v) => actualizarDineroReal(cuenta, v)} className="w-24 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
                       </div>
-                      <span className={`text-xs font-semibold ${diferencia === null || Math.abs(diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
-                        {diferencia === null ? "Sin dato" : `Dif: ${fmtARS(diferencia)}`}
+                      <span className={`text-xs font-semibold ${claseDiferenciaDinero(diferencia)}`}>
+                        {diferencia === null ? "Sin dato" : `Dif: ${fmtDiferenciaDinero(diferencia)}`}
                       </span>
                     </div>
                   </div>
@@ -13542,7 +13587,7 @@ export default function ConcretarApp() {
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <span className="text-xs text-slate-500">Diferencia</span>
-                  <span className={`text-xs font-semibold ${Math.abs(diferenciaTotalCuentas) < 1 ? "text-slate-400" : "text-rose-600"}`}>{fmtARS(diferenciaTotalCuentas)}</span>
+                  <span className={`text-xs font-semibold ${claseDiferenciaDinero(diferenciaTotalCuentas)}`}>{fmtDiferenciaDinero(diferenciaTotalCuentas)}</span>
                 </div>
               </div>
             </div>
@@ -13568,8 +13613,8 @@ export default function ConcretarApp() {
                         <td className="px-4 py-2 text-right">
                           <MoneyInput value={real ?? 0} onBlur={(v) => actualizarDineroReal(cuenta, v)} className="w-32 rounded-md border border-stone-300 px-2 py-1 text-right text-sm" />
                         </td>
-                        <td className={`px-4 py-2 text-right font-mono font-semibold ${diferencia === null || Math.abs(diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
-                          {diferencia === null ? "—" : fmtARS(diferencia)}
+                        <td className={`px-4 py-2 text-right font-mono font-semibold ${claseDiferenciaDinero(diferencia)}`}>
+                          {diferencia === null ? "—" : fmtDiferenciaDinero(diferencia)}
                         </td>
                       </tr>
                     );
@@ -13578,7 +13623,7 @@ export default function ConcretarApp() {
                     <td className="px-4 py-2.5 font-bold text-slate-900">Total</td>
                     <td className={`px-4 py-2.5 text-right font-mono font-bold ${saldoTotalCuentas < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldoTotalCuentas)}</td>
                     <td className={`px-4 py-2.5 text-right font-mono font-bold ${dineroRealTotalCuentas < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(dineroRealTotalCuentas)}</td>
-                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${Math.abs(diferenciaTotalCuentas) < 1 ? "text-slate-400" : "text-rose-600"}`}>{fmtARS(diferenciaTotalCuentas)}</td>
+                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${claseDiferenciaDinero(diferenciaTotalCuentas)}`}>{fmtDiferenciaDinero(diferenciaTotalCuentas)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -13623,7 +13668,209 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "cuentas" && canVerFinanzas && showPrestamos && (
+        {tab === "cuentas" && canVerFinanzas && showCheques && (() => {
+          const esECheqCompra = (c) => c.medioBancario === "eCheq" || c.formaPago === "eCheq";
+          const proyectadasECheq = facturasVentaProyectadas
+            .filter((f) => f.medioBancario === "eCheq" && !obraIdsPapelera.has(f.obraId))
+            .sort((a, b) => fechaLocal(a.fechaCobroEstimada || a.fecha) - fechaLocal(b.fechaCobroEstimada || b.fecha));
+          const echeqsPagados = comprasFacturas
+            .filter((c) => esECheqCompra(c) && c.estado !== "Pendiente" && !obraIdsPapelera.has(c.obraId))
+            .sort((a, b) => fechaLocal(b.fechaDebitoEcheq || b.fechaPagoEcheq || b.fecha) - fechaLocal(a.fechaDebitoEcheq || a.fechaPagoEcheq || a.fecha));
+          const echeqsCobrados = ingresos
+            .filter((i) => i.medioBancario === "eCheq" && i.estado !== "Pendiente" && !obraIdsPapelera.has(i.obraId))
+            .sort((a, b) => fechaLocal(b.fechaCobro || b.fecha) - fechaLocal(a.fechaCobro || a.fecha));
+          const totalAPagar = echeqsSalida.reduce((s, c) => s + (c.monto || 0), 0);
+          const totalACobrar = echeqsEntrada.reduce((s, i) => s + (i.monto || 0), 0) + proyectadasECheq.reduce((s, f) => s + (f.monto || 0), 0);
+          const bancoHoy = saldoCuenta("Banco");
+          const nombreObra = (id) => obras.find((o) => o.id === id)?.nombre || "General";
+          const textoDias = (fecha) => {
+            const dias = diasHasta(fecha);
+            return dias < 0 ? `hace ${Math.abs(dias)} día(s)` : dias === 0 ? "hoy" : `en ${dias} día(s)`;
+          };
+          return (
+            <div className="space-y-4">
+              <button onClick={() => { setShowCheques(false); setDebitandoCheque(null); }} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
+                ← Volver a Cuentas
+              </button>
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cheques</h2>
+                <p className="mt-1 max-w-2xl text-xs text-slate-500">
+                  Los eCheqs no se debitan ni se acreditan solos en su fecha: cuando el banco realmente debita un cheque que libramos (o acredita uno que recibimos), marcalo acá.
+                  Recién ahí resta (o suma) en Banco y queda pagado (o cobrado) en Gastos y Facturas, en el proveedor, en la obra y en Movimientos.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">A pagar ({echeqsSalida.length})</div>
+                  <div className="font-mono text-base font-bold text-rose-600">{fmtARS(totalAPagar)}</div>
+                </div>
+                <div className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">A cobrar ({echeqsEntrada.length + proyectadasECheq.length})</div>
+                  <div className="font-mono text-base font-bold text-emerald-700">{fmtARS(totalACobrar)}</div>
+                </div>
+                <div className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Banco hoy</div>
+                  <div className={`font-mono text-base font-bold ${bancoHoy < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(bancoHoy)}</div>
+                </div>
+                <div className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Banco después de los cheques</div>
+                  <div className={`font-mono text-base font-bold ${bancoHoy - totalAPagar + totalACobrar < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(bancoHoy - totalAPagar + totalACobrar)}</div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">A pagar — eCheqs que libramos</h3>
+                {echeqsSalida.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-stone-300 bg-white p-3 text-xs text-slate-400">No hay cheques pendientes de débito.</div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-2 py-1.5">Fecha del cheque</th>
+                          <th className="px-2 py-1.5">Proveedor</th>
+                          <th className="px-2 py-1.5">Detalle</th>
+                          <th className="px-2 py-1.5 text-right">Monto</th>
+                          <th className="px-2 py-1.5"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {echeqsSalida.map((c) => {
+                          const dias = c.fechaPagoEcheq ? diasHasta(c.fechaPagoEcheq) : null;
+                          const fechaCumplida = dias !== null && dias <= 0;
+                          return (
+                            <tr key={c.id} className={`border-t border-stone-100 ${fechaCumplida ? "bg-amber-50/60" : ""}`}>
+                              <td className="whitespace-nowrap px-2 py-1.5">
+                                <div className="font-medium text-slate-800">{c.fechaPagoEcheq ? fmtFecha(c.fechaPagoEcheq) : "Sin fecha"}</div>
+                                {c.fechaPagoEcheq && (
+                                  <div className={`text-[10px] ${fechaCumplida ? "font-semibold text-amber-700" : "text-slate-400"}`}>
+                                    {fechaCumplida ? `Fecha cumplida ${dias === 0 ? "hoy" : textoDias(c.fechaPagoEcheq)} — ¿ya lo debitaron?` : textoDias(c.fechaPagoEcheq)}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-2 py-1.5 font-medium text-slate-800">{c.proveedor}</td>
+                              <td className="px-2 py-1.5 text-slate-500">{[c.descripcion, c.comprobante, nombreObra(c.obraId)].filter(Boolean).join(" · ")}</td>
+                              <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono font-semibold text-rose-600">{fmtARS(c.monto)}</td>
+                              <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                                {debitandoCheque?.id === c.id ? (
+                                  <span className="flex flex-wrap items-center justify-end gap-1">
+                                    <span className="text-[10px] text-slate-500">Debitado el</span>
+                                    <input type="date" value={debitandoCheque.fecha} onChange={(e) => setDebitandoCheque({ id: c.id, fecha: e.target.value })} className="rounded-md border border-stone-300 px-1.5 py-0.5 text-xs" />
+                                    <button
+                                      onClick={async () => { await marcarFacturaPagada(c, debitandoCheque.fecha || hoyISO()); setDebitandoCheque(null); }}
+                                      className="rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700"
+                                    >
+                                      Confirmar débito
+                                    </button>
+                                    <button onClick={() => setDebitandoCheque(null)} className={btnGhostSm} title="Cancelar"><X size={10} /></button>
+                                  </span>
+                                ) : (
+                                  <button onClick={() => setDebitandoCheque({ id: c.id, fecha: hoyISO() })} className={btnGhost}>Marcar pagado</button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">A cobrar — eCheqs que recibimos</h3>
+                {echeqsEntrada.length + proyectadasECheq.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-stone-300 bg-white p-3 text-xs text-slate-400">No hay cheques pendientes de cobro.</div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-2 py-1.5">Fecha de cobro</th>
+                          <th className="px-2 py-1.5">Obra</th>
+                          <th className="px-2 py-1.5">Concepto</th>
+                          <th className="px-2 py-1.5 text-right">Monto</th>
+                          <th className="px-2 py-1.5"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {echeqsEntrada.map((i) => {
+                          const fecha = i.fechaCobroEstimada || i.fecha;
+                          const dias = diasHasta(fecha);
+                          return (
+                            <tr key={`ing-${i.id}`} className={`border-t border-stone-100 ${dias <= 0 ? "bg-amber-50/60" : ""}`}>
+                              <td className="whitespace-nowrap px-2 py-1.5">
+                                <div className="font-medium text-slate-800">{fmtFecha(fecha)}</div>
+                                <div className={`text-[10px] ${dias <= 0 ? "font-semibold text-amber-700" : "text-slate-400"}`}>{dias <= 0 ? `Fecha cumplida ${dias === 0 ? "hoy" : textoDias(fecha)} — ¿ya se acreditó?` : textoDias(fecha)}</div>
+                              </td>
+                              <td className="px-2 py-1.5 text-slate-600">{nombreObra(i.obraId)}</td>
+                              <td className="px-2 py-1.5 text-slate-700">{i.concepto}</td>
+                              <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</td>
+                              <td className="whitespace-nowrap px-2 py-1.5 text-right"><button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button></td>
+                            </tr>
+                          );
+                        })}
+                        {proyectadasECheq.map((f) => {
+                          const fecha = f.fechaCobroEstimada || f.fecha;
+                          return (
+                            <tr key={`fvp-${f.id}`} className="border-t border-stone-100">
+                              <td className="whitespace-nowrap px-2 py-1.5">
+                                <div className="font-medium text-slate-800">{fmtFecha(fecha)}</div>
+                                <div className="text-[10px] text-slate-400">factura a emitir · {textoDias(fecha)}</div>
+                              </td>
+                              <td className="px-2 py-1.5 text-slate-600">{nombreObra(f.obraId)}</td>
+                              <td className="px-2 py-1.5 text-slate-700">{f.concepto || "Factura de venta"}</td>
+                              <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono font-semibold text-emerald-700">{fmtARS(f.monto)}</td>
+                              <td className="whitespace-nowrap px-2 py-1.5 text-right"><button onClick={() => marcarFacturaProyectadaCobrada(f)} className={btnGhost}>Marcar cobrado</button></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {(echeqsPagados.length > 0 || echeqsCobrados.length > 0) && (
+                <details className="rounded-lg border border-stone-200 bg-white">
+                  <summary className="cursor-pointer select-none rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
+                    Cheques ya debitados y cobrados <span className="font-normal text-slate-400">({echeqsPagados.length + echeqsCobrados.length})</span>
+                  </summary>
+                  <div className="space-y-1 border-t border-stone-100 p-3 text-xs">
+                    <div className="mb-1 text-[11px] text-slate-400">Si marcaste uno por error, "Deshacer" lo vuelve a pendiente y deja de contar en Banco.</div>
+                    {echeqsPagados.map((c) => (
+                      <div key={`pag-${c.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded px-1.5 py-1 hover:bg-stone-50">
+                        <span className="text-slate-700">
+                          <span className="font-semibold text-rose-600">Pagado</span> · {c.proveedor}
+                          <span className="text-slate-400"> — cheque del {fmtFecha(c.fechaPagoEcheq || c.fecha)}{c.fechaDebitoEcheq ? `, debitado el ${fmtFecha(c.fechaDebitoEcheq)}` : ""}</span>
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-mono font-semibold text-rose-600">-{fmtARS(c.monto)}</span>
+                          <button onClick={() => marcarCompraPendiente(c)} className={btnGhostSm}>Deshacer</button>
+                        </span>
+                      </div>
+                    ))}
+                    {echeqsCobrados.map((i) => (
+                      <div key={`cob-${i.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded px-1.5 py-1 hover:bg-stone-50">
+                        <span className="text-slate-700">
+                          <span className="font-semibold text-emerald-700">Cobrado</span> · {i.concepto}
+                          <span className="text-slate-400"> — {nombreObra(i.obraId)}{i.fechaCobro ? `, acreditado el ${fmtFecha(i.fechaCobro)}` : ""}</span>
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-mono font-semibold text-emerald-700">+{fmtARS(montoNetoIngreso(i))}</span>
+                          <button onClick={() => deshacerCobro(i)} className={btnGhostSm}>Deshacer</button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </div>
+          );
+        })()}
+
+        {tab === "cuentas" && canVerFinanzas && showPrestamos && !showCheques && (
           <div className="space-y-4">
             <button
               onClick={() => setShowPrestamos(false)}
@@ -13702,7 +13949,7 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "cuentas" && canVerFinanzas && showIvaGanancias && (
+        {tab === "cuentas" && canVerFinanzas && showIvaGanancias && !showCheques && (
           <div className="space-y-4">
             <button
               onClick={() => setShowIvaGanancias(false)}
@@ -13732,7 +13979,7 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "cuentas" && canVerFinanzas && showProximos && (
+        {tab === "cuentas" && canVerFinanzas && showProximos && !showCheques && (
           <div className="space-y-4">
             <button
               onClick={() => { setShowProximos(false); setMesProximosSeleccionado(null); }}
