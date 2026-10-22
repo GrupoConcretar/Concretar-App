@@ -11,6 +11,7 @@ import {
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
   Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard
 } from "lucide-react";
+import { leerFactura } from "./lectorFacturas.js";
 
 // Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
 const BRAND = {
@@ -417,6 +418,13 @@ const TIPOS_FACTURA = ["Sin factura", "A", "B", "C"];
 // seguridad social (cargas sociales), que no entra en ninguno de esos tres cálculos.
 const TIPOS_RETENCION = ["IVA", "Ingresos Brutos", "Ganancias", "SUSS"];
 const retencionesDe = (ingreso) => (Array.isArray(ingreso?.retenciones) ? ingreso.retenciones : []);
+// Percepciones que nos cobró un proveedor en su factura (IVA, Ingresos Brutos,
+// Ganancias): son pagos a cuenta de esos impuestos, igual que las retenciones que nos
+// hacen los clientes, y no son parte del precio gravado.
+const TIPOS_PERCEPCION = ["IVA", "Ingresos Brutos", "Ganancias"];
+const percepcionesDe = (compra) => (Array.isArray(compra?.percepciones) ? compra.percepciones : []);
+const totalPercepciones = (compra, tipo = null) =>
+  percepcionesDe(compra).filter((p) => !tipo || p.tipo === tipo).reduce((s, p) => s + (Number(p.monto) || 0), 0);
 const totalRetenciones = (ingreso, tipo = null) =>
   retencionesDe(ingreso).filter((r) => !tipo || r.tipo === tipo).reduce((s, r) => s + (Number(r.monto) || 0), 0);
 // Lo que realmente entra a la cuenta: el monto facturado menos lo retenido.
@@ -763,6 +771,64 @@ function EditorRetenciones({ value, onChange, montoFactura }) {
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+// Percepciones que el proveedor cobró en su factura (renglones "Percepción IIBB",
+// "Per IB SJ", "Percepción IVA"...). Se completan solas al subir la factura en PDF.
+function EditorPercepciones({ value, onChange }) {
+  const lista = Array.isArray(value) ? value : [];
+  const total = lista.reduce((s, p) => s + (Number(p.monto) || 0), 0);
+  const cambiar = (idx, patch) => onChange(lista.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
+  return (
+    <div className="space-y-1.5 rounded-md border border-stone-200 bg-stone-50/60 p-2.5">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Percepciones (si la factura las tiene)</div>
+      {lista.map((p, idx) => (
+        <div key={idx} className="flex flex-wrap items-center gap-2">
+          <select value={p.tipo} onChange={(e) => cambiar(idx, { tipo: e.target.value })} className={`${inputCls} w-56 text-xs`}>
+            {TIPOS_PERCEPCION.map((t) => <option key={t} value={t}>Percepción de {t}</option>)}
+          </select>
+          <MoneyInput key={`${idx}-${p.monto}`} value={p.monto} onChange={(v) => cambiar(idx, { monto: v })} puntoDecimalAlPegar className={`${inputCls} w-40 text-xs`} />
+          <button type="button" onClick={() => onChange(lista.filter((_, i) => i !== idx))} title="Quitar percepción" className="text-slate-400 hover:text-rose-600"><X size={14} /></button>
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button type="button" onClick={() => onChange([...lista, { tipo: "Ingresos Brutos", monto: 0 }])} className={btnGhostSm}>
+          <span className="flex items-center gap-1"><Plus size={11} /> Agregar percepción</span>
+        </button>
+        {total > 0 && <span className="text-xs text-slate-600">Total percepciones <span className="font-mono font-semibold text-amber-700">{fmtARS(total)}</span> — se descuentan de los impuestos del mes</span>}
+      </div>
+    </div>
+  );
+}
+
+// Aviso de lo que se leyó solo de la factura subida (o de por qué no se pudo).
+function AvisoLecturaFactura({ lectura }) {
+  if (!lectura) return null;
+  if (lectura.leyendo) return <div className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs text-sky-800">Leyendo la factura…</div>;
+  const r = lectura.resultado || {};
+  const partes = [
+    r.tipoFactura && `Factura ${r.tipoFactura}${r.esNotaCredito ? " (nota de crédito)" : ""}`,
+    r.comprobante && `N° ${r.comprobante}`,
+    r.fecha && `fecha ${fmtFecha(r.fecha)}`,
+    r.total && `total ${fmtARS(r.total)}`,
+    r.percepciones?.length > 0 && `percepciones ${r.percepciones.map((p) => `${p.tipo} ${fmtARS(p.monto)}`).join(" + ")}`,
+  ].filter(Boolean);
+  if (partes.length === 0) {
+    return (
+      <div className="rounded-md border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs text-slate-600">
+        {r.origen === "foto"
+          ? "De una foto solo se puede leer el código QR de ARCA, y no lo encontré (o no se ve bien). Completá los datos a mano."
+          : "No pude leer los datos de este archivo. Completalos a mano."}
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-900">
+      <span className="font-semibold">Leí de la factura:</span> {partes.join(" · ")}. Revisá que esté bien.
+      {r.origen === "foto+qr" && <span className="block text-emerald-800">Salió del QR de la foto: las percepciones no figuran ahí, cargalas a mano si la factura tiene.</span>}
+      {r.esNotaCredito && <span className="block font-semibold text-amber-800">Es una nota de crédito: cargala desde el proveedor con "Nota de crédito", no como compra.</span>}
     </div>
   );
 }
@@ -1271,7 +1337,7 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
             <th className="px-2 py-1.5">Mes</th>
             <th className="px-2 py-1.5 text-right">IVA venta</th>
             <th className="px-2 py-1.5 text-right">IVA compra</th>
-            <th className="px-2 py-1.5 text-right" title="Retenciones de IVA que nos hicieron los clientes al pagarnos">Retenciones</th>
+            <th className="px-2 py-1.5 text-right" title="Retenciones de IVA que nos hicieron los clientes al pagarnos + percepciones de IVA que nos cobraron los proveedores">Retenc. y percep.</th>
             <th className="px-2 py-1.5 text-right">IVA a pagar (app)</th>
             <th className="px-2 py-1.5 text-right">IVA real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
@@ -1440,7 +1506,7 @@ function TablaIibbMensual({ items, onActualizarReal, onBorrarReal }) {
         <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           <tr>
             <th className="px-2 py-1.5">Mes</th>
-            <th className="px-2 py-1.5 text-right" title="Retenciones de Ingresos Brutos que nos hicieron los clientes al pagarnos">Retenciones</th>
+            <th className="px-2 py-1.5 text-right" title="Retenciones de Ingresos Brutos que nos hicieron los clientes al pagarnos + percepciones de Ingresos Brutos que nos cobraron los proveedores">Retenc. y percep.</th>
             <th className="px-2 py-1.5 text-right">Ingresos Brutos a pagar (app)</th>
             <th className="px-2 py-1.5 text-right">Ingresos Brutos real (contador)</th>
             <th className="px-2 py-1.5 text-right">Diferencia</th>
@@ -2448,6 +2514,31 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
     }
     return registroInicial;
   });
+  // Lectura automática de la factura (PDF o QR de una foto): completa lo que falta, o
+  // todo con "Usar los datos de la factura".
+  const [lectura, setLectura] = useState(null);
+  const [versionLectura, setVersionLectura] = useState(0);
+  const aplicarLectura = (f, r, pisar) => ({
+    ...f,
+    comprobante: r.comprobante && (pisar || !f.comprobante) ? r.comprobante : f.comprobante,
+    tipoFactura: r.tipoFactura && (pisar || !f.tipoFactura || f.tipoFactura === "Sin factura") ? r.tipoFactura : f.tipoFactura,
+    monto: r.total && (pisar || !Number(f.monto)) ? r.total : f.monto,
+    fecha: r.fecha && pisar ? r.fecha : f.fecha,
+    percepciones: r.percepciones?.length && (pisar || percepcionesDe(f).length === 0) ? r.percepciones : f.percepciones,
+  });
+  async function leerYCompletar(archivo, tipoArchivo) {
+    if (!archivo || editando.origen !== "compras_facturas") return;
+    setLectura({ leyendo: true });
+    const resultado = await leerFactura(archivo, tipoArchivo);
+    setLectura({ leyendo: false, resultado });
+    setForm((f) => aplicarLectura(f, resultado, false));
+    setVersionLectura((v) => v + 1);
+  }
+  function usarDatosDeLaFactura() {
+    if (!lectura?.resultado) return;
+    setForm((f) => aplicarLectura(f, lectura.resultado, true));
+    setVersionLectura((v) => v + 1);
+  }
   if (!registroInicial) return null;
   // Las filas reales que generó ese "Arreglo de caja" (una por cuenta corregida),
   // identificadas por compartir el mismo run-id en el detalle — así se pueden
@@ -2478,6 +2569,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         archivo: form.archivo,
         nombreArchivo: form.nombreArchivo,
         tipoArchivo: form.tipoArchivo,
+        percepciones: percepcionesDe(form).filter((x) => (Number(x.monto) || 0) > 0),
       });
     } else if (editando.origen === "cobros_socios") {
       onGuardarCobro(editando.origenId, {
@@ -2587,7 +2679,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                 />
               </Field>
               <Field label="Precio final ($)">
-                <MoneyInput value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} puntoDecimalAlPegar className={inputCls} />
+                <MoneyInput key={`monto-${versionLectura}`} value={form.monto} onChange={(v) => setForm((f) => ({ ...f, monto: v }))} puntoDecimalAlPegar className={inputCls} />
               </Field>
               <Field label="Factura">
                 <select value={form.tipoFactura || "Sin factura"} onChange={(e) => setForm((f) => ({ ...f, tipoFactura: e.target.value }))} className={inputCls}>
@@ -2864,10 +2956,33 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                 label="Factura / comprobante (PDF o foto)"
                 value={form.archivo}
                 nombreArchivo={form.nombreArchivo}
-                onChange={(archivo, nombreArchivo, tipoArchivo) => setForm((f) => ({ ...f, archivo, nombreArchivo, tipoArchivo }))}
+                onChange={(archivo, nombreArchivo, tipoArchivo) => { setForm((f) => ({ ...f, archivo, nombreArchivo, tipoArchivo })); leerYCompletar(archivo, tipoArchivo); }}
               />
             </div>
           )}
+          {editando.origen === "compras_facturas" && (() => {
+            const vinculada = facturasVarias.find((f) => f.compraFacturaId === editando.origenId);
+            const fuente = form.archivo ? { archivo: form.archivo, tipo: form.tipoArchivo } : vinculada ? { archivo: vinculada.archivo, tipo: vinculada.tipoArchivo } : null;
+            const r = lectura?.resultado;
+            const totalDistinto = r?.total && Math.abs(r.total - (Number(form.monto) || 0)) > 1;
+            return (
+              <div className="space-y-2 md:col-span-2">
+                {fuente && !lectura?.leyendo && (
+                  <button type="button" onClick={() => leerYCompletar(fuente.archivo, fuente.tipo)} className={btnGhost}>
+                    <span className="flex items-center gap-1"><FileSpreadsheet size={13} /> Leer datos de la factura{!form.archivo && vinculada ? " vinculada" : ""}</span>
+                  </button>
+                )}
+                <AvisoLecturaFactura lectura={lectura} />
+                {r && (totalDistinto || (r.comprobante && r.comprobante !== form.comprobante)) && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
+                    {totalDistinto && <span>El total de la factura es <span className="font-mono font-semibold">{fmtARS(r.total)}</span> y la compra dice <span className="font-mono font-semibold">{fmtARS(Number(form.monto) || 0)}</span>.</span>}
+                    <button type="button" onClick={usarDatosDeLaFactura} className={btnGhostSm}>Usar los datos de la factura</button>
+                  </div>
+                )}
+                <EditorPercepciones value={percepcionesDe(form)} onChange={(percepciones) => setForm((f) => ({ ...f, percepciones }))} />
+              </div>
+            );
+          })()}
           {editando.origen === "compras_facturas" && onVincularFacturaVaria && (() => {
             // Facturas subidas en "Facturas varias" del proveedor que corresponden a esta
             // compra (una compra puede juntar varias facturas). Se vinculan/desvinculan al
@@ -5262,6 +5377,19 @@ export default function ConcretarApp() {
   const [facturaArchivo, setFacturaArchivo] = useState(null);
   const [facturaNombreArchivo, setFacturaNombreArchivo] = useState(null);
   const [facturaTipoArchivo, setFacturaTipoArchivo] = useState(null);
+  const [facturaPercepciones, setFacturaPercepciones] = useState([]);
+  // Lo que se leyó solo de la factura subida: { leyendo, resultado, key, mostrar }. "key"
+  // vuelve a montar los campos que se completaron (fecha, N°, total, tipo) con lo leído.
+  const [lecturaFacturaCompra, setLecturaFacturaCompra] = useState(null);
+  async function leerFacturaCompra(archivo, tipoArchivo) {
+    if (!archivo) { setLecturaFacturaCompra(null); return; }
+    setLecturaFacturaCompra((prev) => ({ ...(prev || {}), leyendo: true, mostrar: true }));
+    const resultado = await leerFactura(archivo, tipoArchivo);
+    setLecturaFacturaCompra((prev) => ({ leyendo: false, resultado, key: (prev?.key || 0) + 1, mostrar: true }));
+    // Lo que leyó de este archivo reemplaza lo de un archivo anterior (en una foto no hay
+    // percepciones: quedan vacías para cargarlas a mano).
+    setFacturaPercepciones(resultado.percepciones || []);
+  }
   // Formulario de "Cargar gasto / factura": el mismo se usa en Gastos y Facturas y en
   // la ficha de un proveedor (con el proveedor ya fijo, para ir cargando las facturas
   // que falten mirando su resumen de cuenta corriente).
@@ -5315,11 +5443,16 @@ export default function ConcretarApp() {
       archivo: facturaArchivo,
       nombreArchivo: facturaNombreArchivo,
       tipoArchivo: facturaTipoArchivo,
+      percepciones: facturaPercepciones.filter((x) => (Number(x.monto) || 0) > 0),
     }, setComprasFacturas);
     if (!nuevaCompra) return;
     setFacturaArchivo(null);
     setFacturaNombreArchivo(null);
     setFacturaTipoArchivo(null);
+    setFacturaPercepciones([]);
+    // Los campos completados con lo leído quedan como están (para cargar la siguiente
+    // cambiando solo lo distinto); solo se oculta el aviso.
+    setLecturaFacturaCompra((prev) => (prev ? { ...prev, mostrar: false } : prev));
     if (seguirAbierto) {
       // Cargando desde la ficha del proveedor: el formulario queda abierto y con
       // todos los datos tal cual (fecha, obra, monto, N°, factura, forma de pago...)
@@ -5346,6 +5479,11 @@ export default function ConcretarApp() {
     setShowFacturaForm(false);
     if (onGuardado) onGuardado(nuevaCompra);
   }
+  // Formulario nuevo (o vuelto a abrir): sin lectura ni percepciones de la factura anterior.
+  useEffect(() => {
+    setLecturaFacturaCompra(null);
+    setFacturaPercepciones([]);
+  }, [formularioCompraKey]);
   // Abre el formulario de gasto dentro de una obra, con esa obra ya elegida.
   const [cargandoGastoObraId, setCargandoGastoObraId] = useState(null);
   function abrirCargaGastoObra(obra) {
@@ -5362,13 +5500,15 @@ export default function ConcretarApp() {
     setCargandoGastoObraId(obra.id);
   }
   function renderFormularioCompra({ proveedorFijo = null, onGuardado = null }) {
+    const leido = lecturaFacturaCompra?.resultado || {};
+    const k = lecturaFacturaCompra?.key || 0;
     return (
       <form
         key={formularioCompraKey}
         className="grid grid-cols-1 gap-4 md:grid-cols-3"
         onSubmit={(e) => guardarFormularioCompra(e, !!proveedorFijo, onGuardado)}
       >
-        <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
+        <Field label="Fecha"><input key={leido.fecha ? `fecha-${k}` : "fecha"} name="fecha" type="date" defaultValue={leido.fecha || hoyISO()} required className={inputCls} /></Field>
         <Field label="Obra">
           <div className="flex items-center gap-2">
             <span className="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: colorDeObra(obras.find((o) => String(o.id) === facturaObraId)) }} />
@@ -5395,14 +5535,14 @@ export default function ConcretarApp() {
           <input name="descripcion" placeholder="Ej: Nafta camioneta, cemento para losa..." className={inputCls} />
         </Field>
         <Field label="N° de factura / comprobante (opcional)">
-          <input name="comprobante" placeholder="Ej: A-0019-00056013" className={inputCls} />
+          <input key={leido.comprobante ? `comprobante-${k}` : "comprobante"} name="comprobante" defaultValue={leido.comprobante || ""} placeholder="Ej: A-0019-00056013" className={inputCls} />
         </Field>
         <Field label="Precio final ($)">
-          <MoneyInput name="monto" puntoDecimalAlPegar className={inputCls} />
-          <div className="mt-1 text-[11px] text-slate-400">Con IVA incluido.</div>
+          <MoneyInput key={leido.total ? `monto-${k}` : "monto"} name="monto" value={leido.total || undefined} puntoDecimalAlPegar className={inputCls} />
+          <div className="mt-1 text-[11px] text-slate-400">Con IVA y percepciones incluidos (el total de la factura).</div>
         </Field>
         <Field label="Factura">
-          <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
+          <select key={leido.tipoFactura ? `tipo-${k}` : "tipo"} name="tipoFactura" defaultValue={leido.tipoFactura || "Sin factura"} className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
         </Field>
         <Field label="Forma de pago">
           <select name="formaPago" value={facturaFormaPago} onChange={(e) => setFacturaFormaPago(e.target.value)} className={inputCls}>
@@ -5467,8 +5607,13 @@ export default function ConcretarApp() {
             label="Factura / comprobante (opcional acá, se puede agregar después)"
             value={facturaArchivo}
             nombreArchivo={facturaNombreArchivo}
-            onChange={(archivo, nombreArchivo, tipoArchivo) => { setFacturaArchivo(archivo); setFacturaNombreArchivo(nombreArchivo); setFacturaTipoArchivo(tipoArchivo); }}
+            onChange={(archivo, nombreArchivo, tipoArchivo) => { setFacturaArchivo(archivo); setFacturaNombreArchivo(nombreArchivo); setFacturaTipoArchivo(tipoArchivo); leerFacturaCompra(archivo, tipoArchivo); }}
           />
+          {lecturaFacturaCompra?.mostrar !== false && <div className="mt-1.5"><AvisoLecturaFactura lectura={lecturaFacturaCompra} /></div>}
+          <div className="mt-1 text-[11px] text-slate-400">Si subís la factura en PDF, el N°, la fecha, el total, el tipo y las percepciones se completan solos. De una foto se lee el QR de ARCA (sin percepciones).</div>
+        </div>
+        <div className="md:col-span-3">
+          <EditorPercepciones value={facturaPercepciones} onChange={setFacturaPercepciones} />
         </div>
         <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
       </form>
@@ -6829,9 +6974,17 @@ export default function ConcretarApp() {
     (ivaPorMes[clave] ??= { debito: 0, credito: 0 }).debito += ivaDeMonto(f.monto, f.tipoFactura);
   });
   // Solo la Factura A da crédito fiscal — la B se compra "como consumidor final".
+  // Las percepciones de la factura no llevan IVA: se sacan del total antes de calcularlo.
   comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId) && c.tipoFactura === "A").forEach((c) => {
     const clave = claveMesCuentas(c.fecha);
-    (ivaPorMes[clave] ??= { debito: 0, credito: 0 }).credito += ivaDeMonto(c.monto, c.tipoFactura);
+    (ivaPorMes[clave] ??= { debito: 0, credito: 0 }).credito += ivaDeMonto((c.monto || 0) - totalPercepciones(c), c.tipoFactura);
+  });
+  // Percepciones de IVA que nos cobraron los proveedores: pago a cuenta del IVA del mes
+  // de la factura, igual que las retenciones de los clientes.
+  comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId) && totalPercepciones(c, "IVA") > 0).forEach((c) => {
+    const clave = claveMesCuentas(c.fecha);
+    const m = (ivaPorMes[clave] ??= { debito: 0, credito: 0 });
+    m.retenciones = (m.retenciones || 0) + totalPercepciones(c, "IVA");
   });
   // Retenciones de IVA que nos hicieron al cobrar: son pagos a cuenta del IVA del mes
   // en que se facturó el cobro, así que se descuentan de lo que hay que pagar (y si
@@ -6865,13 +7018,19 @@ export default function ConcretarApp() {
   });
   comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId) && conFacturaGravable(c.tipoFactura)).forEach((c) => {
     const anio = (c.fecha || "").slice(0, 4);
-    (gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 }).gastos += netoDeIvaMonto(c.monto, c.tipoFactura);
+    (gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 }).gastos += netoDeIvaMonto((c.monto || 0) - totalPercepciones(c), c.tipoFactura);
   });
   // Retenciones de Ganancias sufridas en el año: pagos a cuenta del impuesto anual.
   const retencionesGananciasPorAnio = {};
   ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && i.estado !== "Pendiente" && totalRetenciones(i, "Ganancias") > 0).forEach((i) => {
     const anio = (i.fecha || "").slice(0, 4);
     retencionesGananciasPorAnio[anio] = (retencionesGananciasPorAnio[anio] || 0) + totalRetenciones(i, "Ganancias");
+    gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 };
+  });
+  // Percepciones de Ganancias cobradas por proveedores: también son pago a cuenta.
+  comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId) && totalPercepciones(c, "Ganancias") > 0).forEach((c) => {
+    const anio = (c.fecha || "").slice(0, 4);
+    retencionesGananciasPorAnio[anio] = (retencionesGananciasPorAnio[anio] || 0) + totalPercepciones(c, "Ganancias");
     gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 };
   });
   const gananciasAnuales = Object.keys(gananciasPorAnio).sort().map((anio) => {
@@ -6907,6 +7066,11 @@ export default function ConcretarApp() {
   ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && i.estado !== "Pendiente" && totalRetenciones(i, "Ingresos Brutos") > 0).forEach((i) => {
     const clave = claveMesCuentas(i.fecha);
     retencionesIibbPorMes[clave] = (retencionesIibbPorMes[clave] || 0) + totalRetenciones(i, "Ingresos Brutos");
+  });
+  // Percepciones de Ingresos Brutos que nos cobraron los proveedores en sus facturas.
+  comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId) && totalPercepciones(c, "Ingresos Brutos") > 0).forEach((c) => {
+    const clave = claveMesCuentas(c.fecha);
+    retencionesIibbPorMes[clave] = (retencionesIibbPorMes[clave] || 0) + totalPercepciones(c, "Ingresos Brutos");
   });
   const clavesIibb = Array.from(new Set([
     ...Object.keys(ingresosGravablesPorMes),
@@ -14164,13 +14328,13 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">IVA venta: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). IVA compra: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Si IVA venta supera a IVA compra (+ el saldo a favor que venía arrastrando) el mes da en contra (a pagar); si no, da a favor y ese saldo pasa al mes siguiente — no es plata que entra a la cuenta. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−). Las retenciones de IVA que te hicieron los clientes al cobrar (se cargan en "Marcar cobrado" o en el ingreso) se descuentan de lo que hay que pagar ese mes.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">IVA venta: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). IVA compra: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Si IVA venta supera a IVA compra (+ el saldo a favor que venía arrastrando) el mes da en contra (a pagar); si no, da a favor y ese saldo pasa al mes siguiente — no es plata que entra a la cuenta. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−). Las retenciones de IVA que te hicieron los clientes al cobrar (se cargan en "Marcar cobrado" o en el ingreso) y las percepciones de IVA que te cobraron los proveedores en sus facturas se descuentan de lo que hay que pagar ese mes.</div>
               <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iva", clave)} />
             </div>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ingresos Brutos por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Se proyecta al 2% de los ingresos gravables (incluye facturas de venta futuras proyectadas desde una obra) hasta que cargues el "Ingresos Brutos real (contador)" de algún mes — ahí la alícuota efectiva se recalcula sola y ajusta la proyección de los meses siguientes. Las retenciones de Ingresos Brutos que te hicieron al cobrar se descuentan de lo que hay que pagar ese mes.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">Se proyecta al 2% de los ingresos gravables (incluye facturas de venta futuras proyectadas desde una obra) hasta que cargues el "Ingresos Brutos real (contador)" de algún mes — ahí la alícuota efectiva se recalcula sola y ajusta la proyección de los meses siguientes. Las retenciones de Ingresos Brutos que te hicieron al cobrar y las percepciones de Ingresos Brutos de las facturas de compra se descuentan de lo que hay que pagar ese mes.</div>
               <TablaIibbMensual items={iibbMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iibb", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iibb", clave)} />
             </div>
 
