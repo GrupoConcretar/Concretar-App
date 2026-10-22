@@ -6553,16 +6553,6 @@ export default function ConcretarApp() {
     setSueldoPlanForm(emptySueldoPlanForm);
     setSueldoPlanMontoResetKey((k) => k + 1);
   }
-  // Agrupados por fecha exacta — lo usa el detalle de "Próximos pagos e ingresos",
-  // que necesita el día puntual en que sale la plata (un solo renglón con el total
-  // en vez de una fila por socio).
-  const sueldosPlanificadosAgrupados = Object.values(
-    sueldosPlanificados.reduce((acc, s) => {
-      (acc[s.fecha] ??= { fecha: s.fecha, total: 0, items: [] }).total += s.monto || 0;
-      acc[s.fecha].items.push(s);
-      return acc;
-    }, {})
-  ).sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
   // Agrupados por MES y por socio por separado — lo usa la pantalla "Cobros Ricardo
   // y Pablo", que compara mes a mes lo planificado contra lo cobrado de verdad (si
   // hay dos fechas planificadas dentro del mismo mes, se suman en un solo total).
@@ -6967,7 +6957,9 @@ export default function ConcretarApp() {
       const presupuestadoEqYMat = pg ? (pg.totalEquipos || 0) + (pg.totalMateriales || 0) + (pg.totalHerramientas || 0) : null;
       const precioObra = o.presupuesto || pg?.precioTotalConIva || 0;
       const cobrado = ingresos.filter((i) => i.obraId === o.id && i.estado !== "Pendiente").reduce((s, i) => s + (i.monto || 0), 0);
-      const gastadoEqYMat = comprasFacturas.filter((c) => c.obraId === o.id).reduce((s, c) => s + (c.monto || 0), 0);
+      // Los "Jornales de la semana" que se generan al pagar la asistencia ya cuentan en la
+      // mano de obra (costoManoDeObraDeObra), así que no se suman acá otra vez.
+      const gastadoEqYMat = comprasFacturas.filter((c) => c.obraId === o.id && c.proveedor !== "Jornales de la semana").reduce((s, c) => s + (c.monto || 0), 0);
       const gastadoManoObra = costoManoDeObraDeObra(o.id);
       const gastado = gastadoEqYMat + gastadoManoObra;
       const disponibleEqYMat = presupuestadoEqYMat !== null ? presupuestadoEqYMat - gastadoEqYMat : null;
@@ -7359,30 +7351,112 @@ export default function ConcretarApp() {
   // ingresos y el disponible proyectado de obras) mes a mes, para la pantalla completa de
   // "Próximos pagos e ingresos" — lo que no tiene fecha estimada cargada queda en un grupo
   // aparte al final.
-  const perteneceAMesProximos = (fecha, clave) => (clave === "sin-fecha" ? !fecha : !!fecha && claveMesCuentas(fecha) === clave);
-  const gruposMesesProximos = (() => {
-    const grupos = {};
-    const agregar = (fecha, monto, flujo) => {
-      const clave = fecha ? claveMesCuentas(fecha) : "sin-fecha";
-      if (!grupos[clave]) grupos[clave] = { clave, ingresos: 0, egresos: 0 };
-      grupos[clave][flujo === "ingreso" ? "ingresos" : "egresos"] += monto || 0;
-    };
+  // Lo vencido que sigue pendiente (un cobro atrasado, un cheque con la fecha cumplida,
+  // una factura de proveedor vencida) cae en el mes actual: esa plata todavía tiene que
+  // entrar o salir, y el saldo de hoy no la tiene en cuenta.
+  const claveMesProximos = (fecha) => {
+    if (!fecha) return "sin-fecha";
+    const clave = claveMesCuentas(fecha);
+    return clave < mesActualClave ? mesActualClave : clave;
+  };
+  const perteneceAMesProximos = (fecha, clave) => claveMesProximos(fecha) === clave;
+  // Los ingresos con eCheq ya van en "Cheques" (echeqsEntrada): se sacan de acá para
+  // no contarlos dos veces.
+  const ingresosPendientesProximos = ingresosPendientes.filter((i) => i.medioBancario !== "eCheq");
+  // IVA e Ingresos Brutos: la app no sabe si un vencimiento ya pasado se pagó (el pago
+  // ya está restado del saldo de hoy si se cargó como gasto), así que solo se proyectan
+  // los vencimientos de este mes en adelante.
+  const ivaPagosProximos = ivaPagosProyectados.filter((p) => p.fechaPago >= mesActualClave);
+  const iibbPagosProximos = iibbPagosProyectados.filter((p) => p.fechaPago >= mesActualClave);
+  // Sueldos de Ricardo y Pablo que faltan cobrar: a lo planificado de cada mes se le
+  // descuenta lo que cada socio ya cobró para ese mes (lo cargado en "Cobros Ricardo y
+  // Pablo", que ya salió de las cuentas), empezando por la fecha planificada más
+  // temprana. Como en esa pantalla, cuenta desde el mes pasado en adelante.
+  const sueldosPorCobrar = (() => {
+    const mesDesde = shiftMes(mesActualClave, -1);
+    const porSocioYMes = {};
+    sueldosPlanificados
+      .filter((s) => s.fecha && s.fecha.slice(0, 7) >= mesDesde)
+      .forEach((s) => { (porSocioYMes[`${s.socio}|${s.fecha.slice(0, 7)}`] ??= []).push(s); });
+    const items = [];
+    Object.values(porSocioYMes).forEach((lista) => {
+      lista.sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha) || (a.id - b.id));
+      let cobrado = cobradoPorSocioYMes(lista[0].socio, lista[0].fecha.slice(0, 7));
+      lista.forEach((s) => {
+        const planificado = s.monto || 0;
+        const yaCobrado = Math.min(cobrado, planificado);
+        cobrado -= yaCobrado;
+        if (planificado - yaCobrado > 0.5) items.push({ ...s, planificado, yaCobrado, monto: planificado - yaCobrado });
+      });
+    });
+    return items;
+  })();
+  const sueldosPorCobrarAgrupados = Object.values(
+    sueldosPorCobrar.reduce((acc, s) => {
+      const g = (acc[s.fecha] ??= { fecha: s.fecha, total: 0, planificado: 0, yaCobrado: 0, items: [] });
+      g.total += s.monto;
+      g.planificado += s.planificado;
+      g.yaCobrado += s.yaCobrado;
+      g.items.push(s);
+      return acc;
+    }, {})
+  ).sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+  // Todo lo que entra o sale, menos los gastos fijos (que se proyectan hasta el último
+  // mes que tenga algo de esto).
+  const movimientosProximos = [
     // Se proyecta el interés hasta la fecha estimada de devolución (no "a hoy"),
     // así el monto que figura acá es lo que realmente habría que devolver ese día.
-    prestamosPorDevolver.forEach((p) => agregar(p.fechaEstimadaDevolucion, calcularEstadoPrestamo(p, prestamosPagos, p.fechaEstimadaDevolucion).totalADevolver, "egreso"));
-    echeqsSalida.forEach((c) => agregar(c.fechaPagoEcheq, c.monto, "egreso"));
-    echeqsEntrada.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, i.monto, "ingreso"));
-    cuentasCorrientesPorProveedor.forEach((g) => agregar(g.fechaVencimiento, g.monto, "egreso"));
-    ingresosPendientes.forEach((i) => agregar(i.fechaCobroEstimada || i.fecha, montoNetoIngreso(i), "ingreso"));
+    ...prestamosPorDevolver.map((p) => ({ fecha: p.fechaEstimadaDevolucion, monto: calcularEstadoPrestamo(p, prestamosPagos, p.fechaEstimadaDevolucion).totalADevolver, flujo: "egreso" })),
+    ...echeqsSalida.map((c) => ({ fecha: c.fechaPagoEcheq, monto: c.monto, flujo: "egreso" })),
+    ...echeqsEntrada.map((i) => ({ fecha: i.fechaCobroEstimada || i.fecha, monto: montoNetoIngreso(i), flujo: "ingreso" })),
+    ...cuentasCorrientesPorProveedor.map((g) => ({ fecha: g.fechaVencimiento, monto: g.monto, flujo: "egreso" })),
+    ...ingresosPendientesProximos.map((i) => ({ fecha: i.fechaCobroEstimada || i.fecha, monto: montoNetoIngreso(i), flujo: "ingreso" })),
     // Facturación futura: todavía no es un ingreso real, pero si ya se cargó un
     // posible día de cobro, sirve para anticipar el ingreso de plata en el flujo
     // de caja (separado del día en que se piensa emitir la factura, que es el que
     // usa el cálculo de IVA e Ingresos Brutos).
-    facturasVentaProyectadas.filter((f) => !obraIdsPapelera.has(f.obraId)).forEach((f) => agregar(f.fechaCobroEstimada || f.fecha, f.monto, "ingreso"));
-    obrasDisponibleProyectado.forEach((o) => o.meses.forEach((clave) => agregar(`${clave}-01`, o.montoPorMes, "egreso")));
-    ivaPagosProyectados.forEach((p) => agregar(p.fechaPago, p.monto, "egreso"));
-    iibbPagosProyectados.forEach((p) => agregar(p.fechaPago, p.monto, "egreso"));
-    sueldosPlanificados.forEach((s) => agregar(s.fecha, s.monto, "egreso"));
+    ...facturasVentaProyectadas.filter((f) => !obraIdsPapelera.has(f.obraId)).map((f) => ({ fecha: f.fechaCobroEstimada || f.fecha, monto: f.monto, flujo: "ingreso" })),
+    ...obrasDisponibleProyectado.flatMap((o) => o.meses.map((clave) => ({ fecha: `${clave}-01`, monto: o.montoPorMes, flujo: "egreso" }))),
+    ...ivaPagosProximos.map((p) => ({ fecha: p.fechaPago, monto: p.monto, flujo: "egreso" })),
+    ...iibbPagosProximos.map((p) => ({ fecha: p.fechaPago, monto: p.monto, flujo: "egreso" })),
+    ...sueldosPorCobrar.map((s) => ({ fecha: s.fecha, monto: s.monto, flujo: "egreso" })),
+  ];
+  // Gastos fijos (contador, alquiler, seguros…): los de este mes que todavía no se
+  // pagaron, y para los meses siguientes, como estimación, los mismos del último mes
+  // cargado (se cargan solos al empezar cada mes). Los de meses anteriores sin marcar
+  // como pagados no se cuentan: si se pagaron, ya salieron de las cuentas.
+  const gastosFijosProximos = (() => {
+    const items = gastosRecurrentes
+      .filter((g) => !g.fechaPago && g.claveMes >= mesActualClave)
+      .map((g) => ({ id: `gr-${g.id}`, concepto: g.concepto, monto: g.monto || 0, fecha: g.fechaPagoAproximada || `${g.claveMes}-01`, estimado: false }));
+    const ultimoMesCargado = gastosRecurrentes.map((g) => g.claveMes).filter(Boolean).sort().at(-1);
+    if (!ultimoMesCargado) return items;
+    const ultimoMesProyectado = movimientosProximos
+      .map((m) => claveMesProximos(m.fecha))
+      .filter((c) => c !== "sin-fecha")
+      .sort()
+      .at(-1);
+    const hasta = ultimoMesProyectado && ultimoMesProyectado > mesActualClave ? ultimoMesProyectado : mesActualClave;
+    const base = gastosRecurrentes.filter((g) => g.claveMes === ultimoMesCargado);
+    for (let clave = sumarMesesAClave(ultimoMesCargado, 1), i = 0; clave <= hasta && i < 24; clave = sumarMesesAClave(clave, 1), i++) {
+      const [anio, mes] = clave.split("-").map(Number);
+      const ultimoDia = new Date(anio, mes, 0).getDate();
+      base.forEach((g) => {
+        const dia = Math.min(Number((g.fechaPagoAproximada || "").slice(8, 10)) || 1, ultimoDia);
+        items.push({ id: `gr-${g.id}-${clave}`, concepto: g.concepto, monto: g.monto || 0, fecha: `${clave}-${String(dia).padStart(2, "0")}`, estimado: true });
+      });
+    }
+    return items;
+  })();
+  const gruposMesesProximos = (() => {
+    const grupos = {};
+    const agregar = (fecha, monto, flujo) => {
+      const clave = claveMesProximos(fecha);
+      if (!grupos[clave]) grupos[clave] = { clave, ingresos: 0, egresos: 0 };
+      grupos[clave][flujo === "ingreso" ? "ingresos" : "egresos"] += monto || 0;
+    };
+    movimientosProximos.forEach((m) => agregar(m.fecha, m.monto, m.flujo));
+    gastosFijosProximos.forEach((g) => agregar(g.fecha, g.monto, "egreso"));
     return Object.values(grupos).sort((a, b) => (a.clave === "sin-fecha" ? 1 : b.clave === "sin-fecha" ? -1 : a.clave.localeCompare(b.clave)));
   })();
   // El acumulado arranca de la plata que hay hoy en las cuentas (Blanco + Negro) y le va
@@ -14079,12 +14153,13 @@ export default function ConcretarApp() {
                 const echeqsSalidaDelMes = echeqsSalida.filter((c) => perteneceAMesProximos(c.fechaPagoEcheq, claveMes));
                 const echeqsEntradaDelMes = echeqsEntrada.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
                 const cuentasCorrientesDelMes = cuentasCorrientesPorProveedor.filter((g) => perteneceAMesProximos(g.fechaVencimiento, claveMes));
-                const ingresosDelMes = ingresosPendientes.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
+                const ingresosDelMes = ingresosPendientesProximos.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
                 const facturasVentaProyectadasDelMes = facturasVentaProyectadas.filter((f) => !obraIdsPapelera.has(f.obraId) && perteneceAMesProximos(f.fechaCobroEstimada || f.fecha, claveMes));
                 const obrasDisponibleDelMes = obrasDisponibleProyectado.filter((o) => o.meses.includes(claveMes));
-                const ivaPagosDelMes = ivaPagosProyectados.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
-                const iibbPagosDelMes = iibbPagosProyectados.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
-                const sueldosPlanificadosDelMes = sueldosPlanificadosAgrupados.filter((g) => perteneceAMesProximos(g.fecha, claveMes));
+                const ivaPagosDelMes = ivaPagosProximos.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
+                const iibbPagosDelMes = iibbPagosProximos.filter((p) => perteneceAMesProximos(p.fechaPago, claveMes));
+                const sueldosPlanificadosDelMes = sueldosPorCobrarAgrupados.filter((g) => perteneceAMesProximos(g.fecha, claveMes));
+                const gastosFijosDelMes = gastosFijosProximos.filter((g) => perteneceAMesProximos(g.fecha, claveMes));
                 return (
                   <>
                     <button onClick={() => setMesProximosSeleccionado(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
@@ -14117,16 +14192,39 @@ export default function ConcretarApp() {
                       </div>
 
                       <div>
-                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Sueldos planificados (Ricardo y Pablo)</div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Sueldos que faltan cobrar (Ricardo y Pablo)</div>
                         {sueldosPlanificadosDelMes.length === 0 ? (
-                          <div className="text-xs text-slate-400">No hay sueldos planificados para este mes.</div>
+                          <div className="text-xs text-slate-400">No queda nada por cobrar de lo planificado para este mes.</div>
                         ) : (
                           <div className="space-y-1.5">
                             {sueldosPlanificadosDelMes.map((grupo) => (
                               <div key={grupo.fecha} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
-                                <span className="font-medium text-slate-800">Ricardo y Pablo</span>
-                                <span className="text-xs text-slate-500">{fmtFecha(grupo.fecha)} — {fmtARS(grupo.total / 2)} c/u</span>
+                                <span className="font-medium text-slate-800">{grupo.items.map((s) => s.socio).join(" y ")}</span>
+                                <span className="text-xs text-slate-500">
+                                  {fmtFecha(grupo.fecha)} — falta {grupo.items.map((s) => `${fmtARS(s.monto)} a ${s.socio}`).join(" y ")}
+                                  {grupo.yaCobrado > 0 && <span className="text-slate-400"> (planificado {fmtARS(grupo.planificado)}, ya cobrado {fmtARS(grupo.yaCobrado)})</span>}
+                                </span>
                                 <span className="font-mono font-semibold text-rose-600">{fmtARS(grupo.total)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Gastos fijos (contador, alquiler, seguros…)</div>
+                        {gastosFijosDelMes.length === 0 ? (
+                          <div className="text-xs text-slate-400">No hay gastos fijos por pagar este mes.</div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {gastosFijosDelMes.map((g) => (
+                              <div key={g.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-sm ${g.estimado ? "border-dashed border-stone-300" : "border-stone-200"}`}>
+                                <span className="flex items-center gap-1.5 font-medium text-slate-800">
+                                  {g.concepto}
+                                  {g.estimado && <span className="rounded-full border border-stone-300 bg-stone-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">Estimado</span>}
+                                </span>
+                                <span className="text-xs text-slate-500">{fmtFecha(g.fecha)}</span>
+                                <span className="font-mono font-semibold text-rose-600">{fmtARS(g.monto)}</span>
                               </div>
                             ))}
                           </div>
@@ -14293,7 +14391,7 @@ export default function ConcretarApp() {
                                   <span className={`text-xs ${dias < 0 ? "font-semibold text-rose-600" : dias <= 3 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
                                     {fmtFecha(fechaEstimada)}{dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}
                                   </span>
-                                  <span className="font-mono font-semibold text-emerald-700">{fmtARS(i.monto)}</span>
+                                  <span className="font-mono font-semibold text-emerald-700">{fmtARS(montoNetoIngreso(i))}</span>
                                   <button onClick={() => marcarIngresoCobrado(i)} className={btnGhost}>Marcar cobrado</button>
                                 </div>
                               );
