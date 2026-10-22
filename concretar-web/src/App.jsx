@@ -3009,7 +3009,7 @@ function ModalAsignarPersonal({ personal, obras, obraContextoId, asignacionManua
 // gasto en el mes actual simplemente deja de copiarse al mes que viene (los
 // meses ya pasados no se tocan). El mes actual y el anterior arrancan
 // desplegados; los más viejos se despliegan tocándolos.
-function ModalGastosRecurrentes({ gastosRecurrentes, onAgregar, onEliminar, onClose }) {
+function ModalGastosRecurrentes({ gastosRecurrentes, onAgregar, onEditar, onEliminar, onPagar, onDeshacerPago, onClose }) {
   const claveActual = hoyISO().slice(0, 7);
   const claveAnterior = shiftMes(claveActual, -1);
   const clavesConDatos = Array.from(new Set(gastosRecurrentes.map((g) => g.claveMes)));
@@ -3032,8 +3032,11 @@ function ModalGastosRecurrentes({ gastosRecurrentes, onAgregar, onEliminar, onCl
           <div>
             <h3 className="text-lg font-bold text-slate-900">Gastos recurrentes</h3>
             <p className="text-xs text-slate-400">
-              Cargá acá los pagos fijos de todos los meses (contador, alquiler, seguros, etc.). El mes que viene arranca
-              con los mismos gastos y montos del mes anterior — si borrás uno, deja de repetirse de ahí en adelante.
+              Cargá acá los pagos de todos los meses (contador, alquiler, seguros, luz, etc.). El mes que viene arranca
+              con los mismos gastos del mes anterior — si borrás uno, deja de repetirse de ahí en adelante.
+              <span className="font-semibold text-slate-500"> Monto fijo:</span> se descuenta igual en todos los meses que vienen.
+              <span className="font-semibold text-slate-500"> Monto variable:</span> cada mes arranca con un monto estimado (el promedio de los
+              últimos meses) hasta que cargues el real con el lápiz. Con "Pagar" queda cargado en Gastos y sale de la cuenta.
             </p>
           </div>
           <button onClick={onClose}><X size={18} /></button>
@@ -3072,17 +3075,7 @@ function ModalGastosRecurrentes({ gastosRecurrentes, onAgregar, onEliminar, onCl
                     ) : (
                       <div className="mb-3 space-y-1.5">
                         {items.map((g) => (
-                          <div key={g.id} className="flex items-center justify-between gap-2 rounded-md border border-stone-100 bg-stone-50 px-2.5 py-1.5 text-xs">
-                            <div className="min-w-0 truncate">
-                              <span className="font-semibold text-slate-800">{g.concepto}</span>
-                              {g.fechaPagoAproximada && <span className="ml-1.5 text-slate-400">· {fmtFecha(g.fechaPagoAproximada)}</span>}
-                              <span className="ml-1.5 text-slate-400">· {g.formaPago}{g.medioBancario ? ` (${g.medioBancario})` : ""}</span>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                              <span className="font-mono font-semibold text-slate-700">{fmtARS(g.monto)}</span>
-                              <BotonEliminar onClick={() => onEliminar(g.id)} />
-                            </div>
-                          </div>
+                          <FilaGastoRecurrente key={g.id} g={g} onEditar={onEditar} onEliminar={onEliminar} onPagar={onPagar} onDeshacerPago={onDeshacerPago} />
                         ))}
                       </div>
                     )}
@@ -3098,8 +3091,79 @@ function ModalGastosRecurrentes({ gastosRecurrentes, onAgregar, onEliminar, onCl
   );
 }
 
+// Un gasto recurrente de un mes: fijo o variable, monto (editable con el lápiz — en uno
+// variable, cargar el monto real lo deja "confirmado"), y pagarlo o deshacer el pago.
+function FilaGastoRecurrente({ g, onEditar, onEliminar, onPagar, onDeshacerPago }) {
+  const [editando, setEditando] = useState(false);
+  const [monto, setMonto] = useState(g.monto || 0);
+  const [fecha, setFecha] = useState(g.fechaPagoAproximada || "");
+  const [tipoMonto, setTipoMonto] = useState(g.tipoMonto || "fijo");
+  const [pagando, setPagando] = useState(false);
+  const variable = (g.tipoMonto || "fijo") === "variable";
+  const estimado = variable && g.montoConfirmado === false;
+  if (editando) {
+    return (
+      <form
+        className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50/50 px-2.5 py-1.5 text-xs"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          await onEditar(g, { monto, fechaPagoAproximada: fecha || null, tipoMonto, montoConfirmado: true });
+          setEditando(false);
+        }}
+      >
+        <span className="font-semibold text-slate-800">{g.concepto}</span>
+        <MoneyInput value={g.monto || 0} onChange={setMonto} puntoDecimalAlPegar className="w-32 rounded-md border border-stone-300 px-2 py-1 text-right text-xs" />
+        <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="rounded-md border border-stone-300 px-1.5 py-1 text-xs" />
+        <select value={tipoMonto} onChange={(e) => setTipoMonto(e.target.value)} className="rounded-md border border-stone-300 px-1.5 py-1 text-xs">
+          <option value="fijo">Monto fijo</option>
+          <option value="variable">Monto variable</option>
+        </select>
+        <button className="rounded-md bg-slate-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-slate-700">Guardar</button>
+        <button type="button" onClick={() => setEditando(false)} className={btnGhostSm}>Cancelar</button>
+      </form>
+    );
+  }
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs ${g.fechaPago ? "border-emerald-200 bg-emerald-50/60" : "border-stone-100 bg-stone-50"}`}>
+      <div className="min-w-0">
+        <span className="font-semibold text-slate-800">{g.concepto}</span>
+        <span className={`ml-1.5 rounded-full border px-1.5 py-px text-[9px] font-bold uppercase tracking-wide ${variable ? "border-sky-300 bg-sky-50 text-sky-700" : "border-stone-300 bg-white text-slate-500"}`}>{variable ? "Variable" : "Fijo"}</span>
+        {g.fechaPagoAproximada && <span className="ml-1.5 text-slate-400">· {fmtFecha(g.fechaPagoAproximada)}</span>}
+        <span className="ml-1.5 text-slate-400">· {g.formaPago}{g.medioBancario ? ` (${g.medioBancario})` : ""}</span>
+        {g.fechaPago && <span className="ml-1.5 font-semibold text-emerald-700">· Pagado el {fmtFecha(g.fechaPago)}</span>}
+        {estimado && !g.fechaPago && <span className="ml-1.5 font-semibold text-amber-700">· monto estimado: cargá el real con el lápiz</span>}
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <span className={`font-mono font-semibold ${estimado ? "italic text-amber-700" : "text-slate-700"}`}>{estimado ? "≈ " : ""}{fmtARS(g.monto)}</span>
+        {!g.fechaPago && (
+          <button type="button" onClick={() => setEditando(true)} title="Modificar monto / fecha / tipo" className="rounded-md p-1 text-slate-400 hover:bg-stone-100 hover:text-slate-700"><Pencil size={12} /></button>
+        )}
+        {g.fechaPago ? (
+          <button type="button" onClick={() => onDeshacerPago(g)} className={btnGhostSm}>Deshacer pago</button>
+        ) : (
+          <button
+            type="button"
+            disabled={pagando}
+            onClick={async () => {
+              if (estimado && !window.confirm(`El monto de "${g.concepto}" (${fmtARS(g.monto)}) es una estimación. ¿Pagarlo igual con ese monto? Si no, cargá primero el monto real con el lápiz.`)) return;
+              setPagando(true);
+              await onPagar(g);
+              setPagando(false);
+            }}
+            className="rounded-md bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Pagar
+          </button>
+        )}
+        <BotonEliminar onClick={() => onEliminar(g.id)} />
+      </div>
+    </div>
+  );
+}
+
 // Form de alta de un gasto recurrente dentro de un mes puntual del modal de arriba.
 function FormularioGastoRecurrente({ claveMes, onAgregar }) {
+  const [tipoMonto, setTipoMonto] = useState("fijo");
   const [formaPago, setFormaPago] = useState("Banco");
   const [medioBancario, setMedioBancario] = useState("Débito/Transferencia");
   const claveActual = hoyISO().slice(0, 7);
@@ -3116,14 +3180,21 @@ function FormularioGastoRecurrente({ claveMes, onAgregar }) {
           fechaPagoAproximada: f.get("fechaPagoAproximada") || null,
           formaPago,
           medioBancario: formaPago === "Banco" ? medioBancario : null,
+          tipoMonto,
+          montoConfirmado: true,
         });
         e.target.reset();
+        setTipoMonto("fijo");
         setFormaPago("Banco");
         setMedioBancario("Débito/Transferencia");
       }}
     >
       <input name="concepto" placeholder="Ej: Contador, Alquiler, Seguro..." required className={`${inputCls} sm:col-span-2`} />
-      <MoneyInput name="monto" placeholder="Monto" className={inputCls} />
+      <MoneyInput name="monto" placeholder={tipoMonto === "variable" ? "Monto de este mes" : "Monto"} puntoDecimalAlPegar className={inputCls} />
+      <select value={tipoMonto} onChange={(e) => setTipoMonto(e.target.value)} className={inputCls} title="Fijo: igual todos los meses. Variable: cambia mes a mes.">
+        <option value="fijo">Monto fijo (igual todos los meses)</option>
+        <option value="variable">Monto variable (cambia cada mes)</option>
+      </select>
       <input name="fechaPagoAproximada" type="date" defaultValue={fechaPorDefecto} required className={inputCls} />
       <select value={formaPago} onChange={(e) => setFormaPago(e.target.value)} className={inputCls}>
         {FORMAS_PAGO.filter((fp) => fp !== "Cuenta corriente").map((fp) => <option key={fp}>{fp}</option>)}
@@ -4927,7 +4998,7 @@ export default function ConcretarApp() {
   // Gastos recurrentes (contador, alquiler, seguros, etc.) que hay que pagar pronto —
   // avisa desde 3 días antes hasta 1 día después de la fecha de pago aproximada.
   const gastosRecurrentesProximos = gastosRecurrentes.filter(
-    (g) => g.fechaPagoAproximada && diasHasta(g.fechaPagoAproximada) <= 3 && diasHasta(g.fechaPagoAproximada) >= -1
+    (g) => !g.fechaPago && g.fechaPagoAproximada && diasHasta(g.fechaPagoAproximada) <= 3 && diasHasta(g.fechaPagoAproximada) >= -1
   );
   // eCheqs que libramos con la fecha ya cumplida y que todavía no se confirmaron como
   // debitados: el banco no siempre los debita ese día (el proveedor los deposita cuando
@@ -7421,14 +7492,15 @@ export default function ConcretarApp() {
     ...iibbPagosProximos.map((p) => ({ fecha: p.fechaPago, monto: p.monto, flujo: "egreso" })),
     ...sueldosPorCobrar.map((s) => ({ fecha: s.fecha, monto: s.monto, flujo: "egreso" })),
   ];
-  // Gastos fijos (contador, alquiler, seguros…): los de este mes que todavía no se
-  // pagaron, y para los meses siguientes, como estimación, los mismos del último mes
-  // cargado (se cargan solos al empezar cada mes). Los de meses anteriores sin marcar
-  // como pagados no se cuentan: si se pagaron, ya salieron de las cuentas.
+  // Gastos recurrentes (contador, alquiler, seguros…): los de este mes que todavía no se
+  // pagaron, y para los meses siguientes los mismos del último mes cargado (se cargan
+  // solos al empezar cada mes): uno de monto fijo con su mismo monto, uno variable con el
+  // promedio de los últimos meses. Los de meses anteriores sin marcar como pagados no se
+  // cuentan: si se pagaron, ya salieron de las cuentas.
   const gastosFijosProximos = (() => {
     const items = gastosRecurrentes
       .filter((g) => !g.fechaPago && g.claveMes >= mesActualClave)
-      .map((g) => ({ id: `gr-${g.id}`, concepto: g.concepto, monto: g.monto || 0, fecha: g.fechaPagoAproximada || `${g.claveMes}-01`, estimado: false }));
+      .map((g) => ({ id: `gr-${g.id}`, gasto: g, concepto: g.concepto, monto: g.monto || 0, fecha: g.fechaPagoAproximada || `${g.claveMes}-01`, estimado: (g.tipoMonto || "fijo") === "variable" && g.montoConfirmado === false, variable: (g.tipoMonto || "fijo") === "variable" }));
     const ultimoMesCargado = gastosRecurrentes.map((g) => g.claveMes).filter(Boolean).sort().at(-1);
     if (!ultimoMesCargado) return items;
     const ultimoMesProyectado = movimientosProximos
@@ -7443,7 +7515,8 @@ export default function ConcretarApp() {
       const ultimoDia = new Date(anio, mes, 0).getDate();
       base.forEach((g) => {
         const dia = Math.min(Number((g.fechaPagoAproximada || "").slice(8, 10)) || 1, ultimoDia);
-        items.push({ id: `gr-${g.id}-${clave}`, concepto: g.concepto, monto: g.monto || 0, fecha: `${clave}-${String(dia).padStart(2, "0")}`, estimado: true });
+        const variable = (g.tipoMonto || "fijo") === "variable";
+        items.push({ id: `gr-${g.id}-${clave}`, concepto: g.concepto, monto: variable ? montoEstimadoGastoRecurrente(g.concepto) : g.monto || 0, fecha: `${clave}-${String(dia).padStart(2, "0")}`, estimado: variable, variable });
       });
     }
     return items;
@@ -8037,6 +8110,52 @@ export default function ConcretarApp() {
   // cargado todavía, no se inventa nada: se arranca a mano la primera vez.
   // El ref evita duplicar el mes si el efecto se vuelve a disparar (ej. StrictMode en
   // desarrollo) antes de que el primer alta termine y actualice el estado.
+  // Monto estimado de un gasto recurrente variable: el promedio de los últimos 3 meses
+  // con monto real cargado (si todavía no hay ninguno, el último monto que tenga).
+  function montoEstimadoGastoRecurrente(concepto) {
+    const key = normalizarTexto(concepto || "");
+    const historial = gastosRecurrentes
+      .filter((g) => normalizarTexto(g.concepto || "") === key)
+      .sort((a, b) => b.claveMes.localeCompare(a.claveMes));
+    const confirmados = historial.filter((g) => g.montoConfirmado !== false).slice(0, 3);
+    if (confirmados.length === 0) return historial[0]?.monto || 0;
+    return Math.round((confirmados.reduce((s, g) => s + (g.monto || 0), 0) / confirmados.length) * 100) / 100;
+  }
+  // "Pagar" un gasto recurrente: queda cargado como gasto pagado (sale de la cuenta
+  // elegida, figura en Movimientos y en el PDF del contador) y el recurrente queda
+  // marcado como pagado, así deja de figurar en Próximos pagos.
+  async function pagarGastoRecurrente(g) {
+    const esECheq = g.medioBancario === "eCheq";
+    const compra = await addRecord("compras_facturas", {
+      fecha: hoyISO(),
+      obraId: null,
+      ordenCompraId: null,
+      proveedor: g.concepto,
+      categoria: "Varios",
+      descripcion: `${g.concepto} — ${nombreMesClave(g.claveMes)}`,
+      monto: g.monto || 0,
+      comprobante: "",
+      tipoFactura: "Sin factura",
+      formaPago: g.formaPago,
+      medioBancario: g.formaPago === "Banco" ? g.medioBancario : null,
+      fechaPagoEcheq: esECheq ? (g.fechaPagoAproximada || hoyISO()) : null,
+      fechaVencimientoCc: null,
+      cuenta: g.formaPago,
+      estado: esECheq ? "Pendiente" : "Pagada",
+      archivo: null,
+      nombreArchivo: null,
+      tipoArchivo: null,
+    }, setComprasFacturas);
+    if (!compra) return;
+    await updateRecord("gastos_recurrentes", g.id, { fechaPago: hoyISO(), compraFacturaId: compra.id, montoConfirmado: true }, setGastosRecurrentes);
+  }
+  async function deshacerPagoGastoRecurrente(g) {
+    if (!window.confirm(`¿Deshacer el pago de "${g.concepto}" (${fmtARS(g.monto)})? El gasto que se cargó al pagarlo va a la Papelera y vuelve a figurar como pendiente.`)) return;
+    if (g.compraFacturaId) {
+      await updateRecord("compras_facturas", g.compraFacturaId, { eliminadoEn: new Date().toISOString() }, setComprasFacturas);
+    }
+    await updateRecord("gastos_recurrentes", g.id, { fechaPago: null, compraFacturaId: null }, setGastosRecurrentes);
+  }
   const materializandoGastosRecurrentesRef = useRef(false);
   useEffect(() => {
     if (dbLoading || materializandoGastosRecurrentesRef.current) return;
@@ -8049,14 +8168,21 @@ export default function ConcretarApp() {
     Promise.all(
       gastosRecurrentes
         .filter((g) => g.claveMes === claveMasReciente)
-        .map((g) => addRecord("gastos_recurrentes", {
-          claveMes: claveActual,
-          concepto: g.concepto,
-          monto: g.monto,
-          fechaPagoAproximada: g.fechaPagoAproximada ? trasladarFechaAMes(g.fechaPagoAproximada, claveActual) : null,
-          formaPago: g.formaPago,
-          medioBancario: g.medioBancario,
-        }, setGastosRecurrentes))
+        .map((g) => {
+          // Uno variable arranca con el monto estimado (promedio de los últimos meses)
+          // y queda "a confirmar" hasta que se cargue el real.
+          const variable = (g.tipoMonto || "fijo") === "variable";
+          return addRecord("gastos_recurrentes", {
+            claveMes: claveActual,
+            concepto: g.concepto,
+            monto: variable ? montoEstimadoGastoRecurrente(g.concepto) : g.monto,
+            fechaPagoAproximada: g.fechaPagoAproximada ? trasladarFechaAMes(g.fechaPagoAproximada, claveActual) : null,
+            formaPago: g.formaPago,
+            medioBancario: g.medioBancario,
+            tipoMonto: g.tipoMonto || "fijo",
+            montoConfirmado: !variable,
+          }, setGastosRecurrentes);
+        })
     ).finally(() => { materializandoGastosRecurrentesRef.current = false; });
   }, [dbLoading, gastosRecurrentes]);
 
@@ -9137,8 +9263,11 @@ export default function ConcretarApp() {
                       <ul className="space-y-0.5 text-xs">
                         {gastosRecurrentesProximos.slice(0, 5).map((g) => (
                           <li key={g.id} className="flex items-center justify-between gap-2">
-                            <span className="truncate">{g.concepto} — {fmtARS(g.monto)}</span>
-                            <span className="shrink-0 font-semibold">{fmtFecha(g.fechaPagoAproximada)}</span>
+                            <span className="truncate">{g.concepto} — {(g.tipoMonto || "fijo") === "variable" && g.montoConfirmado === false ? "≈ " : ""}{fmtARS(g.monto)}</span>
+                            <span className="flex shrink-0 items-center gap-2">
+                              <span className="font-semibold">{fmtFecha(g.fechaPagoAproximada)}</span>
+                              <button onClick={() => setShowGastosRecurrentesModal(true)} className="rounded-md border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-white">Pagar / ver</button>
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -14212,19 +14341,23 @@ export default function ConcretarApp() {
                       </div>
 
                       <div>
-                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Gastos fijos (contador, alquiler, seguros…)</div>
+                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Gastos recurrentes (contador, alquiler, seguros…)</div>
                         {gastosFijosDelMes.length === 0 ? (
-                          <div className="text-xs text-slate-400">No hay gastos fijos por pagar este mes.</div>
+                          <div className="text-xs text-slate-400">No hay gastos recurrentes por pagar este mes.</div>
                         ) : (
                           <div className="space-y-1.5">
                             {gastosFijosDelMes.map((g) => (
                               <div key={g.id} className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-sm ${g.estimado ? "border-dashed border-stone-300" : "border-stone-200"}`}>
                                 <span className="flex items-center gap-1.5 font-medium text-slate-800">
                                   {g.concepto}
-                                  {g.estimado && <span className="rounded-full border border-stone-300 bg-stone-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">Estimado</span>}
+                                  <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${g.variable ? "border-sky-300 bg-sky-50 text-sky-700" : "border-stone-300 bg-white text-slate-500"}`}>{g.variable ? "Variable" : "Fijo"}</span>
+                                  {g.estimado && <span className="rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Estimado</span>}
                                 </span>
                                 <span className="text-xs text-slate-500">{fmtFecha(g.fecha)}</span>
-                                <span className="font-mono font-semibold text-rose-600">{fmtARS(g.monto)}</span>
+                                <span className="flex items-center gap-2">
+                                  <span className="font-mono font-semibold text-rose-600">{g.estimado ? "≈ " : ""}{fmtARS(g.monto)}</span>
+                                  {g.gasto && <button onClick={() => pagarGastoRecurrente(g.gasto)} className={btnGhost}>Pagar</button>}
+                                </span>
                               </div>
                             ))}
                           </div>
@@ -15734,7 +15867,10 @@ export default function ConcretarApp() {
         <ModalGastosRecurrentes
           gastosRecurrentes={gastosRecurrentes}
           onAgregar={(claveMes, data) => addRecord("gastos_recurrentes", { claveMes, ...data }, setGastosRecurrentes)}
+          onEditar={(g, patch) => updateRecord("gastos_recurrentes", g.id, patch, setGastosRecurrentes)}
           onEliminar={(id) => deleteRecord("gastos_recurrentes", id, setGastosRecurrentes)}
+          onPagar={pagarGastoRecurrente}
+          onDeshacerPago={deshacerPagoGastoRecurrente}
           onClose={() => setShowGastosRecurrentesModal(false)}
         />
       )}
