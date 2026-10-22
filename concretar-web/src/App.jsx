@@ -2484,6 +2484,13 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
   );
 }
 
+// Obras que se ofrecen para cargarles algo nuevo (gastos, ingresos, asistencia,
+// herramientas, tanteros...): ni las de la Papelera ni las Finalizadas. Si el registro
+// que se está editando ya era de una obra finalizada, esa se sigue mostrando para no
+// perder el dato.
+function obrasSeleccionables(obras, idActual = null) {
+  return obras.filter((o) => (o.estado !== "Papelera" && o.estado !== "Finalizada") || (idActual != null && idActual !== "" && String(o.id) === String(idActual)));
+}
 // Modal para editar un gasto/factura o un cobro de socio ya cargado — accesible
 // desde su propia tabla y desde el ledger de Movimientos en Cuentas. Sirve sobre
 // todo para agregar la factura (tipo A/B/C, o el archivo) cuando al cargarlo
@@ -2646,7 +2653,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               <Field label="Obra">
                 <select value={form.obraId ?? ""} onChange={(e) => setForm((f) => ({ ...f, obraId: e.target.value ? Number(e.target.value) : null }))} className={inputCls}>
                   <option value="">General (sin obra específica)</option>
-                  {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                  {obrasSeleccionables(obras, form.obraId).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                 </select>
               </Field>
               <Field label="Proveedor - Nombre de fantasía">
@@ -2849,7 +2856,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               <Field label="Obra">
                 <select value={form.obraId ?? ""} onChange={(e) => setForm((f) => ({ ...f, obraId: e.target.value ? Number(e.target.value) : null }))} className={inputCls}>
                   <option value="">General (sin obra específica)</option>
-                  {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                  {obrasSeleccionables(obras, form.obraId).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                 </select>
               </Field>
               <Field label="Concepto">
@@ -5514,7 +5521,7 @@ export default function ConcretarApp() {
             <span className="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: colorDeObra(obras.find((o) => String(o.id) === facturaObraId)) }} />
             <select name="obraId" value={facturaObraId} onChange={(e) => setFacturaObraId(e.target.value)} className={inputCls}>
               <option value="">General (sin obra específica)</option>
-              {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+              {obrasSeleccionables(obras, facturaObraId).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
             </select>
           </div>
         </Field>
@@ -9546,7 +9553,7 @@ export default function ConcretarApp() {
 
             {vistaObras === "planificacion" ? (
               <PlanificacionObras
-                obras={obras.filter((o) => o.estado !== "Papelera")}
+                obras={obras.filter((o) => o.estado !== "Papelera" && o.estado !== "Finalizada")}
                 etapas={etapasObra}
                 agregandoEtapaObraId={agregandoEtapaObraId}
                 setAgregandoEtapaObraId={setAgregandoEtapaObraId}
@@ -10831,7 +10838,7 @@ export default function ConcretarApp() {
                 </Field>
                 <Field label="Centro de costo / Obra">
                   <select value={asistenciaForm.obraId} onChange={(e) => asf("obraId")(e.target.value)} className={inputCls}>
-                    {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                    {obrasSeleccionables(obras, asistenciaForm.obraId).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                   </select>
                 </Field>
                 <Field label="Hs trabajadas">
@@ -10888,7 +10895,7 @@ export default function ConcretarApp() {
                     </Field>
                     <Field label="Centro de costo / Obra">
                       <select value={editAsistenciaDraft.obraId} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, obraId: e.target.value }))} className={inputCls}>
-                        {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                        {obrasSeleccionables(obras, editAsistenciaDraft.obraId).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                       </select>
                     </Field>
                     <Field label="Hs trabajadas">
@@ -11191,7 +11198,7 @@ export default function ConcretarApp() {
                       </Field>
                       <Field label="Obra">
                         <select value={tanteroForm.obraId} onChange={(e) => setTanteroForm((f) => ({ ...f, obraId: e.target.value }))} className={inputCls}>
-                          {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                          {obrasSeleccionables(obras, tanteroForm.obraId).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                         </select>
                       </Field>
                       <Field label="Precio cerrado (ARS)">
@@ -12170,7 +12177,7 @@ export default function ConcretarApp() {
                                 <>
                                   <select value={obraParaAsignar} onChange={(e) => setObraParaAsignar(e.target.value)} className={inputCls}>
                                     <option value="">-- Elegir obra --</option>
-                                    {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                                    {obrasSeleccionables(obras, obraParaAsignar).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                                   </select>
                                   <button onClick={() => confirmarAsignarObraCaja(combo)} className={btnGhost}>Confirmar</button>
                                   <button onClick={() => { setAsignandoObraCajaId(null); setObraParaAsignar(""); }} className="text-xs text-slate-400 hover:underline">Cancelar</button>
@@ -12260,7 +12267,7 @@ export default function ConcretarApp() {
                             <option value="">-- Elegir --</option>
                             <option>Oficina</option>
                             <optgroup label="Obras">
-                              {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id}>{o.nombre}</option>)}
+                              {obrasSeleccionables(obras).map((o) => <option key={o.id}>{o.nombre}</option>)}
                             </optgroup>
                             {talleres.length > 0 && (
                               <optgroup label="Talleres de reparación">
@@ -12408,7 +12415,7 @@ export default function ConcretarApp() {
                         {["epps", "consumibles"].includes(vistaMateriales) && (
                           <option value="general">Compra general (sin obra — va a depósito)</option>
                         )}
-                        {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                        {obrasSeleccionables(obras, obraPresupuestoId).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                       </select>
                     </Field>
                   </div>
@@ -13353,7 +13360,7 @@ export default function ConcretarApp() {
                 >
                   <Field label="Fecha"><input name="fecha" type="date" required className={inputCls} /></Field>
                   <Field label="Obra">
-                    <select name="obraId" className={inputCls}>{obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
+                    <select name="obraId" className={inputCls}>{obrasSeleccionables(obras).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
                   </Field>
                   <Field label="Proveedor">
                     <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} />
@@ -13750,7 +13757,7 @@ export default function ConcretarApp() {
                   <Field label="Obra">
                     <select name="obraId" className={inputCls}>
                       <option value="">General (sin obra específica)</option>
-                      {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                      {obrasSeleccionables(obras).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                     </select>
                   </Field>
                   <Field label="Concepto"><input name="concepto" required placeholder="Ej: certificado de avance 3" className={inputCls} /></Field>
@@ -15768,7 +15775,7 @@ export default function ConcretarApp() {
 
             <Panel title="Ficha horaria por obra">
               <div className="space-y-3">
-                {obras.filter((o) => o.estado !== "Papelera").map((o) => (
+                {obras.filter((o) => o.estado !== "Papelera" && o.estado !== "Finalizada").map((o) => (
                   <div key={o.id} className="rounded-lg border border-stone-200 p-4">
                     {editandoHorarioObraId === o.id ? (
                       <form className="space-y-3" onSubmit={guardarHorarioObra}>
