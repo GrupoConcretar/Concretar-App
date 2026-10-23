@@ -824,7 +824,7 @@ function EditorPercepciones({ value, onChange }) {
           <select value={p.tipo} onChange={(e) => cambiar(idx, { tipo: e.target.value })} className={`${inputCls} w-56 text-xs`}>
             {TIPOS_PERCEPCION.map((t) => <option key={t} value={t}>Percepción de {t}</option>)}
           </select>
-          <MoneyInput key={`${idx}-${p.monto}`} value={p.monto} onChange={(v) => cambiar(idx, { monto: v })} puntoDecimalAlPegar className={`${inputCls} w-40 text-xs`} />
+          <MoneyInput value={p.monto} onChange={(v) => cambiar(idx, { monto: v })} puntoDecimalAlPegar className={`${inputCls} w-40 text-xs`} />
           <button type="button" onClick={() => onChange(lista.filter((_, i) => i !== idx))} title="Quitar percepción" className="text-slate-400 hover:text-rose-600"><X size={14} /></button>
         </div>
       ))}
@@ -3113,7 +3113,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                     <button type="button" onClick={usarDatosDeLaFactura} className={btnGhostSm}>Usar los datos de la factura</button>
                   </div>
                 )}
-                <EditorPercepciones value={percepcionesDe(form)} onChange={(percepciones) => setForm((f) => ({ ...f, percepciones }))} />
+                <EditorPercepciones key={`percep-${versionLectura}`} value={percepcionesDe(form)} onChange={(percepciones) => setForm((f) => ({ ...f, percepciones }))} />
               </div>
             );
           })()}
@@ -5536,8 +5536,25 @@ export default function ConcretarApp() {
   const [formularioCompraKey, setFormularioCompraKey] = useState(0);
   const [ultimaCompraCargada, setUltimaCompraCargada] = useState(null);
   const [cantidadComprasCargadasTanda, setCantidadComprasCargadasTanda] = useState(0);
+  // Evita guardar dos veces la misma compra si se toca "Guardar" dos veces seguidas.
+  const guardandoCompraRef = useRef(false);
+  const [guardandoCompra, setGuardandoCompra] = useState(false);
+  // Desde la ficha del proveedor, al guardar el formulario se oculta (para no cargar la
+  // misma compra dos veces) pero conserva los datos para "Cargar otra compra".
+  const [compraProveedorGuardada, setCompraProveedorGuardada] = useState(false);
   async function guardarFormularioCompra(e, seguirAbierto, onGuardado) {
     e.preventDefault();
+    if (guardandoCompraRef.current) return;
+    guardandoCompraRef.current = true;
+    setGuardandoCompra(true);
+    try {
+      await guardarFormularioCompraSinRepetir(e, seguirAbierto, onGuardado);
+    } finally {
+      guardandoCompraRef.current = false;
+      setGuardandoCompra(false);
+    }
+  }
+  async function guardarFormularioCompraSinRepetir(e, seguirAbierto, onGuardado) {
     const f = new FormData(e.target);
     if (!f.get("proveedor")) { alert("Elegí un proveedor o escribí uno nuevo."); return; }
     const formaPago = f.get("formaPago");
@@ -5601,6 +5618,7 @@ export default function ConcretarApp() {
       // cada factura.
       setUltimaCompraCargada(nuevaCompra);
       setCantidadComprasCargadasTanda((n) => n + 1);
+      setCompraProveedorGuardada(true);
       // Si ese proveedor tiene entregas a cuenta, lo que sobraba de ellas
       // puede alcanzar para saldar esta factura nueva.
       if (entregasProveedores.some((x) => nombreProveedorKey(x.proveedor) === nombreProveedorKey(nuevaCompra.proveedor))
@@ -5753,9 +5771,9 @@ export default function ConcretarApp() {
           <div className="mt-1 text-[11px] text-slate-400">Si subís la factura en PDF, el N°, la fecha, el total, el tipo y las percepciones se completan solos. De una foto se lee el QR de ARCA (sin percepciones).</div>
         </div>
         <div className="md:col-span-3">
-          <EditorPercepciones value={facturaPercepciones} onChange={setFacturaPercepciones} />
+          <EditorPercepciones key={`percep-${lecturaFacturaCompra?.key || 0}`} value={facturaPercepciones} onChange={setFacturaPercepciones} />
         </div>
-        <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
+        <div className="flex items-end"><button disabled={guardandoCompra} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">{guardandoCompra ? "Guardando…" : "Guardar"}</button></div>
       </form>
     );
   }
@@ -8223,6 +8241,7 @@ export default function ConcretarApp() {
     setFacturaTipoArchivo(null);
     setUltimaCompraCargada(null);
     setCantidadComprasCargadasTanda(0);
+    setCompraProveedorGuardada(false);
     setFormularioCompraKey((k) => k + 1);
     setAgregandoEntregaId(null);
     setAgregandoNotaCreditoId(null);
@@ -15344,16 +15363,27 @@ export default function ConcretarApp() {
                         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
                           <div className="mb-2 flex items-start justify-between gap-2">
                             <div className="text-xs text-slate-600">
-                              <span className="font-semibold text-slate-800">Cargar compra</span> — queda en Gastos y Facturas igual que si la cargaras desde ahí. Al guardar, el formulario queda abierto con los mismos datos: cambiá solo lo distinto (monto, N° de factura, fecha…) y guardá la siguiente.
+                              <span className="font-semibold text-slate-800">Cargar compra</span> — queda en Gastos y Facturas igual que si la cargaras desde ahí. Al guardar se cierra; con "Cargar otra compra" vuelve a abrirse con los mismos datos para cambiar solo lo distinto.
                             </div>
                             <button onClick={() => setCargandoCompraProveedorId(null)} title="Cerrar"><X size={16} /></button>
                           </div>
                           {ultimaCompraCargada && nombreProveedorKey(ultimaCompraCargada.proveedor) === nombreProveedorKey(nombreComercial(p)) && (
-                            <div className="mb-2 flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
-                              <CheckCircle2 size={13} /> {cantidadComprasCargadasTanda > 1 ? `${cantidadComprasCargadasTanda} cargadas — última:` : "Cargada:"} {fmtFecha(ultimaCompraCargada.fecha)} · {ultimaCompraCargada.comprobante || "sin N° de comprobante"} · <span className="font-mono font-semibold">{fmtARS(ultimaCompraCargada.monto)}</span>
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-emerald-800">
+                              <span className="flex items-center gap-1.5">
+                                <CheckCircle2 size={13} /> {cantidadComprasCargadasTanda > 1 ? `${cantidadComprasCargadasTanda} cargadas — última:` : "Compra guardada:"} {fmtFecha(ultimaCompraCargada.fecha)} · {ultimaCompraCargada.comprobante || "sin N° de comprobante"} · <span className="font-mono font-semibold">{fmtARS(ultimaCompraCargada.monto)}</span>
+                              </span>
+                              {compraProveedorGuardada && (
+                                <span className="flex items-center gap-2">
+                                  <button type="button" onClick={() => setCompraProveedorGuardada(false)} className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Cargar otra compra (mismos datos)</button>
+                                  <button type="button" onClick={() => setCargandoCompraProveedorId(null)} className={btnGhost}>Cerrar</button>
+                                </span>
+                              )}
                             </div>
                           )}
-                          {renderFormularioCompra({ proveedorFijo: nombreComercial(p) })}
+                          {/* Oculto (no desmontado) después de guardar: así "Cargar otra compra" lo vuelve a mostrar con los mismos datos. */}
+                          <div style={compraProveedorGuardada ? { display: "none" } : undefined}>
+                            {renderFormularioCompra({ proveedorFijo: nombreComercial(p) })}
+                          </div>
                         </div>
                       )}
                       {agregandoEntregaId === p.id && (
