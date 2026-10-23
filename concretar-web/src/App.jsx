@@ -3,13 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText
 } from "lucide-react";
 import { leerFactura } from "./lectorFacturas.js";
 
@@ -829,6 +829,111 @@ function AvisoLecturaFactura({ lectura }) {
       <span className="font-semibold">Leí de la factura:</span> {partes.join(" · ")}. Revisá que esté bien.
       {r.origen === "foto+qr" && <span className="block text-emerald-800">Salió del QR de la foto: las percepciones no figuran ahí, cargalas a mano si la factura tiene.</span>}
       {r.esNotaCredito && <span className="block font-semibold text-amber-800">Es una nota de crédito: cargala desde el proveedor con "Nota de crédito", no como compra.</span>}
+    </div>
+  );
+}
+
+// Documentos de un cobro de obra, separados en Factura / Retenciones / Orden de pago.
+// De cada tipo se pueden subir varios archivos (PDF o fotos); en el PDF del contador
+// van en secciones separadas. "legados" son los archivos que ya estaban cargados de
+// antes en la factura o el ingreso (factura y aviso de pago), que se muestran igual.
+const TIPOS_DOC_COBRO = [
+  { tipo: "factura", label: "Factura", icono: FileText },
+  { tipo: "retencion", label: "Retenciones", icono: Percent },
+  { tipo: "orden_pago", label: "Orden de pago", icono: Banknote },
+];
+function DocumentosCobro({ documentos = [], legados = [], retenciones = [], montoFactura = 0, onGuardarRetenciones, onSubir, onEliminar }) {
+  const [abierto, setAbierto] = useState(null);
+  const [subiendo, setSubiendo] = useState(false);
+  const [retencionesDraft, setRetencionesDraft] = useState(retenciones);
+  const [guardandoRet, setGuardandoRet] = useState(false);
+  const inputArchivosRef = useRef(null);
+  const inputFotoRef = useRef(null);
+  const docsDe = (tipo) => [...legados.filter((l) => l.tipo === tipo), ...documentos.filter((d) => d.tipo === tipo)];
+  const retencionesCambiaron = JSON.stringify(retencionesDraft.filter((r) => Number(r.monto) > 0)) !== JSON.stringify((retenciones || []).filter((r) => Number(r.monto) > 0));
+  async function manejarArchivos(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length || !abierto) return;
+    setSubiendo(true);
+    for (const file of files) {
+      try {
+        const dataUrl = await readFileAsDataURL(file);
+        await onSubir(abierto, dataUrl, file.name, file.type);
+      } catch {
+        alert(`No se pudo leer "${file.name}".`);
+      }
+    }
+    setSubiendo(false);
+  }
+  const tipoAbierto = TIPOS_DOC_COBRO.find((t) => t.tipo === abierto);
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {TIPOS_DOC_COBRO.map((t) => {
+          const n = docsDe(t.tipo).length;
+          const Icono = t.icono;
+          const activo = abierto === t.tipo;
+          return (
+            <button
+              key={t.tipo}
+              type="button"
+              onClick={() => setAbierto((a) => (a === t.tipo ? null : t.tipo))}
+              className={`flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold ${activo ? "border-slate-900 bg-slate-900 text-white" : n > 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100" : "border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+            >
+              <Icono size={12} /> {t.label}
+              {n > 0 && <span className={`rounded-full px-1.5 text-[10px] ${activo ? "bg-white text-slate-900" : "bg-emerald-600 text-white"}`}>{n}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {tipoAbierto && (
+        <div className="mt-2 space-y-2 rounded-md border border-stone-200 bg-stone-50/60 p-2.5">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            {tipoAbierto.tipo === "factura" ? "Factura emitida" : tipoAbierto.tipo === "retencion" ? "Certificados de retención" : "Orden de pago del cliente"}
+          </div>
+          {docsDe(abierto).length === 0 ? (
+            <div className="text-xs text-slate-400">Todavía no hay archivos cargados.</div>
+          ) : (
+            <div className="space-y-1">
+              {docsDe(abierto).map((d) => (
+                <div key={d.id} className="flex items-center justify-between gap-2 rounded border border-stone-200 bg-white px-2 py-1 text-xs">
+                  <a href={d.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(d.archivo); }} className="flex min-w-0 items-center gap-1 text-sky-700 hover:underline">
+                    <FileDown size={12} className="shrink-0" /> <span className="truncate">{d.nombreArchivo || "Archivo"}</span>
+                  </a>
+                  <button type="button" onClick={() => onEliminar(d)} title="Quitar este archivo" className="text-slate-400 hover:text-rose-600"><X size={13} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={subiendo} onClick={() => inputArchivosRef.current?.click()} className={btnGhost}>
+              <span className="flex items-center gap-1"><Upload size={13} /> {subiendo ? "Subiendo…" : "Subir archivos"}</span>
+            </button>
+            <button type="button" disabled={subiendo} onClick={() => inputFotoRef.current?.click()} className={btnGhost}>
+              <span className="flex items-center gap-1"><Camera size={13} /> Tomar foto</span>
+            </button>
+            <span className="self-center text-[11px] text-slate-400">Podés elegir varios archivos a la vez.</span>
+          </div>
+          <input ref={inputArchivosRef} type="file" multiple accept="application/pdf,image/*" onChange={manejarArchivos} className="hidden" />
+          <input ref={inputFotoRef} type="file" accept="image/*" capture="environment" onChange={manejarArchivos} className="hidden" />
+          {abierto === "retencion" && onGuardarRetenciones && (
+            <div className="space-y-1.5">
+              <EditorRetenciones value={retencionesDraft} onChange={setRetencionesDraft} montoFactura={montoFactura} />
+              {retencionesCambiaron && (
+                <button
+                  type="button"
+                  disabled={guardandoRet}
+                  onClick={async () => { setGuardandoRet(true); await onGuardarRetenciones(retencionesDraft.filter((r) => Number(r.monto) > 0)); setGuardandoRet(false); }}
+                  className={`${btnPrimary} disabled:opacity-50`}
+                >
+                  {guardandoRet ? "Guardando…" : "Guardar retenciones"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -4338,6 +4443,9 @@ export default function ConcretarApp() {
   // diferencia queda como "Corrección de deuda" (positiva: le debemos más; negativa:
   // le debemos menos). Suma o resta del saldo sin tocar compras, entregas ni notas.
   const [correccionesDeuda, setCorreccionesDeuda] = useState([]);
+  // Archivos de los cobros de obras (factura, certificados de retención, orden de pago),
+  // atados a una factura de venta futura y, cuando se cobra, al ingreso.
+  const [documentosCobros, setDocumentosCobros] = useState([]);
   const [facturasVarias, setFacturasVarias] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VARIAS);
   const [sueldosPlanificados, setSueldosPlanificados] = useState(isSupabaseConfigured ? [] : DEMO_SUELDOS_PLANIFICADOS);
   const [facturasVentaProyectadas, setFacturasVentaProyectadas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VENTA_PROYECTADAS);
@@ -4401,7 +4509,7 @@ export default function ConcretarApp() {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp, dcob] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -4414,7 +4522,7 @@ export default function ConcretarApp() {
           sbSelect("prestamos_pagos"), sbSelect("etapas_obra"), sbSelect("alertas_descartadas"), sbSelect("extras_pago"),
           sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"), sbSelect("notas_credito"), sbSelect("facturas_varias"),
           sbSelect("sueldos_planificados"), sbSelect("facturas_venta_proyectadas"), sbSelect("gastos_recurrentes"),
-          sbSelect("entregas_proveedores"), sbSelect("correcciones_deuda_proveedor"),
+          sbSelect("entregas_proveedores"), sbSelect("correcciones_deuda_proveedor"), sbSelect("documentos_cobros"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -4462,6 +4570,7 @@ export default function ConcretarApp() {
         setGastosRecurrentes(gr);
         setEntregasProveedores(entp);
         setCorreccionesDeuda(cdp);
+        setDocumentosCobros(dcob);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -5657,7 +5766,15 @@ export default function ConcretarApp() {
     const ingresosDelMes = ingresos
       .filter((i) => i.estado !== "Pendiente" && !obraIdsPapelera.has(i.obraId) && mesCobroIngreso(i) === mes)
       .sort((a, b) => fechaLocal(a.fechaCobro || a.fecha) - fechaLocal(b.fechaCobro || b.fecha));
-    const avisosDelMes = ingresosDelMes.filter((i) => i.avisoPagoArchivo);
+    // Documentos de esos cobros, por tipo: factura, orden de pago (incluye el aviso de
+    // pago cargado al marcar cobrado) y certificados de retención. Cada uno va en su
+    // propia sección del PDF.
+    const etiquetaCobro = (i) => `${obras.find((o) => o.id === i.obraId)?.nombre || "General"} — ${i.concepto || "Cobro"} (${fmtARS(i.monto)})`;
+    const documentosDelMes = (tipo) => ingresosDelMes.flatMap((i) =>
+      [...legadosDeIngreso(i), ...documentosDeIngreso(i.id)].filter((d) => d.tipo === tipo).map((d) => ({ ...d, etiqueta: etiquetaCobro(i) })));
+    const facturasVentaDelMes = documentosDelMes("factura");
+    const ordenesPagoDelMes = documentosDelMes("orden_pago");
+    const retencionesDocsDelMes = documentosDelMes("retencion");
 
     if (gastosDelMes.length === 0 && cobrosDelMes.length === 0 && facturasVariasDelMes.length === 0 && ingresosDelMes.length === 0) {
       alert("No hay gastos, cobros ni facturas sueltas cargadas en ese mes.");
@@ -5723,7 +5840,7 @@ export default function ConcretarApp() {
       doc.text("Cobros de obras", 14, y);
       autoTable(doc, {
         startY: y + 4,
-        head: [["Fecha de cobro", "Obra", "Concepto", "Cuenta", "Factura", "Monto", "Retenciones", "Aviso de pago"]],
+        head: [["Fecha de cobro", "Obra", "Concepto", "Cuenta", "Factura", "Monto", "Retenciones", "Documentos"]],
         body: ingresosDelMes.map((i) => {
           const obra = obras.find((o) => o.id === i.obraId);
           return [
@@ -5731,7 +5848,12 @@ export default function ConcretarApp() {
             (i.cuenta || "—") + (i.medioBancario ? ` (${i.medioBancario})` : ""),
             i.tipoFactura || "—", fmtARS(i.monto),
             totalRetenciones(i) > 0 ? retencionesDe(i).map((r) => `${r.tipo} ${fmtARS(r.monto)}`).join(" · ") : "—",
-            i.avisoPagoArchivo ? "Adjunto" : "No",
+            (() => {
+              const docs = [...legadosDeIngreso(i), ...documentosDeIngreso(i.id)];
+              const n = (t) => docs.filter((d) => d.tipo === t).length;
+              const partes = [n("factura") && `Factura ${n("factura")}`, n("orden_pago") && `O. de pago ${n("orden_pago")}`, n("retencion") && `Retención ${n("retencion")}`].filter(Boolean);
+              return partes.length ? partes.join(" · ") : "—";
+            })(),
           ];
         }),
         foot: [["", "", "", "", "TOTAL", fmtARS(totalIngresosMes), "", ""]],
@@ -5753,27 +5875,42 @@ export default function ConcretarApp() {
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
     doc.text("Generado desde Concretar App — Gastos y Facturas.", 14, y + 18);
-    const adjuntos = [
-      avisosDelMes.length > 0 ? `${avisosDelMes.length} aviso(s) de pago de clientes` : null,
-      facturasVariasDelMes.length > 0 ? `${facturasVariasDelMes.length} factura(s) suelta(s) de proveedores` : null,
-    ].filter(Boolean);
-    if (adjuntos.length > 0) {
-      doc.text(`Se adjuntan a continuación ${adjuntos.join(" y ")}.`, 14, y + 24);
+    // Los documentos se adjuntan al final en secciones separadas (cada una con una hoja
+    // de título que lista lo que contiene), copiando sus páginas si son PDF o como una
+    // página con la imagen si son foto.
+    const secciones = [
+      { titulo: "Facturas de venta", items: facturasVentaDelMes },
+      { titulo: "Órdenes de pago de clientes", items: ordenesPagoDelMes },
+      { titulo: "Certificados de retención", items: retencionesDocsDelMes },
+      { titulo: "Facturas de proveedores (Facturas varias)", items: facturasVariasDelMes.map((f) => ({ ...f, etiqueta: f.nombreArchivo || "Factura" })) },
+    ].filter((sec) => sec.items.length > 0);
+    if (secciones.length > 0) {
+      doc.text(`Se adjuntan a continuación, en secciones separadas: ${secciones.map((sec) => `${sec.titulo} (${sec.items.length})`).join(", ")}.`, 14, y + 24, { maxWidth: 180 });
     }
-
-    // Los avisos de pago y las facturas sueltas del mes se adjuntan como páginas
-    // extra al final (copiando sus páginas si son PDF, o como una página con la
-    // imagen si son foto) en vez de solo mencionarlos en el resumen.
-    const archivosAdjuntos = [
-      ...avisosDelMes.map((i) => ({ archivo: i.avisoPagoArchivo, tipoArchivo: i.avisoPagoTipoArchivo, nombreArchivo: i.avisoPagoNombreArchivo })),
-      ...facturasVariasDelMes,
-    ];
-    if (archivosAdjuntos.length === 0) {
+    if (secciones.length === 0) {
       doc.save(`Comprobantes_${mes}.pdf`);
       return;
     }
     const merged = await PDFDocument.load(doc.output("arraybuffer"));
+    const fuente = await merged.embedFont(StandardFonts.Helvetica);
+    const fuenteNegrita = await merged.embedFont(StandardFonts.HelveticaBold);
+    // Helvetica estándar no tiene todos los caracteres: se reemplazan los que no puede escribir.
+    const textoSeguro = (t) => String(t || "").replace(/[^\x20-\x7E\u00A0-\u00FF]/g, "-");
+    const agregarSeparador = (titulo, items) => {
+      const pagina = merged.addPage([595.28, 841.89]);
+      pagina.drawText(textoSeguro(titulo), { x: 50, y: 760, size: 22, font: fuenteNegrita, color: rgb(0.01, 0.11, 0.2) });
+      pagina.drawText(textoSeguro(`${nombreMesDeClave(mes)} - ${items.length} archivo(s)`), { x: 50, y: 735, size: 11, font: fuente, color: rgb(0.4, 0.4, 0.4) });
+      items.slice(0, 40).forEach((it, idx) => {
+        pagina.drawText(textoSeguro(`${idx + 1}. ${it.etiqueta || ""}${it.nombreArchivo ? ` - ${it.nombreArchivo}` : ""}`).slice(0, 110), { x: 50, y: 700 - idx * 15, size: 9, font: fuente, color: rgb(0.15, 0.15, 0.15) });
+      });
+    };
+    const archivosAdjuntos = [];
+    for (const sec of secciones) {
+      archivosAdjuntos.push({ separador: sec });
+      sec.items.forEach((it) => archivosAdjuntos.push(it));
+    }
     for (const f of archivosAdjuntos) {
+      if (f.separador) { agregarSeparador(f.separador.titulo, f.separador.items); continue; }
       if (!f.archivo) continue;
       try {
         const bytes = await (await fetch(f.archivo)).arrayBuffer();
@@ -5942,8 +6079,52 @@ export default function ConcretarApp() {
       </form>
     );
   }
-  function eliminarFacturaVentaProyectada(id) {
-    deleteRecord("facturas_venta_proyectadas", id, setFacturasVentaProyectadas);
+  // ---------- Documentos de cobros (factura / retenciones / orden de pago) ----------
+  function subirDocumentoCobro(destino, tipo, archivo, nombreArchivo, tipoArchivo) {
+    return addRecord("documentos_cobros", {
+      facturaVentaId: destino.facturaVentaId ?? null,
+      ingresoId: destino.ingresoId ?? null,
+      tipo, archivo, nombreArchivo, tipoArchivo,
+    }, setDocumentosCobros, { sinImpuestoBancario: true });
+  }
+  // "quitarLegado": para los archivos que ya estaban en la factura o el ingreso de antes.
+  async function eliminarDocumentoCobro(doc, quitarLegado) {
+    if (!window.confirm(`¿Quitar "${doc.nombreArchivo || "este archivo"}"?`)) return;
+    if (doc.legado) { quitarLegado(doc); return; }
+    if (isSupabaseConfigured) {
+      try { await sbDelete("documentos_cobros", doc.id); } catch (err) { alert("No se pudo quitar: " + err.message); return; }
+    }
+    setDocumentosCobros((prev) => prev.filter((x) => x.id !== doc.id));
+  }
+  const [documentosIngresoAbiertoId, setDocumentosIngresoAbiertoId] = useState(null);
+  const documentosDeFacturaVenta = (fId) => documentosCobros.filter((d) => d.facturaVentaId === fId);
+  const documentosDeIngreso = (iId) => documentosCobros.filter((d) => d.ingresoId === iId);
+  const legadosDeFacturaVenta = (f) => (f.archivo ? [{ id: `legado-fv-${f.id}`, legado: true, tipo: "factura", archivo: f.archivo, nombreArchivo: f.nombreArchivo, tipoArchivo: f.tipoArchivo }] : []);
+  const legadosDeIngreso = (i) => [
+    ...(i.archivo ? [{ id: `legado-ing-${i.id}`, legado: true, tipo: "factura", archivo: i.archivo, nombreArchivo: i.nombreArchivo, tipoArchivo: i.tipoArchivo }] : []),
+    ...(i.avisoPagoArchivo ? [{ id: `legado-aviso-${i.id}`, legado: true, tipo: "orden_pago", archivo: i.avisoPagoArchivo, nombreArchivo: i.avisoPagoNombreArchivo || "Aviso de pago", tipoArchivo: i.avisoPagoTipoArchivo }] : []),
+  ];
+  function quitarLegadoIngreso(i, doc) {
+    const patch = doc.tipo === "factura"
+      ? { archivo: null, nombreArchivo: null, tipoArchivo: null }
+      : { avisoPagoArchivo: null, avisoPagoNombreArchivo: null, avisoPagoTipoArchivo: null };
+    updateRecord("ingresos", i.id, patch, setIngresos);
+  }
+  async function eliminarFacturaVentaProyectada(id) {
+    if (!window.confirm("¿Eliminar este registro? Esta acción no se puede deshacer.")) return;
+    if (isSupabaseConfigured) {
+      try {
+        await sbDelete("facturas_venta_proyectadas", id);
+      } catch (err) {
+        alert("No se pudo eliminar: " + err.message);
+        return;
+      }
+    }
+    setFacturasVentaProyectadas((prev) => prev.filter((x) => x.id !== id));
+    // Sus archivos (factura, retenciones, orden de pago) se van con ella.
+    const docs = documentosDeFacturaVenta(id);
+    docs.forEach((d) => { if (isSupabaseConfigured) sbDelete("documentos_cobros", d.id).catch(() => {}); });
+    if (docs.length) setDocumentosCobros((prev) => prev.filter((x) => x.facturaVentaId !== id));
   }
   // Adjunta/reemplaza el PDF o foto de la factura ya emitida, sin tocar el estado
   // de la proyección — es solo guardar el comprobante para más adelante, no un
@@ -5970,7 +6151,7 @@ export default function ConcretarApp() {
     setCobrandoItem(null);
   }
   async function confirmarFacturaProyectadaCobrada(f, datosCobro = {}) {
-    await addRecord("ingresos", {
+    const nuevoIngreso = await addRecord("ingresos", {
       fecha: f.fecha,
       obraId: f.obraId,
       concepto: f.concepto || "Factura de venta",
@@ -5989,6 +6170,9 @@ export default function ConcretarApp() {
       avisoPagoNombreArchivo: datosCobro.avisoPagoNombreArchivo || null,
       avisoPagoTipoArchivo: datosCobro.avisoPagoTipoArchivo || null,
     }, setIngresos);
+    if (!nuevoIngreso) return;
+    // Los archivos cargados en la factura (factura, retenciones, orden de pago) pasan al cobro.
+    await Promise.all(documentosDeFacturaVenta(f.id).map((d) => updateRecord("documentos_cobros", d.id, { ingresoId: nuevoIngreso.id, facturaVentaId: null }, setDocumentosCobros)));
     setFacturasVentaProyectadas((prev) => prev.filter((x) => x.id !== f.id));
     if (isSupabaseConfigured) sbDelete("facturas_venta_proyectadas", f.id).catch(() => {});
   }
@@ -10232,12 +10416,19 @@ export default function ConcretarApp() {
                                 </div>
                               )}
                               <div className="mt-1.5 border-t border-stone-100 pt-1.5">
-                                <ArchivoInput
-                                  label="Factura emitida (PDF o foto, una vez que la factures de verdad)"
-                                  value={f.archivo}
-                                  nombreArchivo={f.nombreArchivo}
-                                  onChange={(archivo, nombreArchivo, tipoArchivo) => adjuntarComprobanteFacturaProyectada(f, archivo, nombreArchivo, tipoArchivo)}
+                                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Documentos (van separados en el PDF del contador)</div>
+                                <DocumentosCobro
+                                  documentos={documentosDeFacturaVenta(f.id)}
+                                  legados={legadosDeFacturaVenta(f)}
+                                  retenciones={retencionesDe(f)}
+                                  montoFactura={f.monto || 0}
+                                  onGuardarRetenciones={(retenciones) => updateRecord("facturas_venta_proyectadas", f.id, { retenciones }, setFacturasVentaProyectadas)}
+                                  onSubir={(tipo, archivo, nombreArchivo, tipoArchivo) => subirDocumentoCobro({ facturaVentaId: f.id }, tipo, archivo, nombreArchivo, tipoArchivo)}
+                                  onEliminar={(doc) => eliminarDocumentoCobro(doc, () => adjuntarComprobanteFacturaProyectada(f, null, null, null))}
                                 />
+                                {totalRetenciones(f) > 0 && (
+                                  <div className="mt-1 text-[11px] text-amber-700">Retenciones cargadas: {retencionesDe(f).map((r) => `${r.tipo} ${fmtARS(r.monto)}`).join(" · ")} — se pasan solas al marcarla cobrada.</div>
+                                )}
                               </div>
                             </div>
                           );
@@ -10251,7 +10442,8 @@ export default function ConcretarApp() {
                         </div>
                         <div className="mt-1 space-y-0.5">
                           {cobradosObra.map((i) => (
-                            <div key={i.id} className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-slate-500">
+                            <div key={i.id}>
+                            <div className="flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-slate-500">
                               <span>
                                 {fmtFecha(i.fecha)} · {i.concepto || "Cobro"}
                                 {i.cuenta && <span className="text-slate-400"> · {i.cuenta}{i.medioBancario ? ` (${i.medioBancario})` : ""}</span>}
@@ -10272,10 +10464,31 @@ export default function ConcretarApp() {
                                 >
                                   <Pencil size={11} />
                                 </button>
+                                <button
+                                  onClick={() => setDocumentosIngresoAbiertoId((x) => (x === i.id ? null : i.id))}
+                                  title="Factura, certificados de retención y orden de pago de este cobro"
+                                  className={btnGhostSm}
+                                >
+                                  Documentos{documentosDeIngreso(i.id).length + legadosDeIngreso(i).length > 0 ? ` (${documentosDeIngreso(i.id).length + legadosDeIngreso(i).length})` : ""}
+                                </button>
                                 <button onClick={() => deshacerCobro(i)} title="Volver a pendiente (si se marcó cobrado por error)" className={btnGhostSm}>
                                   Deshacer cobro
                                 </button>
                               </span>
+                            </div>
+                            {documentosIngresoAbiertoId === i.id && (
+                              <div className="mb-2 mt-1 rounded-md border border-stone-200 bg-white p-2">
+                                <DocumentosCobro
+                                  documentos={documentosDeIngreso(i.id)}
+                                  legados={legadosDeIngreso(i)}
+                                  retenciones={retencionesDe(i)}
+                                  montoFactura={i.monto || 0}
+                                  onGuardarRetenciones={(retenciones) => updateRecord("ingresos", i.id, { retenciones }, setIngresos)}
+                                  onSubir={(tipo, archivo, nombreArchivo, tipoArchivo) => subirDocumentoCobro({ ingresoId: i.id }, tipo, archivo, nombreArchivo, tipoArchivo)}
+                                  onEliminar={(doc) => eliminarDocumentoCobro(doc, (d) => quitarLegadoIngreso(i, d))}
+                                />
+                              </div>
+                            )}
                             </div>
                           ))}
                         </div>
