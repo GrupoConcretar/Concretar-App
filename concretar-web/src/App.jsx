@@ -4869,11 +4869,20 @@ export default function ConcretarApp() {
     return registros[0]?.fecha || null;
   }
   // Personal activo, de obra (no Gerencia/RRHH/Logística que trabaja "de todos lados"),
-  // sin ninguna asistencia registrada en los últimos 5 días — candidato a dar de baja.
+  // sin obra donde estar y sin asistencia registrada en los últimos 5 días — candidato
+  // a dar de baja. Si está asignado a mano a una obra en curso (o a General) no se
+  // avisa aunque no tenga asistencia cargada; si su obra ya está finalizada, sí.
+  const obraAsignadaVigente = (p) => {
+    if (p.asignacionGeneral) return true;
+    if (p.obraAsignadaId == null) return false;
+    const o = obras.find((x) => x.id === p.obraAsignadaId);
+    return !!o && o.estado !== "Finalizada" && o.estado !== "Papelera";
+  };
   const personalSinObra5Dias = personal.filter((p) => {
     if (p.estado !== "Activo") return false;
     if (CATEGORIAS_CENTRO_GENERAL.includes(p.categoria)) return false;
     if (p.tipoTrabajador === "Tantero") return false; // se rastrean por grupo, no por asistencia diaria
+    if (obraAsignadaVigente(p)) return false;
     const ultima = ultimaFechaActividad(p);
     if (!ultima) return false;
     const dias = Math.round((fechaLocal(hoyISO()) - fechaLocal(ultima)) / 86400000);
@@ -9582,11 +9591,14 @@ export default function ConcretarApp() {
                     </AlertCard>
                   ))}
                   {personalSinObra5Dias.length > 0 && (
-                    <AlertCard tone="rose" icon={Users} title={`${personalSinObra5Dias.length} persona(s) sin obra asignada hace 5 días o más.`}>
+                    <AlertCard tone="rose" icon={Users} title={`${personalSinObra5Dias.length} persona(s) sin obra asignada ni asistencia hace 5 días o más.`}>
                       <ul className="space-y-1 text-xs">
                         {personalSinObra5Dias.slice(0, 5).map((p) => (
                           <li key={p.id} className="flex items-center justify-between gap-2">
-                            <span className="truncate">{nombreCompletoDe(p)} — {fmtFecha(ultimaFechaActividad(p))}</span>
+                            <span className="truncate">
+                              {nombreCompletoDe(p)} — última asistencia {fmtFecha(ultimaFechaActividad(p))}
+                              {p.obraAsignadaId != null && <span className="opacity-70"> (su obra está finalizada)</span>}
+                            </span>
                             <button onClick={() => darDeBajaPersonal(p)} className="shrink-0 rounded-md border border-rose-300 px-2 py-0.5 text-[10px] font-semibold text-rose-700 hover:bg-rose-100">Dar de baja</button>
                           </li>
                         ))}
