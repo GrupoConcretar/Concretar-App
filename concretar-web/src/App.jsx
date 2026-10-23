@@ -11099,10 +11099,37 @@ export default function ConcretarApp() {
                   <input type="date" required value={asistenciaForm.fecha} onChange={(e) => asf("fecha")(e.target.value)} className={inputCls} />
                 </Field>
                 <Field label="Nombre y apellido">
-                  <select required value={asistenciaForm.nombre} onChange={(e) => asf("nombre")(e.target.value)} className={inputCls}>
-                    <option value="">-- Elegí a la persona --</option>
-                    {personal.map((p) => <option key={p.id}>{nombreCompletoDe(p)}</option>)}
-                  </select>
+                  {(() => {
+                    // Solo personal activo asignado a una obra que no está finalizada, agrupado por
+                    // obra (primero la obra elegida). Al elegir a alguien, la obra pasa a ser la suya.
+                    const obrasConGente = obrasSeleccionables(obras)
+                      .map((o) => ({ obra: o, gente: personal.filter((p) => p.estado === "Activo" && p.obraAsignadaId === o.id).sort((a, b) => nombreCompletoDe(a).localeCompare(nombreCompletoDe(b))) }))
+                      .filter((g) => g.gente.length > 0)
+                      .sort((a, b) => (String(b.obra.id) === String(asistenciaForm.obraId)) - (String(a.obra.id) === String(asistenciaForm.obraId)));
+                    return (
+                      <>
+                        <select
+                          required
+                          value={asistenciaForm.nombre}
+                          onChange={(e) => {
+                            const nombre = e.target.value;
+                            asf("nombre")(nombre);
+                            const persona = personal.find((p) => nombreCompletoDe(p) === nombre);
+                            if (persona?.obraAsignadaId != null) asf("obraId")(persona.obraAsignadaId);
+                          }}
+                          className={inputCls}
+                        >
+                          <option value="">-- Elegí a la persona --</option>
+                          {obrasConGente.map((g) => (
+                            <optgroup key={g.obra.id} label={g.obra.nombre}>
+                              {g.gente.map((p) => <option key={p.id}>{nombreCompletoDe(p)}</option>)}
+                            </optgroup>
+                          ))}
+                        </select>
+                        {obrasConGente.length === 0 && <div className="mt-1 text-[11px] text-amber-700">No hay personal activo asignado a obras. Asignalo desde Personal → "Asignar personal".</div>}
+                      </>
+                    );
+                  })()}
                 </Field>
                 <Field label="Centro de costo / Obra">
                   <select value={asistenciaForm.obraId} onChange={(e) => asf("obraId")(e.target.value)} className={inputCls}>
