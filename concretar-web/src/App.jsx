@@ -465,19 +465,75 @@ const objToSnake = (obj) => {
   return out;
 };
 
+// Las fotos y PDF (facturas, comprobantes...) se guardan dentro de la fila como texto y
+// pesan mucho: si se bajaran todos al abrir la app, la lectura tarda más de lo que
+// Supabase permite y falla. Por eso estas columnas se leen aparte, solo cuando se abre
+// el archivo: al cargar, en su lugar queda una marca "diferido:tabla:columna:id".
+const ARCHIVOS_DIFERIDOS = {
+  compras_facturas: ["archivo"],
+  facturas_varias: ["archivo"],
+  documentos_cobros: ["archivo"],
+  ingresos: ["archivo", "aviso_pago_archivo"],
+  facturas_venta_proyectadas: ["archivo"],
+  cobros_socios: ["archivo"],
+};
+const MARCA_DIFERIDO = "diferido:";
+const esArchivoDiferido = (v) => typeof v === "string" && v.startsWith(MARCA_DIFERIDO);
+const cacheArchivosDiferidos = new Map();
+// Devuelve el archivo real (data URL) de una marca diferida; cualquier otro valor tal cual.
+async function resolverArchivo(valor) {
+  if (!esArchivoDiferido(valor)) return valor;
+  if (cacheArchivosDiferidos.has(valor)) return cacheArchivosDiferidos.get(valor);
+  const [, tabla, columna, id] = valor.split(":");
+  const { data, error } = await supabase.from(tabla).select(columna).eq("id", Number(id)).single();
+  if (error) throw new Error(`No se pudo bajar el archivo: ${error.message}`);
+  cacheArchivosDiferidos.set(valor, data[columna]);
+  return data[columna];
+}
+
 async function sbSelect(table) {
+  const diferidas = ARCHIVOS_DIFERIDOS[table];
+  if (diferidas) {
+    const { data, error } = await supabase.rpc("listar_sin_archivos", { tabla: table, excluir: diferidas });
+    if (error) throw new Error(`No se pudo leer "${table}": ${error.message}`);
+    return (data || []).map((fila) => {
+      const f = { ...fila };
+      diferidas.forEach((c) => {
+        const tiene = f[`tiene_${c}`];
+        delete f[`tiene_${c}`];
+        f[c] = tiene ? `${MARCA_DIFERIDO}${table}:${c}:${f.id}` : null;
+      });
+      return rowToCamel(f);
+    });
+  }
   const { data, error } = await supabase.from(table).select("*").order("id", { ascending: true });
   if (error) throw new Error(`No se pudo leer "${table}": ${error.message}`);
   return data.map(rowToCamel);
 }
 
 async function sbInsert(table, obj) {
+  // Si se copia un archivo que todavía no se bajó (ej. la factura de una factura de
+  // venta futura que pasa al cobro), se baja antes para guardar el archivo real.
+  const conArchivos = { ...obj };
+  for (const [k, v] of Object.entries(conArchivos)) {
+    if (esArchivoDiferido(v)) conArchivos[k] = await resolverArchivo(v);
+  }
+  obj = conArchivos;
   const { data, error } = await supabase.from(table).insert(objToSnake(obj)).select().single();
   if (error) throw new Error(`No se pudo guardar en "${table}": ${error.message}`);
   return rowToCamel(data);
 }
 
 async function sbUpdate(table, id, patch) {
+  // Un archivo que sigue "diferido" (no se bajó ni se cambió) no se toca.
+  patch = Object.fromEntries(Object.entries(patch).filter(([, v]) => !esArchivoDiferido(v)));
+  // En las tablas con archivos no se pide la fila de vuelta (traería el archivo entero):
+  // devuelve null y quien llama combina el cambio con lo que ya tenía.
+  if (ARCHIVOS_DIFERIDOS[table]) {
+    const { error } = await supabase.from(table).update(objToSnake(patch)).eq("id", id);
+    if (error) throw new Error(`No se pudo actualizar "${table}": ${error.message}`);
+    return null;
+  }
   const { data, error } = await supabase.from(table).update(objToSnake(patch)).eq("id", id).select().single();
   if (error) throw new Error(`No se pudo actualizar "${table}": ${error.message}`);
   return rowToCamel(data);
@@ -503,10 +559,35 @@ function readFileAsDataURL(file) {
 // (blob) y se abre ese — el PDF o la foto se ve con el visor normal.
 function abrirArchivo(archivo) {
   if (!archivo) return;
+  if (esArchivoDiferido(archivo)) {
+    // La ventana se abre ya (si se abre después de esperar la descarga, el celular la
+    // bloquea) y se completa cuando llega el archivo.
+    const ventana = window.open("", "_blank");
+    if (ventana) ventana.document.write("<p style='font-family:sans-serif;padding:16px'>Cargando archivo…</p>");
+    resolverArchivo(archivo)
+      .then((real) => {
+        const url = dataUrlABlobUrl(real);
+        if (!url) throw new Error("vacío");
+        if (ventana) ventana.location.href = url; else window.open(url, "_blank");
+      })
+      .catch(() => {
+        if (ventana) ventana.close();
+        alert("No se pudo abrir el archivo. Revisá la conexión y probá de nuevo.");
+      });
+    return;
+  }
   if (!archivo.startsWith("data:")) {
     window.open(archivo, "_blank", "noopener");
     return;
   }
+  const url = dataUrlABlobUrl(archivo);
+  if (!url) { alert("No se pudo abrir el archivo."); return; }
+  const ventana = window.open(url, "_blank");
+  if (!ventana) alert("El navegador bloqueó la ventana nueva. Permití las ventanas emergentes para esta página y volvé a intentar.");
+}
+// Data URL → archivo temporal del navegador (blob) que se puede abrir en una pestaña.
+function dataUrlABlobUrl(archivo) {
+  if (!archivo || !archivo.startsWith("data:")) return archivo || null;
   try {
     const coma = archivo.indexOf(",");
     const meta = archivo.slice(5, coma);
@@ -521,12 +602,11 @@ function abrirArchivo(archivo) {
       bytes = new TextEncoder().encode(decodeURIComponent(datos));
     }
     const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
-    const ventana = window.open(url, "_blank");
-    if (!ventana) alert("El navegador bloqueó la ventana nueva. Permití las ventanas emergentes para esta página y volvé a intentar.");
     // Se libera después de un rato largo, cuando el visor ya terminó de cargarlo.
     setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
+    return url;
   } catch {
-    alert("No se pudo abrir el archivo.");
+    return null;
   }
 }
 
@@ -2663,7 +2743,14 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
   async function leerYCompletar(archivo, tipoArchivo) {
     if (!archivo || editando.origen !== "compras_facturas") return;
     setLectura({ leyendo: true });
-    const resultado = await leerFactura(archivo, tipoArchivo);
+    let real;
+    try {
+      real = await resolverArchivo(archivo);
+    } catch {
+      setLectura({ leyendo: false, resultado: { error: "No se pudo bajar el archivo" } });
+      return;
+    }
+    const resultado = await leerFactura(real, tipoArchivo);
     setLectura({ leyendo: false, resultado });
     setForm((f) => aplicarLectura(f, resultado, false));
     setVersionLectura((v) => v + 1);
@@ -4000,7 +4087,8 @@ function PhotoInput({ label, value, onChange }) {
 // de "Subir archivo", así en el celular abre directo la cámara en vez de tener
 // que ir a buscar la foto a la galería.
 function ArchivoInput({ label, value, nombreArchivo, onChange }) {
-  const esImagen = value && !nombreArchivo?.toLowerCase().endsWith(".pdf");
+  // Un archivo todavía no bajado (diferido) se muestra como un cuadro para abrirlo.
+  const esImagen = value && !esArchivoDiferido(value) && !nombreArchivo?.toLowerCase().endsWith(".pdf");
   const inputFotoRef = useRef(null);
   const inputArchivoRef = useRef(null);
   async function manejarArchivo(e) {
@@ -4024,7 +4112,7 @@ function ArchivoInput({ label, value, nombreArchivo, onChange }) {
           ) : (
             <a href={value} onClick={(e) => { e.preventDefault(); abrirArchivo(value); }} className="flex h-14 w-14 flex-col items-center justify-center rounded-md border border-stone-300 text-center text-[9px] text-slate-500 hover:bg-stone-50">
               <FileDown size={16} className="text-slate-400" />
-              PDF
+              {nombreArchivo?.toLowerCase().endsWith(".pdf") || !esArchivoDiferido(value) ? "PDF" : "Ver"}
             </a>
           )
         ) : (
@@ -4672,7 +4760,7 @@ export default function ConcretarApp() {
     if (isSupabaseConfigured) {
       try {
         const row = await sbUpdate(table, id, patch);
-        setter((prev) => prev.map((x) => (x.id === id ? row : x)));
+        setter((prev) => prev.map((x) => (x.id === id ? (row || { ...x, ...patch }) : x)));
       } catch (err) {
         alert("No se pudo actualizar: " + err.message);
       }
@@ -5964,7 +6052,7 @@ export default function ConcretarApp() {
       if (f.separador) { agregarSeparador(f.separador.titulo, f.separador.items); continue; }
       if (!f.archivo) continue;
       try {
-        const bytes = await (await fetch(f.archivo)).arrayBuffer();
+        const bytes = await (await fetch(await resolverArchivo(f.archivo))).arrayBuffer();
         const esPdf = (f.tipoArchivo || "").includes("pdf") || (f.nombreArchivo || "").toLowerCase().endsWith(".pdf");
         if (esPdf) {
           const src = await PDFDocument.load(bytes);
