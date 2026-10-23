@@ -417,6 +417,10 @@ const TIPOS_FACTURA = ["Sin factura", "A", "B", "C"];
 // se resta de lo que hay que pagar de IVA, Ingresos Brutos o Ganancias. SUSS es la de
 // seguridad social (cargas sociales), que no entra en ninguno de esos tres cálculos.
 const TIPOS_RETENCION = ["IVA", "Ingresos Brutos", "Ganancias", "SUSS"];
+// Retenciones con otro nombre que ya se usaron alguna vez (ej. "Fondo minero"): la app
+// las junta de los ingresos y facturas cargados en cada render para ofrecerlas en la
+// lista de nuevo. No afectan IVA, IIBB ni Ganancias, pero sí lo que entra a la cuenta.
+const tiposRetencionExtra = { lista: [] };
 const retencionesDe = (ingreso) => (Array.isArray(ingreso?.retenciones) ? ingreso.retenciones : []);
 // Percepciones que nos cobró un proveedor en su factura (IVA, Ingresos Brutos,
 // Ganancias): son pagos a cuenta de esos impuestos, igual que las retenciones que nos
@@ -748,18 +752,49 @@ function EditorRetenciones({ value, onChange, montoFactura }) {
   const lista = Array.isArray(value) ? value : [];
   const total = lista.reduce((s, r) => s + (Number(r.monto) || 0), 0);
   const cambiar = (idx, patch) => onChange(lista.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  // Renglones en los que se está escribiendo el nombre de una retención nueva.
+  const [escribiendo, setEscribiendo] = useState(() => new Set());
+  const opciones = [...TIPOS_RETENCION, ...tiposRetencionExtra.lista.filter((t) => !TIPOS_RETENCION.includes(t))];
   return (
     <div className="space-y-1.5 rounded-md border border-stone-200 bg-stone-50/60 p-2.5">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Retenciones (si al cobrar te retuvieron algo)</div>
-      {lista.map((r, idx) => (
-        <div key={idx} className="flex flex-wrap items-center gap-2">
-          <select value={r.tipo} onChange={(e) => cambiar(idx, { tipo: e.target.value })} className={`${inputCls} w-52 text-xs`}>
-            {TIPOS_RETENCION.map((t) => <option key={t} value={t}>Retención de {t}</option>)}
-          </select>
-          <MoneyInput value={r.monto} onChange={(v) => cambiar(idx, { monto: v })} puntoDecimalAlPegar className={`${inputCls} w-40 text-xs`} />
-          <button type="button" onClick={() => onChange(lista.filter((_, i) => i !== idx))} title="Quitar retención" className="text-slate-400 hover:text-rose-600"><X size={14} /></button>
-        </div>
-      ))}
+      {lista.map((r, idx) => {
+        const esNueva = escribiendo.has(idx) || (r.tipo && !opciones.includes(r.tipo));
+        return (
+          <div key={idx} className="flex flex-wrap items-center gap-2">
+            {esNueva ? (
+              <span className="flex items-center gap-1">
+                <input
+                  autoFocus={escribiendo.has(idx)}
+                  value={r.tipo}
+                  onChange={(e) => cambiar(idx, { tipo: e.target.value })}
+                  placeholder="Nombre, ej: Fondo minero"
+                  className={`${inputCls} w-52 text-xs`}
+                />
+                <button type="button" onClick={() => { setEscribiendo((prev) => { const n = new Set(prev); n.delete(idx); return n; }); cambiar(idx, { tipo: "IVA" }); }} title="Elegir de la lista" className="text-[10px] text-slate-500 underline hover:text-slate-800">lista</button>
+              </span>
+            ) : (
+              <select
+                value={r.tipo}
+                onChange={(e) => {
+                  if (e.target.value === "__otra") {
+                    setEscribiendo((prev) => new Set(prev).add(idx));
+                    cambiar(idx, { tipo: "" });
+                  } else {
+                    cambiar(idx, { tipo: e.target.value });
+                  }
+                }}
+                className={`${inputCls} w-52 text-xs`}
+              >
+                {opciones.map((t) => <option key={t} value={t}>Retención de {t}</option>)}
+                <option value="__otra">Otra retención (escribir nombre)…</option>
+              </select>
+            )}
+            <MoneyInput value={r.monto} onChange={(v) => cambiar(idx, { monto: v })} puntoDecimalAlPegar className={`${inputCls} w-40 text-xs`} />
+            <button type="button" onClick={() => onChange(lista.filter((_, i) => i !== idx))} title="Quitar retención" className="text-slate-400 hover:text-rose-600"><X size={14} /></button>
+          </div>
+        );
+      })}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button type="button" onClick={() => onChange([...lista, { tipo: "IVA", monto: 0 }])} className={btnGhostSm}>
           <span className="flex items-center gap-1"><Plus size={11} /> Agregar retención</span>
@@ -924,7 +959,7 @@ function DocumentosCobro({ documentos = [], legados = [], retenciones = [], mont
                 <button
                   type="button"
                   disabled={guardandoRet}
-                  onClick={async () => { setGuardandoRet(true); await onGuardarRetenciones(retencionesDraft.filter((r) => Number(r.monto) > 0)); setGuardandoRet(false); }}
+                  onClick={async () => { setGuardandoRet(true); await onGuardarRetenciones(retencionesDraft.filter((r) => Number(r.monto) > 0).map((r) => ({ ...r, tipo: (r.tipo || "").trim() || "Otra retención" }))); setGuardandoRet(false); }}
                   className={`${btnPrimary} disabled:opacity-50`}
                 >
                   {guardandoRet ? "Guardando…" : "Guardar retenciones"}
@@ -939,14 +974,9 @@ function DocumentosCobro({ documentos = [], legados = [], retenciones = [], mont
 }
 
 // "Marcar cobrado": confirma el cobro y deja anotar las retenciones que hizo el cliente.
-function ModalMarcarCobrado({ titulo, monto, retencionesIniciales, avisoInicial, onConfirmar, onClose }) {
+function ModalMarcarCobrado({ titulo, monto, retencionesIniciales, onConfirmar, onClose }) {
   const [retenciones, setRetenciones] = useState(Array.isArray(retencionesIniciales) ? retencionesIniciales : []);
   const [fechaCobro, setFechaCobro] = useState(hoyISO());
-  const [aviso, setAviso] = useState({
-    archivo: avisoInicial?.avisoPagoArchivo || null,
-    nombre: avisoInicial?.avisoPagoNombreArchivo || null,
-    tipo: avisoInicial?.avisoPagoTipoArchivo || null,
-  });
   const [guardando, setGuardando] = useState(false);
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
@@ -959,12 +989,7 @@ function ModalMarcarCobrado({ titulo, monto, retencionesIniciales, avisoInicial,
         <Field label="Fecha de cobro">
           <input type="date" value={fechaCobro} onChange={(e) => setFechaCobro(e.target.value)} className={inputCls} />
         </Field>
-        <ArchivoInput
-          label="Aviso de pago del cliente (PDF o foto, opcional)"
-          value={aviso.archivo}
-          nombreArchivo={aviso.nombre}
-          onChange={(archivo, nombre, tipo) => setAviso({ archivo, nombre, tipo })}
-        />
+        <div className="text-[11px] text-slate-400">La orden de pago, la factura y los certificados de retención se suben con los botones "Documentos" de la obra.</div>
         <EditorRetenciones value={retenciones} onChange={setRetenciones} montoFactura={monto} />
         <div className="flex items-center gap-2">
           <button
@@ -972,11 +997,8 @@ function ModalMarcarCobrado({ titulo, monto, retencionesIniciales, avisoInicial,
             onClick={async () => {
               setGuardando(true);
               await onConfirmar({
-                retenciones: retenciones.filter((r) => (Number(r.monto) || 0) > 0),
+                retenciones: retenciones.filter((r) => (Number(r.monto) || 0) > 0).map((r) => ({ ...r, tipo: (r.tipo || "").trim() || "Otra retención" })),
                 fechaCobro: fechaCobro || hoyISO(),
-                avisoPagoArchivo: aviso.archivo,
-                avisoPagoNombreArchivo: aviso.nombre,
-                avisoPagoTipoArchivo: aviso.tipo,
               });
               setGuardando(false);
             }}
@@ -2711,7 +2733,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         archivo: form.archivo,
         nombreArchivo: form.nombreArchivo,
         tipoArchivo: form.tipoArchivo,
-        retenciones: retencionesDe(form).filter((r) => (Number(r.monto) || 0) > 0),
+        retenciones: retencionesDe(form).filter((r) => (Number(r.monto) || 0) > 0).map((r) => ({ ...r, tipo: (r.tipo || "").trim() || "Otra retención" })),
         fechaCobro: form.estado === "Pendiente" ? null : (form.fechaCobro || form.fecha),
         avisoPagoArchivo: form.avisoPagoArchivo || null,
         avisoPagoNombreArchivo: form.avisoPagoNombreArchivo || null,
@@ -5191,6 +5213,8 @@ export default function ConcretarApp() {
   // Obras en la Papelera: sus gastos/ingresos/pedidos dejan de contar en todos lados
   // hasta que se restauren o se borren del todo (24hs), como si nunca hubieran existido.
   const obraIdsPapelera = new Set(obras.filter((o) => o.estado === "Papelera").map((o) => o.id));
+  // Retenciones con nombre propio ya usadas (ej. "Fondo minero"), para ofrecerlas en la lista.
+  tiposRetencionExtra.lista = [...new Set([...ingresos, ...facturasVentaProyectadas].flatMap((x) => retencionesDe(x).map((r) => (r.tipo || "").trim())).filter((t) => t && !TIPOS_RETENCION.includes(t)))].sort();
 
   // ---------- Alertas globales ----------
   const herramientasAtencion = herramientas.filter((h) => h.estado === "Mal Estado" || h.estado === "Rota");
@@ -13947,7 +13971,7 @@ export default function ConcretarApp() {
                       archivo: ingresoArchivo,
                       nombreArchivo: ingresoNombreArchivo,
                       tipoArchivo: ingresoTipoArchivo,
-                      retenciones: ingresoRetenciones.filter((r) => (Number(r.monto) || 0) > 0),
+                      retenciones: ingresoRetenciones.filter((r) => (Number(r.monto) || 0) > 0).map((r) => ({ ...r, tipo: (r.tipo || "").trim() || "Otra retención" })),
                       fechaCobro: f.get("estado") === "Pendiente" ? null : f.get("fecha"),
                       avisoPagoArchivo: ingresoAviso.archivo,
                       avisoPagoNombreArchivo: ingresoAviso.nombre,
@@ -16219,7 +16243,6 @@ export default function ConcretarApp() {
           titulo={cobrandoItem.item.concepto || (cobrandoItem.tipo === "proyectada" ? `Factura ${fmtFecha(cobrandoItem.item.fecha)}` : "Cobro")}
           monto={cobrandoItem.item.monto || 0}
           retencionesIniciales={retencionesDe(cobrandoItem.item)}
-          avisoInicial={cobrandoItem.tipo === "ingreso" ? cobrandoItem.item : null}
           onConfirmar={confirmarCobro}
           onClose={() => setCobrandoItem(null)}
         />
