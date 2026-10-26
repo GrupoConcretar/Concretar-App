@@ -1565,11 +1565,14 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.debito)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{fmtARS(m.credito)}</td>
                 <td className={`px-2 py-1 text-right font-mono ${m.retenciones ? "text-amber-700" : "text-slate-300"}`}>{fmtARS(m.retenciones || 0)}</td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.aPagar)}</td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.aPagar > 0.5 ? "text-rose-600" : "text-emerald-700"}`}>
+                  {fmtARS(m.aPagar)}
+                  {m.aPagar <= 0.5 && m.saldoAFavorNuevo > 0.5 && <div className="text-[10px] font-normal">a favor {fmtARS(m.saldoAFavorNuevo)}</div>}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
                 </td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null ? "text-slate-400" : colorPagoImpuesto(m.aPagar, m.real)}`}>
                   {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
                 </td>
               </tr>
@@ -1598,6 +1601,13 @@ function TablaIvaMensual({ items, onActualizarReal, onBorrarReal }) {
     </div>
   );
 }
+
+// Color de un mes de IVA / Ingresos Brutos: rojo si hay que pagar, verde si no.
+// Si el contador ya cargó el real, manda ese (negativo = a pagar); si no, la estimación.
+const colorPagoImpuesto = (aPagarApp, real) => {
+  const hayQuePagar = real !== null && real !== undefined ? real < -0.5 : aPagarApp > 0.5;
+  return hayQuePagar ? "text-rose-600" : "text-emerald-700";
+};
 
 // Ganancia neta por año (Cuentas → IVA y Ganancias): ingresos menos gastos,
 // ambos netos de IVA, de todo lo que tiene factura (A, B o C) — es la base
@@ -1732,11 +1742,14 @@ function TablaIibbMensual({ items, onActualizarReal, onBorrarReal }) {
                   </button>
                 </td>
                 <td className={`px-2 py-1 text-right font-mono ${m.retenciones ? "text-amber-700" : "text-slate-300"}`}>{fmtARS(m.retenciones || 0)}</td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.proyectado > 0 ? "text-rose-600" : "text-slate-400"}`}>{fmtARS(m.proyectado)}</td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.proyectado > 0.5 ? "text-rose-600" : "text-emerald-700"}`}>
+                  {fmtARS(m.proyectado)}
+                  {m.proyectado <= 0.5 && m.saldoAFavorNuevo > 0.5 && <div className="text-[10px] font-normal">a favor {fmtARS(m.saldoAFavorNuevo)}</div>}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <CampoRealConSigno value={m.real} onGuardar={(v) => onActualizarReal(m.clave, v)} onBorrar={() => onBorrarReal(m.clave)} className="w-28 rounded-md border border-stone-300 px-1.5 py-1 text-right text-xs" />
                 </td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null || Math.abs(m.diferencia) < 1 ? "text-slate-400" : "text-rose-600"}`}>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${m.diferencia === null ? "text-slate-400" : colorPagoImpuesto(m.proyectado, m.real)}`}>
                   {m.diferencia === null ? "Sin dato" : fmtARS(m.diferencia)}
                 </td>
               </tr>
