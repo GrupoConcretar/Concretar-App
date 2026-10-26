@@ -9,7 +9,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck
 } from "lucide-react";
 import { leerFactura } from "./lectorFacturas.js";
 
@@ -154,7 +154,7 @@ const ESTADOS_OBRA = ["En curso", "Pendiente de cobro", "Pausada", "Finalizada"]
 const ESTADOS_ITEM_COMBO = ["Entregado", "Roto", "Perdido", "Devuelto"];
 const TIPOS_CAJA = ["Electricista", "Civil", "Pintor", "Metalúrgico"];
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-const ESTADOS_OC = ["Pendiente", "Requiere aprobación", "Aprobada", "Recibida"];
+const ESTADOS_OC = ["Requiere aprobación", "Aprobada", "Enviada", "Recibida parcialmente", "Recibida", "Cerrada", "Rechazada", "Anulada"];
 const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
 const CATEGORIAS_GASTO = ["Materiales", "Equipos y Herramientas", "Epps", "Consumibles", "Combustible", "Mano de obra", "Varios"];
 const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Epps", "Consumibles", "Otros"];
@@ -379,7 +379,6 @@ const ICONO_CATEGORIA_HERR = {
   "Equipo a Combustión": Flame,
 };
 const ESTADOS_ASISTENCIA = ["Presente", "Ausente", "Tardanza"];
-const UMBRAL_APROBACION_OC = 3000000;
 const DESVIO_ALERTA_PCT = 10;
 const DESVIO_DANGER_PCT = 20;
 
@@ -433,6 +432,83 @@ const totalRetenciones = (ingreso, tipo = null) =>
   retencionesDe(ingreso).filter((r) => !tipo || r.tipo === tipo).reduce((s, r) => s + (Number(r.monto) || 0), 0);
 // Lo que realmente entra a la cuenta: el monto facturado menos lo retenido.
 const montoNetoIngreso = (ingreso) => (ingreso?.monto || 0) - totalRetenciones(ingreso);
+
+// ---------- Órdenes de compra (solo materiales de obra) ----------
+// Circuito: se arma la orden → Gerencia la aprueba → se le manda al proveedor (WhatsApp
+// o mail) → se registran las entregas con su remito → se vincula la factura. Si la
+// factura no coincide con la orden (o con lo recibido), queda marcada para revisar.
+// La orden no es un comprobante fiscal: el IVA y los gastos salen de la factura.
+const DATOS_EMPRESA = { razonSocial: "Grupo Concretar S.A.S.", cuit: "30-71910173-5", condicionIva: "IVA Responsable Inscripto" };
+const ALICUOTAS_IVA_OC = [21, 10.5, 27];
+const CONDICIONES_PAGO_OC = ["Contado contra entrega", "Transferencia anticipada", "Cuenta corriente 30 días", "eCheq a 30 días", "50% de adelanto y 50% contra entrega"];
+// Estados en los que la orden sigue esperando entregas o facturas.
+const ESTADOS_OC_ABIERTA = ["Aprobada", "Enviada", "Recibida parcialmente", "Recibida"];
+const numeroOC = (oc) => `OC ${String(oc?.id ?? 0).padStart(5, "0")}`;
+const itemsOC = (oc) => (Array.isArray(oc?.items) ? oc.items : []);
+const recepcionesOC = (oc) => (Array.isArray(oc?.recepciones) ? oc.recepciones : []);
+// Con Factura A los precios se cargan sin IVA y se suma el IVA de cada ítem; con B, C
+// o sin factura el precio ya es el final.
+const ocDiscriminaIva = (oc) => oc?.tipoFactura === "A";
+const ivaItemOC = (oc, it) => (ocDiscriminaIva(oc) ? (it.alicuotaIva ?? 21) : 0);
+const subtotalItemOC = (it) => (Number(it.cantidad) || 0) * (Number(it.precioUnitario) || 0);
+function totalesOC(oc) {
+  const items = itemsOC(oc);
+  // Órdenes viejas, cargadas antes de los ítems: solo tienen el monto total.
+  if (items.length === 0) return { subtotal: Number(oc?.montoEstimado) || 0, iva: 0, total: Number(oc?.montoEstimado) || 0 };
+  const subtotal = items.reduce((s, it) => s + subtotalItemOC(it), 0);
+  const iva = items.reduce((s, it) => s + subtotalItemOC(it) * (ivaItemOC(oc, it) / 100), 0);
+  return { subtotal, iva, total: subtotal + iva };
+}
+const cantidadRecibidaItemOC = (oc, idx) =>
+  recepcionesOC(oc).reduce((s, r) => s + (Number((r.items || []).find((x) => x.idx === idx)?.cantidad) || 0), 0);
+// Lo recibido según los remitos, valorizado a los precios de la orden (con IVA).
+function recibidoValorizadoOC(oc) {
+  const items = itemsOC(oc);
+  if (items.length === 0) return recepcionesOC(oc).length > 0 ? totalesOC(oc).total : 0;
+  return items.reduce((s, it, idx) => s + cantidadRecibidaItemOC(oc, idx) * (Number(it.precioUnitario) || 0) * (1 + ivaItemOC(oc, it) / 100), 0);
+}
+// Diferencias chicas (redondeos del IVA, centavos) no cuentan como diferencia.
+const toleranciaOC = (total) => Math.max(1000, total * 0.005);
+// Control de "tres vías": orden de compra vs. remitos vs. facturas vinculadas. Las
+// percepciones no son parte del precio, así que no se comparan contra la orden.
+function controlFacturacionOC(oc, facturas) {
+  const { total } = totalesOC(oc);
+  const facturado = facturas.reduce((s, c) => s + (Number(c.monto) || 0) - totalPercepciones(c), 0);
+  const recibido = recibidoValorizadoOC(oc);
+  const hayRecepciones = recepcionesOC(oc).length > 0;
+  const tol = toleranciaOC(total);
+  const problemas = [];
+  if (facturas.length > 0 && facturado > total + tol) {
+    problemas.push(`Facturaron ${fmtARS(facturado - total)} más que la orden (orden ${fmtARS(total)}, facturado ${fmtARS(facturado)}).`);
+  }
+  if (facturas.length > 0 && hayRecepciones && itemsOC(oc).length > 0 && facturado > recibido + tol && recibido < total - tol) {
+    problemas.push(`Facturaron ${fmtARS(facturado - recibido)} más de lo que se recibió según los remitos (recibido ${fmtARS(recibido)}).`);
+  }
+  if (oc.tipoFactura) {
+    facturas.filter((c) => (c.tipoFactura || "Sin factura") !== oc.tipoFactura).forEach((c) => {
+      problemas.push(`La factura ${c.comprobante || `del ${fmtFecha(c.fecha)}`} vino ${c.tipoFactura && c.tipoFactura !== "Sin factura" ? `tipo ${c.tipoFactura}` : "sin factura"} y la orden decía ${oc.tipoFactura === "Sin factura" ? "sin factura" : `Factura ${oc.tipoFactura}`}.`);
+    });
+  }
+  // "Firma" de la situación: si cambian las facturas o las entregas después de revisar,
+  // la orden vuelve a pedir revisión.
+  const firma = JSON.stringify([problemas, facturas.map((c) => [c.id, Number(c.monto) || 0, c.tipoFactura || ""]).sort(), Math.round(recibido)]);
+  const revisada = problemas.length > 0 && oc.revision?.firma === firma;
+  return { total, facturado, recibido, hayRecepciones, problemas, firma, revisada, aRevisar: problemas.length > 0 && !revisada, falta: Math.max(0, total - facturado) };
+}
+// Número de WhatsApp para wa.me: solo dígitos, con el 549 de Argentina adelante.
+function telefonoWhatsApp(telefono) {
+  let d = String(telefono || "").replace(/\D/g, "");
+  if (!d) return "";
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.startsWith("54")) return d.startsWith("549") ? d : `549${d.slice(2)}`;
+  if (d.startsWith("0")) d = d.slice(1);
+  // "264 15 4000001": el 15 de los celulares no va en el formato internacional.
+  if (d.length === 12) {
+    const areaLen = [4, 3, 2].find((n) => d.slice(n, n + 2) === "15");
+    if (areaLen) d = d.slice(0, areaLen) + d.slice(areaLen + 2);
+  }
+  return `549${d}`;
+}
 
 // ============================================================
 // CONFIGURACIÓN DE SUPABASE
@@ -745,6 +821,10 @@ const BADGE_STYLES = {
   "Requiere aprobación": "border-rose-600 text-rose-700",
   Aprobada: "border-amber-600 text-amber-700",
   Recibida: "border-emerald-600 text-emerald-700",
+  Enviada: "border-sky-600 text-sky-700",
+  "Recibida parcialmente": "border-teal-600 text-teal-700",
+  Cerrada: "border-slate-500 text-slate-600",
+  Anulada: "border-slate-400 text-slate-400",
   Pagada: "border-emerald-600 text-emerald-700",
   Pagado: "border-emerald-600 text-emerald-700",
   Cobrado: "border-emerald-600 text-emerald-700",
@@ -1166,9 +1246,9 @@ function MoneyInput({ name, value, onChange, onBlur, className, placeholder, req
 // Buscador de proveedor: tocás, aparece la lista de proveedores cargados (por nombre
 // de fantasía) y filtra a medida que escribís. Si lo que escribiste no coincide con
 // ninguno, aparece la opción de darlo de alta al toque sin salir del formulario.
-function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) {
-  const [texto, setTexto] = useState("");
-  const [seleccionado, setSeleccionado] = useState("");
+function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor, defaultValue = "", onSeleccionar }) {
+  const [texto, setTexto] = useState(defaultValue || "");
+  const [seleccionado, setSeleccionado] = useState(defaultValue || "");
   const [abierto, setAbierto] = useState(false);
   const [creando, setCreando] = useState(false);
   const cajaRef = useRef(null);
@@ -1188,6 +1268,9 @@ function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) 
   // escribió el usuario) — si no, una compra podía quedar con otra
   // capitalización y dejar de coincidir con el proveedor real en Cuentas.
   const coincidenciaExacta = proveedores.find((p) => nombreComercial(p).toLowerCase() === busqueda);
+  const valorFinal = seleccionado || (coincidenciaExacta ? nombreComercial(coincidenciaExacta) : "");
+  // Avisa afuera qué proveedor quedó elegido (ej. para ofrecer sus órdenes de compra).
+  useEffect(() => { if (onSeleccionar) onSeleccionar(valorFinal); }, [valorFinal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function elegir(p) {
     setTexto(nombreComercial(p));
@@ -1218,7 +1301,7 @@ function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) 
         autoComplete="off"
         className={inputCls}
       />
-      <input type="hidden" name={name} value={seleccionado || (coincidenciaExacta ? nombreComercial(coincidenciaExacta) : "")} />
+      <input type="hidden" name={name} value={valorFinal} />
       {abierto && (
         <div className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-md border border-stone-200 bg-white py-1 shadow-lg">
           {opciones.length === 0 && !busqueda && (
@@ -1251,6 +1334,207 @@ function ProveedorPicker({ name = "proveedor", proveedores, onCrearProveedor }) 
     </div>
   );
 }
+// Formulario para armar (o modificar) una orden de compra de materiales de obra.
+// _k identifica cada renglón (para borrar el del medio sin mezclar los campos) y _v
+// vuelve a montar el precio cuando se completa solo desde el catálogo.
+let siguienteRenglonOC = 1;
+const renglonOC = (it = {}) => ({ descripcion: "", unidad: "u", cantidad: 1, precioUnitario: 0, alicuotaIva: 21, ...it, _k: siguienteRenglonOC++, _v: 0 });
+function FormularioOC({ oc = null, obras, proveedores, catalogoMateriales = [], onCrearProveedor, onGuardar, onCancelar }) {
+  const esVieja = oc && itemsOC(oc).length === 0;
+  const [obraId, setObraId] = useState(oc?.obraId ? String(oc.obraId) : "");
+  const [proveedor, setProveedor] = useState(oc?.proveedor || "");
+  const [fecha, setFecha] = useState(oc?.fecha || hoyISO());
+  const [tipoFactura, setTipoFactura] = useState(oc?.tipoFactura || (esVieja ? "C" : "A"));
+  const [condicionPago, setCondicionPago] = useState(oc?.condicionPago || "");
+  const [fechaEntrega, setFechaEntrega] = useState(oc?.fechaEntrega || "");
+  const [lugarEntrega, setLugarEntrega] = useState(oc?.lugarEntrega || "");
+  const [condiciones, setCondiciones] = useState(oc?.condiciones || "");
+  const [items, setItems] = useState(() => {
+    if (itemsOC(oc).length) return itemsOC(oc).map((it) => renglonOC(it));
+    if (esVieja) return [renglonOC({ descripcion: oc.item || "", precioUnitario: Number(oc.montoEstimado) || 0 })];
+    return [renglonOC()];
+  });
+  const [guardando, setGuardando] = useState(false);
+  const discrimina = tipoFactura === "A";
+  const tot = totalesOC({ tipoFactura, items });
+  const setItem = (k, patch) => setItems((list) => list.map((it) => (it._k === k ? { ...it, ...patch } : it)));
+  function cambiarDescripcion(it, texto) {
+    const mat = catalogoMateriales.find((m) => (m.nombre || "").toLowerCase() === texto.trim().toLowerCase());
+    if (mat && !(Number(it.precioUnitario) > 0) && Number(mat.ultimoPrecio) > 0) {
+      setItem(it._k, { descripcion: texto, unidad: mat.unidad || it.unidad, precioUnitario: Number(mat.ultimoPrecio), _v: it._v + 1 });
+    } else {
+      setItem(it._k, mat ? { descripcion: texto, unidad: mat.unidad || it.unidad } : { descripcion: texto });
+    }
+  }
+  async function guardar(e) {
+    e.preventDefault();
+    if (guardando) return;
+    if (!obraId) { alert("Elegí la obra: las órdenes de compra son para materiales de obra."); return; }
+    if (!proveedor) { alert("Elegí un proveedor o escribí uno nuevo."); return; }
+    const itemsFinal = items
+      .filter((it) => it.descripcion.trim())
+      .map(({ _k, _v, ...it }) => ({ ...it, descripcion: it.descripcion.trim(), cantidad: Number(it.cantidad) || 0, precioUnitario: Number(it.precioUnitario) || 0, alicuotaIva: discrimina ? Number(it.alicuotaIva ?? 21) : 0 }));
+    if (itemsFinal.length === 0) { alert("Agregá al menos un material."); return; }
+    if (itemsFinal.some((it) => it.cantidad <= 0)) { alert("Revisá las cantidades: hay algún material en 0."); return; }
+    const datos = {
+      obraId: Number(obraId), proveedor, fecha, tipoFactura, condicionPago: condicionPago.trim(), fechaEntrega: fechaEntrega || null,
+      lugarEntrega: lugarEntrega.trim(), condiciones: condiciones.trim(), items: itemsFinal,
+      item: itemsFinal.map((it) => `${it.cantidad} ${it.unidad} ${it.descripcion}`).join(", "),
+      montoEstimado: Math.round(totalesOC({ tipoFactura, items: itemsFinal }).total * 100) / 100,
+    };
+    setGuardando(true);
+    try { await onGuardar(datos); } finally { setGuardando(false); }
+  }
+  return (
+    <form onSubmit={guardar} className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Field label="Obra">
+          <select value={obraId} onChange={(e) => setObraId(e.target.value)} required className={inputCls}>
+            <option value="">Elegí la obra…</option>
+            {obrasSeleccionables(obras, obraId).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+          </select>
+        </Field>
+        <Field label="Proveedor">
+          <ProveedorPicker proveedores={proveedores} onCrearProveedor={onCrearProveedor} defaultValue={oc?.proveedor || ""} onSeleccionar={setProveedor} />
+        </Field>
+        <Field label="Fecha de la orden"><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
+        <Field label="Factura que tiene que hacer">
+          <select value={tipoFactura} onChange={(e) => setTipoFactura(e.target.value)} className={inputCls}>
+            <option value="A">Factura A (precios sin IVA, se suma el IVA)</option>
+            <option value="B">Factura B (precio final)</option>
+            <option value="C">Factura C (precio final)</option>
+            <option value="Sin factura">Sin factura</option>
+          </select>
+        </Field>
+        <Field label="Condición de pago">
+          <input value={condicionPago} onChange={(e) => setCondicionPago(e.target.value)} list="condiciones-pago-oc" placeholder="Ej: Cuenta corriente 30 días" className={inputCls} />
+          <datalist id="condiciones-pago-oc">{CONDICIONES_PAGO_OC.map((c) => <option key={c} value={c} />)}</datalist>
+        </Field>
+        <Field label="Fecha de entrega"><input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} className={inputCls} /></Field>
+        <div className="md:col-span-3">
+          <Field label="Lugar de entrega"><input value={lugarEntrega} onChange={(e) => setLugarEntrega(e.target.value)} placeholder="Dirección de la obra, horario de descarga, a quién preguntar…" className={inputCls} /></Field>
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Materiales</div>
+        <div className="overflow-x-auto rounded-lg border border-stone-200">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-2 py-1.5">Descripción</th>
+                <th className="w-20 px-2 py-1.5">Cantidad</th>
+                <th className="w-20 px-2 py-1.5">Unidad</th>
+                <th className="w-36 px-2 py-1.5">{discrimina ? "Precio unit. sin IVA" : "Precio unit. final"}</th>
+                {discrimina && <th className="w-20 px-2 py-1.5">IVA</th>}
+                <th className="w-32 px-2 py-1.5 text-right">Subtotal</th>
+                <th className="w-8 px-1 py-1.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it._k} className="border-t border-stone-100 align-top">
+                  <td className="px-2 py-1">
+                    <input value={it.descripcion} onChange={(e) => cambiarDescripcion(it, e.target.value)} list="catalogo-materiales-oc" placeholder="Ej: Cemento x 50 kg" className={`${inputCls} w-full py-1.5`} />
+                  </td>
+                  <td className="px-2 py-1"><input type="number" min="0" step="any" inputMode="decimal" value={it.cantidad} onChange={(e) => setItem(it._k, { cantidad: e.target.value })} className={`${inputCls} w-full py-1.5`} /></td>
+                  <td className="px-2 py-1"><input value={it.unidad} onChange={(e) => setItem(it._k, { unidad: e.target.value })} className={`${inputCls} w-full py-1.5`} /></td>
+                  <td className="px-2 py-1"><MoneyInput key={`p-${it._k}-${it._v}`} value={it.precioUnitario || undefined} onChange={(v) => setItem(it._k, { precioUnitario: v })} className={`${inputCls} w-full py-1.5`} /></td>
+                  {discrimina && (
+                    <td className="px-2 py-1">
+                      <select value={it.alicuotaIva ?? 21} onChange={(e) => setItem(it._k, { alicuotaIva: Number(e.target.value) })} className={`${inputCls} w-full px-1 py-1.5`}>
+                        {ALICUOTAS_IVA_OC.map((a) => <option key={a} value={a}>{String(a).replace(".", ",")}%</option>)}
+                      </select>
+                    </td>
+                  )}
+                  <td className="whitespace-nowrap px-2 py-2 text-right font-mono text-slate-700">{fmtARS(subtotalItemOC(it))}</td>
+                  <td className="px-1 py-1.5">
+                    {items.length > 1 && (
+                      <button type="button" onClick={() => setItems((list) => list.filter((x) => x._k !== it._k))} title="Quitar" className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><X size={14} /></button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <datalist id="catalogo-materiales-oc">{catalogoMateriales.map((m) => <option key={m.id} value={m.nombre} />)}</datalist>
+        </div>
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+          <button type="button" onClick={() => setItems((list) => [...list, renglonOC()])} className={btnGhost}><span className="flex items-center gap-1"><Plus size={13} /> Agregar material</span></button>
+          <div className="min-w-[220px] space-y-0.5 text-sm">
+            {discrimina && (
+              <>
+                <div className="flex justify-between gap-6 text-slate-500"><span>Subtotal</span><span className="font-mono">{fmtARS(tot.subtotal)}</span></div>
+                <div className="flex justify-between gap-6 text-slate-500"><span>IVA</span><span className="font-mono">{fmtARS(tot.iva)}</span></div>
+              </>
+            )}
+            <div className="flex justify-between gap-6 font-semibold text-slate-900"><span>Total</span><span className="font-mono">{fmtARS(tot.total)}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <Field label="Otras condiciones para el proveedor (opcional)">
+        <textarea value={condiciones} onChange={(e) => setCondiciones(e.target.value)} rows={2} placeholder="Ej: entregar con remito; los precios se mantienen hasta el 30/11…" className={inputCls} />
+      </Field>
+      <div className="flex flex-wrap items-center gap-2">
+        <button disabled={guardando} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">{guardando ? "Guardando…" : oc ? "Guardar cambios" : "Guardar y pedir aprobación"}</button>
+        <button type="button" onClick={onCancelar} className={btnGhost}>Cancelar</button>
+        <span className="text-[11px] text-slate-400">{oc && oc.estado !== "Requiere aprobación" ? "Si cambiás algo, la orden vuelve a pedir la aprobación de Gerencia." : "La aprueba Gerencia antes de mandársela al proveedor."}</span>
+      </div>
+    </form>
+  );
+}
+
+// Registrar una entrega (remito) de una orden de compra: cuánto llegó de cada material.
+function RecepcionOC({ oc, onGuardar, onCancelar }) {
+  const items = itemsOC(oc);
+  const [fecha, setFecha] = useState(hoyISO());
+  const [remito, setRemito] = useState("");
+  const [cantidades, setCantidades] = useState(() => items.map((it, idx) => Math.max(0, (Number(it.cantidad) || 0) - cantidadRecibidaItemOC(oc, idx))));
+  const [guardando, setGuardando] = useState(false);
+  async function guardar(e) {
+    e.preventDefault();
+    if (guardando) return;
+    const itemsRecibidos = cantidades.map((c, idx) => ({ idx, cantidad: Number(c) || 0 })).filter((x) => x.cantidad > 0);
+    if (items.length > 0 && itemsRecibidos.length === 0) { alert("Cargá cuánto llegó de al menos un material."); return; }
+    setGuardando(true);
+    try { await onGuardar({ fecha, remito: remito.trim(), items: itemsRecibidos }); } finally { setGuardando(false); }
+  }
+  return (
+    <form onSubmit={guardar} className="space-y-3 rounded-md border border-teal-200 bg-teal-50/60 p-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Field label="Fecha de entrega"><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
+        <Field label="N° de remito"><input value={remito} onChange={(e) => setRemito(e.target.value)} placeholder="Ej: R-0001-00004567" className={inputCls} /></Field>
+      </div>
+      {items.length > 0 ? (
+        <div className="overflow-x-auto rounded-md border border-teal-200 bg-white">
+          <table className="w-full min-w-[480px] text-left text-sm">
+            <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <tr><th className="px-2 py-1.5">Material</th><th className="px-2 py-1.5 text-right">Pedido</th><th className="px-2 py-1.5 text-right">Ya recibido</th><th className="w-28 px-2 py-1.5">Llegó ahora</th></tr>
+            </thead>
+            <tbody>
+              {items.map((it, idx) => (
+                <tr key={idx} className="border-t border-stone-100">
+                  <td className="px-2 py-1 text-slate-700">{it.descripcion}</td>
+                  <td className="whitespace-nowrap px-2 py-1 text-right text-slate-500">{it.cantidad} {it.unidad}</td>
+                  <td className="whitespace-nowrap px-2 py-1 text-right text-slate-500">{cantidadRecibidaItemOC(oc, idx)} {it.unidad}</td>
+                  <td className="px-2 py-1"><input type="number" min="0" step="any" inputMode="decimal" value={cantidades[idx]} onChange={(e) => setCantidades((cs) => cs.map((c, i) => (i === idx ? e.target.value : c)))} className={`${inputCls} w-full py-1`} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="text-xs text-slate-500">Esta orden se cargó sin detalle de materiales: se marca como recibida completa.</div>
+      )}
+      <div className="flex gap-2">
+        <button disabled={guardando} className="rounded-md bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50">{guardando ? "Guardando…" : "Guardar entrega"}</button>
+        <button type="button" onClick={onCancelar} className={btnGhost}>Cancelar</button>
+      </div>
+    </form>
+  );
+}
+
 // Tabla de movimientos de Cuentas (ingresos, egresos y pases entre cuentas),
 // reutilizada tanto para el mes actual como para cada mes anterior colapsado.
 function TablaMovimientos({ items, obras, onEditar, onToggleEstado, marcandoPagoCCId, onConfirmarPagoCC, onCancelarPagoCC }) {
@@ -4408,9 +4692,11 @@ export default function ConcretarApp() {
   const DEMO_PEDIDOS_MATERIALES = [];
   const DEMO_STOCK_MATERIALES = [];
   const DEMO_OC = [
-    { id: 1, fecha: "2026-07-02", obraId: 1, proveedor: "Corralón San Martín", item: "Cemento x50, hierro 8mm x200", montoEstimado: 4200000, estado: "Recibida" },
-    { id: 2, fecha: "2026-08-05", obraId: 1, proveedor: "Aberturas del Norte", item: "Ventanas de aluminio (12 unid.)", montoEstimado: 6800000, estado: "Requiere aprobación" },
-    { id: 3, fecha: "2026-08-10", obraId: 2, proveedor: "Corralón San Martín", item: "Bloques cerámicos x1000", montoEstimado: 1500000, estado: "Pendiente" },
+    { id: 1, fecha: "2026-07-02", obraId: 1, proveedor: "Corralón San Martín", item: "Cemento x50, hierro 8mm x200", montoEstimado: 4200000, estado: "Recibida", tipoFactura: "A", recepciones: [{ id: 1, fecha: "2026-07-05", remito: "R-0003-00001234" }] },
+    { id: 2, fecha: "2026-08-05", obraId: 1, proveedor: "Aberturas del Norte", estado: "Requiere aprobación", tipoFactura: "A", condicionPago: "50% de adelanto y 50% contra entrega", fechaEntrega: "2026-09-01",
+      items: [{ descripcion: "Ventana de aluminio 1,20 x 1,10", unidad: "u", cantidad: 12, precioUnitario: 468595, alicuotaIva: 21 }], montoEstimado: 6804000, recepciones: [] },
+    { id: 3, fecha: "2026-08-10", obraId: 2, proveedor: "Corralón San Martín", estado: "Enviada", tipoFactura: "A", condicionPago: "Cuenta corriente 30 días", enviadaPor: "WhatsApp", fechaEnvio: "2026-08-10", aprobadaPor: "Gerente", fechaAprobacion: "2026-08-10",
+      items: [{ descripcion: "Ladrillo cerámico hueco 12x18x33", unidad: "u", cantidad: 1000, precioUnitario: 1000, alicuotaIva: 21 }, { descripcion: "Cemento x 50 kg", unidad: "bolsa", cantidad: 20, precioUnitario: 11000, alicuotaIva: 21 }], montoEstimado: 1476200, recepciones: [] },
   ];
   const DEMO_FACTURAS = [
     { id: 1, fecha: "2026-02-15", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 5200000, comprobante: "A-0001-00012345", estado: "Pagada", tipoFactura: "A", cuenta: "Banco" },
@@ -4418,7 +4704,7 @@ export default function ConcretarApp() {
     { id: 3, fecha: "2026-04-20", obraId: 1, ordenCompraId: null, proveedor: "Hierros del Sur", categoria: "Materiales", monto: 6100000, comprobante: "A-0002-00003321", estado: "Pagada", tipoFactura: "A", cuenta: "Banco" },
     { id: 4, fecha: "2026-05-22", obraId: 1, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 5300000, comprobante: "A-0001-00012551", estado: "Pagada", tipoFactura: "Sin factura", cuenta: "Efectivo" },
     { id: 5, fecha: "2026-06-19", obraId: 1, ordenCompraId: 1, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 4200000, comprobante: "A-0003-00009087", estado: "Pagada", tipoFactura: "A", cuenta: "Banco" },
-    { id: 6, fecha: "2026-07-25", obraId: 1, ordenCompraId: 2, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 6800000, comprobante: "B-0001-00000442", estado: "Pendiente", tipoFactura: "B", cuenta: "Banco" },
+    { id: 6, fecha: "2026-07-25", obraId: 1, ordenCompraId: null, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 6800000, comprobante: "B-0001-00000442", estado: "Pendiente", tipoFactura: "B", cuenta: "Banco" },
     { id: 7, fecha: "2026-05-10", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 3800000, comprobante: "A-0001-00012470", estado: "Pagada", tipoFactura: "A", cuenta: "MP Pablo" },
     { id: 8, fecha: "2026-06-14", obraId: 2, ordenCompraId: null, proveedor: "Jornales de la semana", categoria: "Mano de obra", monto: 2600000, comprobante: "A-0001-00012600", estado: "Pagada", tipoFactura: "Sin factura", cuenta: "Efectivo" },
     { id: 9, fecha: "2026-07-15", obraId: 2, ordenCompraId: 3, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 1500000, comprobante: "A-0004-00001180", estado: "Pendiente", tipoFactura: "A", cuenta: "Banco" },
@@ -5335,6 +5621,10 @@ export default function ConcretarApp() {
     return horas >= 0 && horas < 48;
   });
   const ocPendientesAprobacion = ordenesCompra.filter((o) => o.estado === "Requiere aprobación" && !obraIdsPapelera.has(o.obraId));
+  // Órdenes con factura que no coincide con lo pedido o lo recibido, todavía sin revisar.
+  const facturasDeOC = (oc, compras = comprasFacturas) => compras.filter((c) => c.ordenCompraId === oc.id);
+  const controlDeOC = (oc, compras = comprasFacturas) => controlFacturacionOC(oc, facturasDeOC(oc, compras));
+  const ocsARevisar = ordenesCompra.filter((oc) => !obraIdsPapelera.has(oc.obraId) && !["Rechazada", "Anulada"].includes(oc.estado) && controlDeOC(oc).aRevisar);
   const hayDesvioAlerta = desvioPct > DESVIO_ALERTA_PCT;
   // Los avisos de cambio/eliminación de asistencia son solo para revisión
   // inmediata — pasadas 24hs de hecho el cambio dejan de mostrarse solas.
@@ -5397,7 +5687,7 @@ export default function ConcretarApp() {
   }
 
   const totalAlertas =
-    herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length +
+    herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length + ocsARevisar.length +
     (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + asistenciasEliminadasRecientes.length +
     materialesVencidos.length + materialesProximos.length + pedidosPorAprobar.length + personalSinObra5Dias.length +
     gastosRecurrentesProximos.length + deudasTarjetaSocioPorVencer.length + echeqsPorConfirmarDebito.length;
@@ -5615,7 +5905,6 @@ export default function ConcretarApp() {
     setEditandoObraId(null);
   }
   const [showHerrForm, setShowHerrForm] = useState(false);
-  const [showOcForm, setShowOcForm] = useState(false);
   const [showFacturaForm, setShowFacturaForm] = useState(false);
   const [showGastosRecurrentesModal, setShowGastosRecurrentesModal] = useState(false);
   const [facturaObraId, setFacturaObraId] = useState("");
@@ -5652,6 +5941,9 @@ export default function ConcretarApp() {
   // Desde la ficha del proveedor, al guardar el formulario se oculta (para no cargar la
   // misma compra dos veces) pero conserva los datos para "Cargar otra compra".
   const [compraProveedorGuardada, setCompraProveedorGuardada] = useState(false);
+  // Proveedor elegido en el formulario y orden de compra a la que corresponde la factura.
+  const [facturaProveedorSel, setFacturaProveedorSel] = useState("");
+  const [facturaOcId, setFacturaOcId] = useState("");
   async function guardarFormularioCompra(e, seguirAbierto, onGuardado) {
     e.preventDefault();
     if (guardandoCompraRef.current) return;
@@ -5694,7 +5986,7 @@ export default function ConcretarApp() {
     const nuevaCompra = await addRecord("compras_facturas", {
       fecha: f.get("fecha"),
       obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
-      ordenCompraId: null,
+      ordenCompraId: Number(f.get("ordenCompraId")) || null,
       proveedor: f.get("proveedor"),
       categoria: f.get("categoria"),
       descripcion: f.get("descripcion") || "",
@@ -5713,6 +6005,9 @@ export default function ConcretarApp() {
       percepciones: facturaPercepciones.filter((x) => (Number(x.monto) || 0) > 0),
     }, setComprasFacturas);
     if (!nuevaCompra) return;
+    setFacturaOcId("");
+    const ocDeLaFactura = nuevaCompra.ordenCompraId ? ordenesCompra.find((o) => o.id === nuevaCompra.ordenCompraId) : null;
+    if (ocDeLaFactura) avisarSiNoCoincideOC(ocDeLaFactura, [...comprasFacturas, nuevaCompra]);
     setFacturaArchivo(null);
     setFacturaNombreArchivo(null);
     setFacturaTipoArchivo(null);
@@ -5751,6 +6046,7 @@ export default function ConcretarApp() {
   useEffect(() => {
     setLecturaFacturaCompra(null);
     setFacturaPercepciones([]);
+    setFacturaOcId("");
   }, [formularioCompraKey]);
   // Abre el formulario de gasto dentro de una obra, con esa obra ya elegida.
   const [cargandoGastoObraId, setCargandoGastoObraId] = useState(null);
@@ -5770,6 +6066,15 @@ export default function ConcretarApp() {
   function renderFormularioCompra({ proveedorFijo = null, onGuardado = null }) {
     const leido = lecturaFacturaCompra?.resultado || {};
     const k = lecturaFacturaCompra?.key || 0;
+    // Órdenes de compra abiertas de ese proveedor (y de la obra elegida, si hay una).
+    const proveedorElegido = proveedorFijo || facturaProveedorSel;
+    const ocsDisponibles = proveedorElegido ? ordenesCompra.filter((oc) =>
+      ESTADOS_OC_ABIERTA.includes(oc.estado) && !obraIdsPapelera.has(oc.obraId)
+      && normalizarTexto(oc.proveedor || "") === normalizarTexto(proveedorElegido)
+      && (!facturaObraId || String(oc.obraId) === facturaObraId)
+      && (String(oc.id) === facturaOcId || controlDeOC(oc).falta > toleranciaOC(totalesOC(oc).total))) : [];
+    const ocElegidaId = ocsDisponibles.some((oc) => String(oc.id) === facturaOcId) ? facturaOcId : "";
+    const ocElegida = ocElegidaId ? ocsDisponibles.find((oc) => String(oc.id) === ocElegidaId) : null;
     return (
       <form
         key={formularioCompraKey}
@@ -5793,12 +6098,34 @@ export default function ConcretarApp() {
               <div className={`${inputCls} bg-stone-100 text-slate-600`}>{proveedorFijo}</div>
             </>
           ) : (
-            <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} />
+            <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} onSeleccionar={setFacturaProveedorSel} />
           )}
         </Field>
         <Field label="Categoría">
           <select name="categoria" className={inputCls}>{CATEGORIAS_GASTO.map((c) => <option key={c}>{c}</option>)}</select>
         </Field>
+        {ocsDisponibles.length > 0 && (
+          <Field label="Orden de compra">
+            <select
+              name="ordenCompraId"
+              value={ocElegidaId}
+              onChange={(e) => {
+                setFacturaOcId(e.target.value);
+                const oc = ordenesCompra.find((o) => String(o.id) === e.target.value);
+                if (oc) setFacturaObraId(String(oc.obraId));
+              }}
+              className={inputCls}
+            >
+              <option value="">Sin orden de compra</option>
+              {ocsDisponibles.map((oc) => <option key={oc.id} value={oc.id}>{numeroOC(oc)} · {obras.find((o) => o.id === oc.obraId)?.nombre || ""} · {fmtARS(totalesOC(oc).total)}</option>)}
+            </select>
+            {ocElegida && (
+              <div className="mt-1 text-[11px] text-slate-400">
+                Falta facturar {fmtARS(controlDeOC(ocElegida).falta)} de esta orden{ocElegida.tipoFactura ? ` · pedía ${ocElegida.tipoFactura === "Sin factura" ? "sin factura" : `Factura ${ocElegida.tipoFactura}`}` : ""}. Si no coincide, te avisa al guardar.
+              </div>
+            )}
+          </Field>
+        )}
         <Field label="Descripción">
           <input name="descripcion" placeholder="Ej: Nafta camioneta, cemento para losa..." className={inputCls} />
         </Field>
@@ -9170,13 +9497,20 @@ export default function ConcretarApp() {
       // ahí lo aprueba, rechaza o modifica Gerencia (las compras generales, sin obra,
       // se siguen aprobando directo en Pedidos de Obra).
       if (pedidoCreado.obraId != null) {
+        // Los precios del pedido son sin IVA (Factura A, 21%).
+        const itemsOc = itemsFinales.map((it) => ({ descripcion: it.material, unidad: it.unidad || "u", cantidad: Number(it.cantidad) || 0, precioUnitario: Number(it.precioUnitario) || 0, alicuotaIva: 21 }));
         await addRecord("ordenes_compra", {
           fecha: hoyISO(),
           obraId: pedidoCreado.obraId,
           proveedor: pedidoProveedor || "Sin especificar",
           item: itemsFinales.map((it) => it.material).join(", "),
-          montoEstimado: totalPedido,
+          items: itemsOc,
+          tipoFactura: "A",
+          fechaEntrega: pedidoFechaNecesaria || null,
+          montoEstimado: Math.round(totalesOC({ tipoFactura: "A", items: itemsOc }).total * 100) / 100,
           estado: "Requiere aprobación",
+          creadaPor: currentRole,
+          recepciones: [],
           pedidoId: pedidoCreado.id,
         }, setOrdenesCompra);
       }
@@ -9448,7 +9782,7 @@ export default function ConcretarApp() {
   // Las órdenes armadas desde un pedido de obra (oc.pedidoId) reflejan la decisión
   // también en el pedido, para que Pedidos de Obra muestre el mismo estado.
   async function aprobarOC(oc) {
-    await updateRecord("ordenes_compra", oc.id, { estado: "Aprobada" }, setOrdenesCompra);
+    await updateRecord("ordenes_compra", oc.id, { estado: "Aprobada", aprobadaPor: currentRole, fechaAprobacion: hoyISO() }, setOrdenesCompra);
     if (oc.pedidoId) {
       const pedido = pedidosMateriales.find((p) => p.id === oc.pedidoId);
       if (pedido) await aprobarPedidoMaterial(pedido);
@@ -9461,29 +9795,215 @@ export default function ConcretarApp() {
       if (pedido) await rechazarPedidoMaterial(pedido, observaciones);
     }
   }
-  const recibirOC = (id) => updateRecord("ordenes_compra", id, { estado: "Recibida" }, setOrdenesCompra);
-
-  const [editandoOcId, setEditandoOcId] = useState(null);
-  const [ocEditDraft, setOcEditDraft] = useState(null);
+  // Solo Gerencia aprueba o rechaza las órdenes de compra.
+  const puedeAprobarOC = currentRole === "Gerente";
+  // Formulario de orden de compra: null = cerrado, "nueva" o el id de la que se modifica.
+  const [formularioOc, setFormularioOc] = useState(null);
+  const [recibiendoOcId, setRecibiendoOcId] = useState(null);
   const [rechazandoOcId, setRechazandoOcId] = useState(null);
   const [observacionesRechazoOc, setObservacionesRechazoOc] = useState("");
-  function iniciarEdicionOc(oc) {
-    setEditandoOcId(oc.id);
-    setOcEditDraft({ proveedor: oc.proveedor || "", item: oc.item || "", montoEstimado: oc.montoEstimado || 0 });
+  const [revisandoOcId, setRevisandoOcId] = useState(null);
+  const [notaRevisionOc, setNotaRevisionOc] = useState("");
+  const [ocExpandidaId, setOcExpandidaId] = useState(null);
+  const [filtroOc, setFiltroOc] = useState("Todas");
+
+  async function guardarFormularioOC(datos) {
+    if (formularioOc === "nueva") {
+      await addRecord("ordenes_compra", { ...datos, estado: "Requiere aprobación", creadaPor: currentRole, recepciones: [] }, setOrdenesCompra);
+    } else {
+      const oc = ordenesCompra.find((o) => o.id === formularioOc);
+      if (!oc) return;
+      // Cambiar una orden ya aprobada (o rechazada) la vuelve a mandar a Gerencia.
+      const vuelveAAprobacion = ["Aprobada", "Enviada", "Rechazada"].includes(oc.estado);
+      await updateRecord("ordenes_compra", oc.id, {
+        ...datos,
+        ...(vuelveAAprobacion ? { estado: "Requiere aprobación", aprobadaPor: null, fechaAprobacion: null } : {}),
+      }, setOrdenesCompra);
+    }
+    setFormularioOc(null);
+  }
+  function abrirFormularioOC(id) {
+    setFormularioOc(id);
+    setRecibiendoOcId(null);
+    setRechazandoOcId(null);
     scrollContenidoArriba();
   }
-  function cancelarEdicionOc() {
-    setEditandoOcId(null);
-    setOcEditDraft(null);
+  async function guardarRecepcionOC(oc, recepcion) {
+    const recepciones = [...recepcionesOC(oc), { ...recepcion, id: Date.now(), recibidoPor: currentRole }];
+    const ocNueva = { ...oc, recepciones };
+    const completa = itemsOC(oc).length === 0 || itemsOC(oc).every((it, idx) => cantidadRecibidaItemOC(ocNueva, idx) >= (Number(it.cantidad) || 0) - 1e-9);
+    await updateRecord("ordenes_compra", oc.id, { recepciones, estado: completa ? "Recibida" : "Recibida parcialmente" }, setOrdenesCompra);
+    setRecibiendoOcId(null);
   }
-  async function guardarEdicionOc(oc) {
-    await updateRecord("ordenes_compra", oc.id, { ...ocEditDraft }, setOrdenesCompra);
-    cancelarEdicionOc();
+  async function borrarRecepcionOC(oc, recepcionId) {
+    if (!window.confirm("¿Borrar esta entrega?")) return;
+    const recepciones = recepcionesOC(oc).filter((r) => r.id !== recepcionId);
+    const estado = recepciones.length === 0 ? (oc.fechaEnvio ? "Enviada" : "Aprobada") : "Recibida parcialmente";
+    await updateRecord("ordenes_compra", oc.id, { recepciones, estado }, setOrdenesCompra);
   }
+  async function anularOC(oc) {
+    if (!window.confirm(`¿Anular la ${numeroOC(oc)}? Avisale al proveedor que no la mande.`)) return;
+    await updateRecord("ordenes_compra", oc.id, { estado: "Anulada" }, setOrdenesCompra);
+  }
+  async function cerrarOC(oc) {
+    if (!window.confirm(`¿Dar por cerrada la ${numeroOC(oc)}? Lo que falta entregar ya no se espera.`)) return;
+    await updateRecord("ordenes_compra", oc.id, { estado: "Cerrada" }, setOrdenesCompra);
+  }
+  async function vincularFacturaOC(oc, compraId) {
+    const compra = comprasFacturas.find((c) => c.id === compraId);
+    if (!compra) return;
+    await updateRecord("compras_facturas", compra.id, { ordenCompraId: oc.id }, setComprasFacturas);
+    avisarSiNoCoincideOC(oc, comprasFacturas.map((c) => (c.id === compra.id ? { ...c, ordenCompraId: oc.id } : c)));
+  }
+  async function desvincularFacturaOC(compra) {
+    await updateRecord("compras_facturas", compra.id, { ordenCompraId: null }, setComprasFacturas);
+  }
+  // Al vincular una factura (o cargarla con su orden), si no coincide se avisa en el
+  // momento; además queda marcada "A revisar" en Órdenes de Compra y en General.
+  function avisarSiNoCoincideOC(oc, compras) {
+    const control = controlDeOC(oc, compras);
+    if (control.aRevisar) {
+      alert(`Ojo: la factura no coincide con la ${numeroOC(oc)}.\n\n${control.problemas.join("\n")}\n\nQuedó marcada para revisar en Órdenes de Compra.`);
+    }
+  }
+  async function marcarRevisadaOC(oc) {
+    if (!notaRevisionOc.trim()) { alert("Escribí qué se revisó (ej: aumentó el precio y se aceptó, nos van a mandar una nota de crédito…)."); return; }
+    const control = controlDeOC(oc);
+    await updateRecord("ordenes_compra", oc.id, { revision: { firma: control.firma, nota: notaRevisionOc.trim(), fecha: hoyISO(), por: currentRole } }, setOrdenesCompra);
+    setRevisandoOcId(null);
+    setNotaRevisionOc("");
+  }
+
+  // ---------- Orden de compra en PDF y envío al proveedor ----------
+  const proveedorDeOC = (oc) => proveedores.find((p) => normalizarTexto(nombreComercial(p)) === normalizarTexto(oc.proveedor || "") || normalizarTexto(p.razonSocial || "") === normalizarTexto(oc.proveedor || ""));
+  function pdfOrdenCompra(oc) {
+    const obra = obras.find((o) => o.id === oc.obraId);
+    const prov = proveedorDeOC(oc);
+    const tot = totalesOC(oc);
+    const discrimina = ocDiscriminaIva(oc);
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    doc.setFillColor(2, 29, 52);
+    doc.rect(0, 0, 210, 30, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.text("ORDEN DE COMPRA", 14, 13);
+    doc.setFontSize(10);
+    doc.text(`N° ${String(oc.id).padStart(5, "0")}  ·  ${fmtFecha(oc.fecha)}`, 14, 20);
+    doc.setFontSize(9);
+    doc.text("Documento no válido como factura", 14, 26);
+    doc.setFontSize(10);
+    doc.text(DATOS_EMPRESA.razonSocial, 196, 13, { align: "right" });
+    doc.setFontSize(9);
+    doc.text(`CUIT ${DATOS_EMPRESA.cuit}`, 196, 19, { align: "right" });
+    doc.text(DATOS_EMPRESA.condicionIva, 196, 24, { align: "right" });
+
+    doc.setTextColor(20, 20, 20);
+    let y = 40;
+    const renglon = (etiqueta, valor, x, yy) => {
+      doc.setFont(undefined, "bold"); doc.text(etiqueta, x, yy);
+      doc.setFont(undefined, "normal"); doc.text(String(valor), x + doc.getTextWidth(etiqueta) + 2, yy);
+    };
+    doc.setFontSize(10);
+    doc.setFont(undefined, "bold"); doc.text("PROVEEDOR", 14, y); doc.text("ENTREGA", 112, y);
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(9);
+    let yp = y + 6;
+    doc.text(prov?.razonSocial || oc.proveedor || "-", 14, yp); yp += 5;
+    if (prov?.cuit) { doc.text(`CUIT: ${prov.cuit}`, 14, yp); yp += 5; }
+    if (prov?.domicilio) { doc.text(doc.splitTextToSize(`Domicilio: ${prov.domicilio}`, 90), 14, yp); yp += 5; }
+    if (prov?.contacto || prov?.telefono) { doc.text(`Contacto: ${[prov.contacto, prov.telefono].filter(Boolean).join(" — ")}`, 14, yp); yp += 5; }
+    if (prov?.email) { doc.text(`Mail: ${prov.email}`, 14, yp); yp += 5; }
+    let ye = y + 6;
+    renglon("Obra:", obra?.nombre || "-", 112, ye); ye += 5;
+    if (oc.lugarEntrega) { const l = doc.splitTextToSize(`Lugar: ${oc.lugarEntrega}`, 84); doc.text(l, 112, ye); ye += 5 * l.length; }
+    if (oc.fechaEntrega) { renglon("Fecha de entrega:", fmtFecha(oc.fechaEntrega), 112, ye); ye += 5; }
+    renglon("Factura:", oc.tipoFactura === "Sin factura" ? "Sin factura" : `Factura ${oc.tipoFactura || "-"}`, 112, ye); ye += 5;
+    if (oc.condicionPago) { const l = doc.splitTextToSize(`Condición de pago: ${oc.condicionPago}`, 84); doc.text(l, 112, ye); ye += 5 * l.length; }
+
+    const items = itemsOC(oc);
+    const cuerpo = items.length
+      ? items.map((it) => [it.descripcion, String(it.cantidad), it.unidad || "-", fmtARS(it.precioUnitario), ...(discrimina ? [`${String(it.alicuotaIva ?? 21).replace(".", ",")}%`] : []), fmtARS(subtotalItemOC(it))])
+      : [[oc.item || "-", "", "", "", ...(discrimina ? [""] : []), fmtARS(tot.total)]];
+    const montoPie = (n) => ({ content: fmtARS(n), styles: { halign: "right" } });
+    const pie = discrimina
+      ? [["", "", "", "", "Subtotal", montoPie(tot.subtotal)], ["", "", "", "", "IVA", montoPie(tot.iva)], ["", "", "", "", "TOTAL", montoPie(tot.total)]]
+      : [["", "", "", "TOTAL", montoPie(tot.total)]];
+    autoTable(doc, {
+      startY: Math.max(yp, ye) + 4,
+      head: [["Descripción", "Cant.", "Unidad", discrimina ? "P. unit. sin IVA" : "P. unitario", ...(discrimina ? ["IVA"] : []), discrimina ? "Subtotal sin IVA" : "Subtotal"]],
+      body: cuerpo,
+      foot: pie,
+      headStyles: { fillColor: [2, 29, 52] },
+      footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
+      styles: { fontSize: 9 },
+      columnStyles: { 1: { halign: "right" }, [discrimina ? 5 : 4]: { halign: "right" }, 3: { halign: "right" } },
+    });
+    let yf = (doc.lastAutoTable.finalY || 120) + 8;
+    doc.setFontSize(9);
+    if (oc.condiciones) {
+      doc.setFont(undefined, "bold"); doc.text("Condiciones", 14, yf); yf += 5;
+      doc.setFont(undefined, "normal");
+      const l = doc.splitTextToSize(oc.condiciones, 182); doc.text(l, 14, yf); yf += 5 * l.length + 2;
+    }
+    doc.setTextColor(90, 90, 90);
+    const aviso = doc.splitTextToSize(`Por favor, indicar el N° de orden (${numeroOC(oc)}) en el remito y en la factura. Solo se pagan los materiales y precios de esta orden; cualquier cambio tiene que estar aprobado por Grupo Concretar antes de la entrega.`, 182);
+    doc.text(aviso, 14, yf); yf += 5 * aviso.length + 10;
+    doc.setTextColor(20, 20, 20);
+    if (oc.aprobadaPor) {
+      doc.line(14, yf, 80, yf);
+      doc.text(`Autorizó: ${oc.aprobadaPor}${oc.fechaAprobacion ? ` — ${fmtFecha(oc.fechaAprobacion)}` : ""}`, 14, yf + 5);
+    }
+    return doc;
+  }
+  const nombreArchivoOC = (oc) => `${numeroOC(oc).replace(" ", "_")}_${(oc.proveedor || "proveedor").replace(/[^\w-]+/g, "_")}.pdf`;
+  function descargarPdfOC(oc) {
+    pdfOrdenCompra(oc).save(nombreArchivoOC(oc));
+  }
+  // Por WhatsApp o mail: en el celu abre el menú de compartir con el PDF adjunto; en la
+  // compu se descarga el PDF y se abre WhatsApp Web / el mail con el mensaje listo
+  // (ahí solo hay que adjuntar el PDF descargado).
+  async function enviarOC(oc, canal) {
+    const prov = proveedorDeOC(oc);
+    const obra = obras.find((o) => o.id === oc.obraId);
+    const nombre = nombreArchivoOC(oc);
+    const doc = pdfOrdenCompra(oc);
+    const asunto = `${numeroOC(oc)} — ${DATOS_EMPRESA.razonSocial}`;
+    const mensaje = `Hola${prov?.contacto ? ` ${prov.contacto}` : ""}, te enviamos la ${numeroOC(oc)} de ${DATOS_EMPRESA.razonSocial} para la obra ${obra?.nombre || ""}, por un total de ${fmtARS(totalesOC(oc).total)}. Por favor confirmanos que la recibiste y la fecha de entrega, e indicá el N° de orden en el remito y la factura. Gracias.`;
+    let compartido = false;
+    try {
+      const archivo = new File([doc.output("blob")], nombre, { type: "application/pdf" });
+      const enCelu = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+      if (enCelu && navigator.canShare?.({ files: [archivo] })) {
+        await navigator.share({ files: [archivo], title: asunto, text: mensaje });
+        compartido = true;
+      }
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+    }
+    if (!compartido) {
+      doc.save(nombre);
+      if (canal === "WhatsApp") {
+        const tel = telefonoWhatsApp(prov?.telefono);
+        window.open(`https://wa.me/${tel}?text=${encodeURIComponent(`${mensaje}\n\n(Te adjunto el PDF de la orden)`)}`, "_blank");
+      } else {
+        window.location.href = `mailto:${encodeURIComponent(prov?.email || "")}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(`${mensaje}\n\nAdjunto el PDF de la orden.`)}`;
+      }
+    }
+    await updateRecord("ordenes_compra", oc.id, {
+      enviadaPor: canal, fechaEnvio: hoyISO(), ...(oc.estado === "Aprobada" ? { estado: "Enviada" } : {}),
+    }, setOrdenesCompra);
+  }
+  // Canal con el que se le mandó la última orden a ese proveedor (va primero).
+  function canalPreferidoOC(oc) {
+    const anterior = ordenesCompra.filter((o) => o.id !== oc.id && o.enviadaPor && normalizarTexto(o.proveedor || "") === normalizarTexto(oc.proveedor || "")).sort((a, b) => (b.fechaEnvio || "").localeCompare(a.fechaEnvio || "") || b.id - a.id)[0];
+    if (anterior) return anterior.enviadaPor;
+    const prov = proveedorDeOC(oc);
+    return !prov?.telefono && prov?.email ? "Mail" : "WhatsApp";
+  }
+
   function iniciarRechazoOc(oc) {
     setRechazandoOcId(oc.id);
     setObservacionesRechazoOc("");
-    scrollContenidoArriba();
   }
   function cancelarRechazoOc() {
     setRechazandoOcId(null);
@@ -9491,7 +10011,7 @@ export default function ConcretarApp() {
   }
   async function confirmarRechazoOc(oc) {
     if (!observacionesRechazoOc.trim()) {
-      alert("Escribí el motivo del rechazo en observaciones, para que Logística sepa por qué.");
+      alert("Escribí el motivo del rechazo, así quien la armó sabe qué cambiar.");
       return;
     }
     await rechazarOC(oc, observacionesRechazoOc.trim());
@@ -9610,7 +10130,20 @@ export default function ConcretarApp() {
               ) : (
                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
                   {ocPendientesAprobacion.length > 0 && (
-                    <AlertCard tone="rose" icon={AlertTriangle} title={`${ocPendientesAprobacion.length} orden(es) de compra esperando aprobación.`} />
+                    <AlertCard tone="rose" icon={AlertTriangle} title={`${ocPendientesAprobacion.length} orden(es) de compra esperando aprobación de Gerencia.`}>
+                      <ul className="space-y-0.5 text-xs">
+                        {ocPendientesAprobacion.slice(0, 5).map((oc) => <li key={oc.id} className="truncate">{numeroOC(oc)} · {oc.proveedor} — {fmtARS(totalesOC(oc).total)}</li>)}
+                      </ul>
+                      <button onClick={() => { setTab("ordenes"); setFiltroOc("Por aprobar"); }} className="text-xs font-semibold underline">Ir a Órdenes de Compra</button>
+                    </AlertCard>
+                  )}
+                  {ocsARevisar.length > 0 && (
+                    <AlertCard tone="rose" icon={AlertTriangle} title={`${ocsARevisar.length} factura(s) que no coinciden con su orden de compra — revisalas.`}>
+                      <ul className="space-y-0.5 text-xs">
+                        {ocsARevisar.slice(0, 5).map((oc) => <li key={oc.id} className="truncate">{numeroOC(oc)} · {oc.proveedor} — {controlDeOC(oc).problemas[0]}</li>)}
+                      </ul>
+                      <button onClick={() => { setTab("ordenes"); setFiltroOc("A revisar"); }} className="text-xs font-semibold underline">Ir a Órdenes de Compra</button>
+                    </AlertCard>
                   )}
                   {herramientasAtencion.length > 0 && (
                     <AlertCard tone="amber" icon={AlertTriangle} title={`${herramientasAtencion.length} herramienta(s) en mal estado o rota(s) — mandar a reparar.`}>
@@ -13724,131 +14257,283 @@ export default function ConcretarApp() {
           </div>
         )}
 
-        {tab === "ordenes" && (
+        {tab === "ordenes" && (() => {
+          const visibles = ordenesCompra.filter((oc) => !obraIdsPapelera.has(oc.obraId));
+          const FILTROS_OC = {
+            Todas: () => true,
+            "Por aprobar": (oc) => oc.estado === "Requiere aprobación",
+            "En curso": (oc) => ["Aprobada", "Enviada", "Recibida parcialmente"].includes(oc.estado),
+            "A revisar": (oc) => ocsARevisar.includes(oc),
+            Terminadas: (oc) => ["Recibida", "Cerrada", "Rechazada", "Anulada"].includes(oc.estado),
+          };
+          const lista = visibles.filter(FILTROS_OC[filtroOc] || FILTROS_OC.Todas).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || b.id - a.id);
+          const ocEnFormulario = typeof formularioOc === "number" ? ordenesCompra.find((o) => o.id === formularioOc) : null;
+          return (
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Órdenes de Compra</h2>
-              <button onClick={() => setShowOcForm((v) => !v)} className={btnPrimary}>
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900">Órdenes de Compra</h2>
+                <div className="mt-0.5 text-xs text-slate-500">Materiales de obra: se arma la orden → la aprueba Gerencia → se le manda al proveedor → se registran las entregas con su remito → se vincula la factura. Si la factura no coincide, queda para revisar.</div>
+              </div>
+              <button onClick={() => abrirFormularioOC(formularioOc === "nueva" ? null : "nueva")} className={btnPrimary}>
                 <Plus size={16} /> Nueva orden
               </button>
             </div>
 
-            {showOcForm && (
-              <Panel title="Añadir orden de compra" action={<button onClick={() => setShowOcForm(false)}><X size={16} /></button>}>
-                <form
-                  className="grid grid-cols-1 gap-4 md:grid-cols-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const f = new FormData(e.target);
-                    if (!f.get("proveedor")) { alert("Elegí un proveedor o escribí uno nuevo."); return; }
-                    const monto = Number(f.get("montoEstimado")) || 0;
-                    addRecord("ordenes_compra", {
-                      fecha: f.get("fecha"),
-                      obraId: Number(f.get("obraId")),
-                      proveedor: f.get("proveedor"),
-                      item: f.get("item"),
-                      montoEstimado: monto,
-                      estado: monto >= UMBRAL_APROBACION_OC ? "Requiere aprobación" : "Pendiente",
-                    }, setOrdenesCompra);
-                    e.target.reset();
-                    setShowOcForm(false);
-                  }}
-                >
-                  <Field label="Fecha"><input name="fecha" type="date" required className={inputCls} /></Field>
-                  <Field label="Obra">
-                    <select name="obraId" className={inputCls}>{obrasSeleccionables(obras).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}</select>
-                  </Field>
-                  <Field label="Proveedor">
-                    <ProveedorPicker proveedores={proveedores} onCrearProveedor={crearProveedorRapido} />
-                  </Field>
-                  <Field label="Ítems / detalle"><input name="item" className={inputCls} /></Field>
-                  <Field label="Monto estimado ($)">
-                    <MoneyInput name="montoEstimado" className={inputCls} />
-                    <div className="mt-1 text-[11px] text-slate-400">Precio final, con IVA incluido.</div>
-                  </Field>
-                  <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
-                </form>
+            {formularioOc != null && (
+              <Panel title={ocEnFormulario ? `Modificar ${numeroOC(ocEnFormulario)}` : "Nueva orden de compra"} action={<button onClick={() => setFormularioOc(null)}><X size={16} /></button>}>
+                <FormularioOC
+                  key={formularioOc}
+                  oc={ocEnFormulario}
+                  obras={obras}
+                  proveedores={proveedores}
+                  catalogoMateriales={catalogoMateriales}
+                  onCrearProveedor={crearProveedorRapido}
+                  onGuardar={guardarFormularioOC}
+                  onCancelar={() => setFormularioOc(null)}
+                />
               </Panel>
             )}
 
-            <div className="space-y-3">
-              {ordenesCompra.filter((oc) => !obraIdsPapelera.has(oc.obraId)).map((oc) => {
-                const obra = obras.find((o) => o.id === oc.obraId);
-                const pendienteDecision = oc.estado === "Pendiente" || oc.estado === "Requiere aprobación";
-                const enEdicion = editandoOcId === oc.id;
-                const enRechazo = rechazandoOcId === oc.id;
+            <div className="flex flex-wrap gap-1.5">
+              {Object.keys(FILTROS_OC).map((f) => {
+                const n = visibles.filter(FILTROS_OC[f]).length;
+                const activo = filtroOc === f;
                 return (
-                  <div key={oc.id} className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                    {enEdicion ? (
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                        <Field label="Proveedor">
-                          <input value={ocEditDraft.proveedor} onChange={(e) => setOcEditDraft((d) => ({ ...d, proveedor: e.target.value }))} className={inputCls} />
-                        </Field>
-                        <div className="sm:col-span-2">
-                          <Field label="Ítems / detalle">
-                            <input value={ocEditDraft.item} onChange={(e) => setOcEditDraft((d) => ({ ...d, item: e.target.value }))} className={inputCls} />
-                          </Field>
-                        </div>
-                        <Field label="Monto estimado">
-                          <MoneyInput value={ocEditDraft.montoEstimado} onChange={(v) => setOcEditDraft((d) => ({ ...d, montoEstimado: v }))} className={inputCls} />
-                        </Field>
-                        <div className="flex gap-2 sm:col-span-4">
-                          <button onClick={() => guardarEdicionOc(oc)} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Guardar</button>
-                          <button onClick={cancelarEdicionOc} className={btnGhost}>Cancelar</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-900">{oc.proveedor}</span>
-                            {oc.pedidoId && (
-                              <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Desde Pedidos de Obra</span>
-                            )}
-                          </div>
-                          <div className="text-sm text-slate-500">{oc.item}</div>
-                          <div className="mt-1 text-xs text-slate-400">{obra?.nombre} · {fmtFecha(oc.fecha)}</div>
-                          {oc.estado === "Rechazada" && oc.observaciones && (
-                            <div className="mt-1.5 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">Motivo: {oc.observaciones}</div>
-                          )}
-                        </div>
+                  <button key={f} onClick={() => setFiltroOc(f)} className={`rounded-full border px-3 py-1 text-xs font-semibold ${activo ? "border-slate-900 bg-slate-900 text-white" : f === "A revisar" && n > 0 ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100" : "border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}>
+                    {f} <span className={activo ? "text-white/70" : "text-slate-400"}>{n}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {lista.length === 0 && (
+              <div className="rounded-lg border border-dashed border-stone-300 bg-white p-6 text-center text-sm text-slate-400">
+                {visibles.length === 0 ? "Todavía no hay órdenes de compra. Tocá \"Nueva orden\" para armar la primera." : "No hay órdenes en este filtro."}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {lista.map((oc) => {
+                const obra = obras.find((o) => o.id === oc.obraId);
+                const items = itemsOC(oc);
+                const tot = totalesOC(oc);
+                const facturas = facturasDeOC(oc);
+                const control = controlDeOC(oc);
+                const recepciones = recepcionesOC(oc);
+                const expandida = ocExpandidaId === oc.id;
+                const abierta = ["Aprobada", "Enviada", "Recibida parcialmente"].includes(oc.estado);
+                const canalPreferido = canalPreferidoOC(oc);
+                const prov = proveedorDeOC(oc);
+                const botonesEnvio = ["WhatsApp", "Mail"].sort((a, b) => (a === canalPreferido ? -1 : b === canalPreferido ? 1 : 0));
+                const facturasParaVincular = comprasFacturas
+                  .filter((c) => !c.ordenCompraId && normalizarTexto(c.proveedor || "") === normalizarTexto(oc.proveedor || "") && (c.obraId == null || c.obraId === oc.obraId))
+                  .sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""))
+                  .slice(0, 30);
+                let chipFacturacion = null;
+                if (control.aRevisar) chipFacturacion = <span className="rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">A revisar</span>;
+                else if (control.revisada) chipFacturacion = <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">Diferencia revisada</span>;
+                else if (facturas.length > 0 && control.falta <= toleranciaOC(tot.total)) chipFacturacion = <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Facturada</span>;
+                else if (facturas.length > 0) chipFacturacion = <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Facturado {fmtARS(control.facturado)}</span>;
+                return (
+                  <div key={oc.id} className={`rounded-lg border bg-white p-4 shadow-sm ${control.aRevisar ? "border-rose-300" : "border-stone-200"}`} style={{ borderLeft: `4px solid ${colorDeObra(obra)}` }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <button type="button" onClick={() => setOcExpandidaId(expandida ? null : oc.id)} className="min-w-0 text-left">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm font-semibold text-slate-800">{fmtARS(oc.montoEstimado)}</span>
-                          <Badge estado={oc.estado} />
-                          {pendienteDecision && (
-                            <>
-                              <button onClick={() => aprobarOC(oc)} className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
-                                <Check size={13} /> Aprobar
-                              </button>
-                              <button onClick={() => iniciarRechazoOc(oc)} className="flex items-center gap-1 rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50">
-                                <X size={13} /> Rechazar
-                              </button>
-                              <button onClick={() => iniciarEdicionOc(oc)} className={btnGhost}>
-                                <span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span>
-                              </button>
-                            </>
+                          <span className="font-mono text-xs font-semibold text-slate-400">{numeroOC(oc)}</span>
+                          <span className="font-semibold text-slate-900">{oc.proveedor}</span>
+                          {oc.pedidoId && (
+                            <span className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">Desde Pedidos de Obra</span>
                           )}
-                          {oc.estado === "Aprobada" && (
-                            <button onClick={() => recibirOC(oc.id)} className={btnGhost}>Marcar recibida</button>
-                          )}
-                          <BotonEliminar onClick={() => moverAPapelera("ordenes_compra", oc.id, setOrdenesCompra, `${oc.proveedor} — ${oc.item}`)} title="Eliminar orden de compra" />
+                          {chipFacturacion}
                         </div>
+                        <div className="mt-0.5 line-clamp-2 text-sm text-slate-500">{items.length ? items.map((it) => `${it.cantidad} ${it.unidad} ${it.descripcion}`).join(" · ") : oc.item}</div>
+                        <div className="mt-1 text-xs text-slate-400">
+                          {[obra?.nombre, fmtFecha(oc.fecha), oc.fechaEntrega ? `entrega ${fmtFecha(oc.fechaEntrega)}` : null, oc.condicionPago, oc.tipoFactura ? (oc.tipoFactura === "Sin factura" ? "sin factura" : `Factura ${oc.tipoFactura}`) : null].filter(Boolean).join(" · ")}
+                        </div>
+                        {oc.fechaEnvio && <div className="mt-0.5 text-[11px] text-sky-700">Enviada por {oc.enviadaPor} el {fmtFecha(oc.fechaEnvio)}</div>}
+                        <div className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-amber-700">{expandida ? "Ocultar detalle" : "Ver detalle, entregas y facturas"} <ChevronDown size={12} className={expandida ? "rotate-180" : ""} /></div>
+                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm font-semibold text-slate-800">{fmtARS(tot.total)}</span>
+                        <Badge estado={oc.estado} />
                       </div>
+                    </div>
+
+                    {oc.estado === "Rechazada" && oc.observaciones && (
+                      <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">Motivo del rechazo: {oc.observaciones}</div>
                     )}
-                    {enRechazo && (
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {oc.estado === "Requiere aprobación" && (puedeAprobarOC ? (
+                        <>
+                          <button onClick={() => aprobarOC(oc)} className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                            <Check size={13} /> Aprobar
+                          </button>
+                          <button onClick={() => iniciarRechazoOc(oc)} className="flex items-center gap-1 rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50">
+                            <X size={13} /> Rechazar
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-xs italic text-slate-500">Esperando la aprobación de Gerencia.</span>
+                      ))}
+                      {abierta && botonesEnvio.map((canal, i) => (
+                        <button key={canal} onClick={() => enviarOC(oc, canal)} className={i === 0 ? "flex items-center gap-1 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700" : btnGhost}>
+                          <span className="flex items-center gap-1">{canal === "WhatsApp" ? <MessageCircle size={13} /> : <Mail size={13} />} {oc.fechaEnvio ? "Reenviar" : "Enviar"} por {canal === "Mail" ? "mail" : "WhatsApp"}</span>
+                        </button>
+                      ))}
+                      {abierta && (
+                        <button onClick={() => { setRecibiendoOcId(recibiendoOcId === oc.id ? null : oc.id); setOcExpandidaId(oc.id); }} className="flex items-center gap-1 rounded-md bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-800">
+                          <PackageCheck size={13} /> Registrar entrega
+                        </button>
+                      )}
+                      {!["Requiere aprobación", "Rechazada", "Anulada"].includes(oc.estado) && (
+                        <button onClick={() => descargarPdfOC(oc)} className={btnGhost}><span className="flex items-center gap-1"><FileDown size={13} /> PDF</span></button>
+                      )}
+                      {(["Requiere aprobación", "Rechazada"].includes(oc.estado) || (["Aprobada", "Enviada"].includes(oc.estado) && recepciones.length === 0)) && (
+                        <button onClick={() => abrirFormularioOC(oc.id)} className={btnGhost}><span className="flex items-center gap-1"><Pencil size={13} /> Modificar</span></button>
+                      )}
+                      {["Aprobada", "Enviada"].includes(oc.estado) && recepciones.length === 0 && (
+                        <button onClick={() => anularOC(oc)} className={btnGhostDanger}>Anular</button>
+                      )}
+                      {oc.estado === "Recibida parcialmente" && (
+                        <button onClick={() => cerrarOC(oc)} className={btnGhost}>Dar por cerrada</button>
+                      )}
+                      <span className="ml-auto"><BotonEliminar onClick={() => moverAPapelera("ordenes_compra", oc.id, setOrdenesCompra, `${numeroOC(oc)} — ${oc.proveedor}`)} title="Eliminar orden de compra" /></span>
+                    </div>
+                    {abierta && !prov?.telefono && !prov?.email && (
+                      <div className="mt-1.5 text-[11px] text-slate-400">Este proveedor no tiene teléfono ni mail cargado: al enviar vas a tener que elegir el contacto (o cargalo en Clientes/Proveedores).</div>
+                    )}
+
+                    {rechazandoOcId === oc.id && (
                       <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 p-3">
-                        <Field label="Observaciones (obligatorio) — para que Logística sepa por qué">
-                          <textarea
-                            value={observacionesRechazoOc}
-                            onChange={(e) => setObservacionesRechazoOc(e.target.value)}
-                            rows={2}
-                            placeholder="Ej: proveedor muy caro, no era urgente, pedir otra cotización..."
-                            className={inputCls}
-                          />
+                        <Field label="Motivo del rechazo (obligatorio)">
+                          <textarea value={observacionesRechazoOc} onChange={(e) => setObservacionesRechazoOc(e.target.value)} rows={2} placeholder="Ej: proveedor muy caro, pedir otra cotización, no era urgente..." className={inputCls} />
                         </Field>
                         <div className="mt-2 flex gap-2">
                           <button onClick={() => confirmarRechazoOc(oc)} className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700">Confirmar rechazo</button>
                           <button onClick={cancelarRechazoOc} className={btnGhost}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {recibiendoOcId === oc.id && (
+                      <div className="mt-3"><RecepcionOC oc={oc} onGuardar={(r) => guardarRecepcionOC(oc, r)} onCancelar={() => setRecibiendoOcId(null)} /></div>
+                    )}
+
+                    {(control.aRevisar || control.revisada) && (
+                      <div className={`mt-3 rounded-md border p-3 text-xs ${control.aRevisar ? "border-rose-200 bg-rose-50 text-rose-800" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                        <div className="mb-1 font-semibold">{control.aRevisar ? "La factura no coincide con la orden — revisala" : "Diferencia revisada"}</div>
+                        <ul className="list-disc space-y-0.5 pl-4">{control.problemas.map((p, i) => <li key={i}>{p}</li>)}</ul>
+                        {control.revisada && <div className="mt-1.5">Revisó {oc.revision.por} el {fmtFecha(oc.revision.fecha)}: {oc.revision.nota}</div>}
+                        {control.aRevisar && (revisandoOcId === oc.id ? (
+                          <div className="mt-2 space-y-2">
+                            <textarea value={notaRevisionOc} onChange={(e) => setNotaRevisionOc(e.target.value)} rows={2} placeholder="Qué se revisó: ej. aumentó el precio y se aceptó, nos mandan nota de crédito, falta entregar…" className={`${inputCls} w-full text-slate-800`} />
+                            <div className="flex gap-2">
+                              <button onClick={() => marcarRevisadaOC(oc)} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Marcar revisada</button>
+                              <button onClick={() => { setRevisandoOcId(null); setNotaRevisionOc(""); }} className={btnGhost}>Cancelar</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button onClick={() => { setRevisandoOcId(oc.id); setNotaRevisionOc(""); }} className="mt-2 rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100">Ya lo revisé</button>
+                        ))}
+                      </div>
+                    )}
+
+                    {expandida && (
+                      <div className="mt-4 space-y-4 border-t border-stone-100 pt-3">
+                        {items.length > 0 && (
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-[520px] text-left text-xs">
+                              <thead className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                <tr>
+                                  <th className="py-1 pr-2">Material</th>
+                                  <th className="px-2 py-1 text-right">Pedido</th>
+                                  <th className="px-2 py-1 text-right">Recibido</th>
+                                  <th className="px-2 py-1 text-right">{ocDiscriminaIva(oc) ? "P. unit. sin IVA" : "P. unitario"}</th>
+                                  <th className="py-1 pl-2 text-right">Subtotal</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {items.map((it, idx) => {
+                                  const recibido = cantidadRecibidaItemOC(oc, idx);
+                                  const completo = recibido >= (Number(it.cantidad) || 0);
+                                  return (
+                                    <tr key={idx} className="border-t border-stone-100">
+                                      <td className="py-1 pr-2 text-slate-700">{it.descripcion}</td>
+                                      <td className="whitespace-nowrap px-2 py-1 text-right text-slate-600">{it.cantidad} {it.unidad}</td>
+                                      <td className={`whitespace-nowrap px-2 py-1 text-right font-semibold ${completo ? "text-emerald-700" : recibido > 0 ? "text-teal-700" : "text-slate-400"}`}>{recibido} {it.unidad}</td>
+                                      <td className="whitespace-nowrap px-2 py-1 text-right font-mono text-slate-600">{fmtARS(it.precioUnitario)}{ocDiscriminaIva(oc) ? ` + ${String(it.alicuotaIva ?? 21).replace(".", ",")}%` : ""}</td>
+                                      <td className="whitespace-nowrap py-1 pl-2 text-right font-mono text-slate-700">{fmtARS(subtotalItemOC(it))}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {(oc.lugarEntrega || oc.condiciones || oc.aprobadaPor) && (
+                          <div className="space-y-0.5 text-xs text-slate-500">
+                            {oc.lugarEntrega && <div><span className="font-semibold text-slate-600">Lugar de entrega:</span> {oc.lugarEntrega}</div>}
+                            {oc.condiciones && <div><span className="font-semibold text-slate-600">Condiciones:</span> {oc.condiciones}</div>}
+                            {oc.aprobadaPor && <div><span className="font-semibold text-slate-600">Aprobó:</span> {oc.aprobadaPor}{oc.fechaAprobacion ? ` el ${fmtFecha(oc.fechaAprobacion)}` : ""}</div>}
+                          </div>
+                        )}
+
+                        <div>
+                          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Entregas (remitos)</div>
+                          {recepciones.length === 0 ? (
+                            <div className="text-xs text-slate-400">Todavía no se registró ninguna entrega.</div>
+                          ) : (
+                            <ul className="space-y-1">
+                              {recepciones.map((r) => (
+                                <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-stone-50 px-2 py-1 text-xs text-slate-600">
+                                  <span>
+                                    <span className="font-semibold text-slate-700">{fmtFecha(r.fecha)}</span>
+                                    {r.remito ? ` · Remito ${r.remito}` : " · sin N° de remito"}
+                                    {(r.items || []).length > 0 && ` · ${(r.items || []).map((x) => `${x.cantidad} ${items[x.idx]?.unidad || ""} ${items[x.idx]?.descripcion || ""}`).join(", ")}`}
+                                  </span>
+                                  <button onClick={() => borrarRecepcionOC(oc, r.id)} title="Borrar esta entrega" className="rounded p-0.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><X size={13} /></button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Facturas</div>
+                          <div className="mb-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                            <div className="rounded-md bg-stone-50 px-2 py-1.5"><div className="text-[10px] uppercase tracking-wide text-slate-400">Orden</div><div className="font-mono font-semibold text-slate-800">{fmtARS(tot.total)}</div></div>
+                            <div className="rounded-md bg-stone-50 px-2 py-1.5"><div className="text-[10px] uppercase tracking-wide text-slate-400">Recibido</div><div className="font-mono font-semibold text-slate-800">{control.hayRecepciones ? fmtARS(control.recibido) : "—"}</div></div>
+                            <div className="rounded-md bg-stone-50 px-2 py-1.5"><div className="text-[10px] uppercase tracking-wide text-slate-400">Facturado</div><div className="font-mono font-semibold text-slate-800">{fmtARS(control.facturado)}</div></div>
+                            <div className="rounded-md bg-stone-50 px-2 py-1.5"><div className="text-[10px] uppercase tracking-wide text-slate-400">Falta facturar</div><div className="font-mono font-semibold text-slate-800">{fmtARS(control.falta)}</div></div>
+                          </div>
+                          {facturas.length > 0 && (
+                            <ul className="mb-2 space-y-1">
+                              {facturas.map((c) => (
+                                <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-stone-50 px-2 py-1 text-xs text-slate-600">
+                                  <span>
+                                    <span className="font-semibold text-slate-700">{fmtFecha(c.fecha)}</span>
+                                    {` · ${c.comprobante || "sin N°"} · ${c.tipoFactura && c.tipoFactura !== "Sin factura" ? `Factura ${c.tipoFactura}` : "sin factura"} · `}
+                                    <span className="font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</span>
+                                    {totalPercepciones(c) > 0 && <span className="text-slate-400"> (incluye {fmtARS(totalPercepciones(c))} de percepciones)</span>}
+                                    {` · ${c.estado}`}
+                                  </span>
+                                  <button onClick={() => desvincularFacturaOC(c)} className={btnGhostSm}>Desvincular</button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {!["Requiere aprobación", "Rechazada", "Anulada"].includes(oc.estado) && (
+                            facturasParaVincular.length > 0 ? (
+                              <select value="" onChange={(e) => e.target.value && vincularFacturaOC(oc, Number(e.target.value))} className={`${inputCls} w-full py-1.5 text-xs sm:w-auto`}>
+                                <option value="">Vincular una factura ya cargada de {oc.proveedor}…</option>
+                                {facturasParaVincular.map((c) => <option key={c.id} value={c.id}>{fmtFecha(c.fecha)} · {c.comprobante || "sin N°"} · {fmtARS(c.monto)}{c.descripcion ? ` · ${c.descripcion}` : ""}</option>)}
+                              </select>
+                            ) : (
+                              <div className="text-xs text-slate-400">Cuando llegue la factura, cargala en Gastos y Facturas (o en la ficha del proveedor) y elegí esta orden en "Orden de compra".</div>
+                            )
+                          )}
                         </div>
                       </div>
                     )}
@@ -13857,7 +14542,8 @@ export default function ConcretarApp() {
               })}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {tab === "facturas" && !canVerFinanzas && (
           <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
@@ -13945,7 +14631,19 @@ export default function ConcretarApp() {
                         <td className="px-1.5 py-0.5 text-slate-600"><span className="flex items-center gap-1"><ObraDot obra={obra} />{obra?.nombre || "General"}</span></td>
                         <td className="px-1.5 py-0.5 font-medium text-slate-900">{c.proveedor}</td>
                         <td className="px-1.5 py-0.5 text-slate-600">{c.categoria}</td>
-                        <td className="px-1.5 py-0.5 text-slate-500">{c.descripcion || "—"}</td>
+                        <td className="px-1.5 py-0.5 text-slate-500">
+                          {c.descripcion || "—"}
+                          {c.ordenCompraId && (() => {
+                            const oc = ordenesCompra.find((o) => o.id === c.ordenCompraId);
+                            if (!oc) return null;
+                            const aRevisar = controlDeOC(oc).aRevisar;
+                            return (
+                              <button onClick={() => { setTab("ordenes"); setFiltroOc("Todas"); setOcExpandidaId(oc.id); }} title={aRevisar ? "La factura no coincide con la orden de compra — revisala" : "Ver la orden de compra"} className={`ml-1 rounded-full border px-1.5 py-px text-[9px] font-bold uppercase tracking-wide ${aRevisar ? "border-rose-300 bg-rose-50 text-rose-700" : "border-sky-300 bg-sky-50 text-sky-700"}`}>
+                                {numeroOC(oc)}{aRevisar ? " · revisar" : ""}
+                              </button>
+                            );
+                          })()}
+                        </td>
                         <td className="px-1.5 py-0.5 text-slate-600">
                           <span className="flex items-center gap-1"><CuentaIcon cuenta={c.cuenta || "Banco"} />{c.formaPago || c.cuenta || "—"}{c.medioBancario ? ` · ${c.medioBancario}` : ""}</span>
                           {(c.medioBancario === "eCheq" || c.formaPago === "eCheq") && c.estado === "Pendiente" && (
