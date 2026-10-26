@@ -7330,10 +7330,10 @@ export default function ConcretarApp() {
     m.retenciones = (m.retenciones || 0) + totalPercepciones(c, "IVA");
   });
   // Retenciones de IVA que nos hicieron al cobrar: son pagos a cuenta del IVA del mes
-  // en que se facturó el cobro, así que se descuentan de lo que hay que pagar (y si
-  // sobran, quedan como saldo a favor para el mes siguiente).
+  // en que efectivamente cobramos (ahí nos la retuvieron), así que se descuentan de lo
+  // que hay que pagar ese mes (y si sobran, quedan como saldo a favor para el siguiente).
   ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && i.estado !== "Pendiente" && totalRetenciones(i, "IVA") > 0).forEach((i) => {
-    const clave = claveMesCuentas(i.fecha);
+    const clave = claveMesCuentas(i.fechaCobro || i.fecha);
     const m = (ivaPorMes[clave] ??= { debito: 0, credito: 0 });
     m.retenciones = (m.retenciones || 0) + totalRetenciones(i, "IVA");
   });
@@ -7363,10 +7363,10 @@ export default function ConcretarApp() {
     const anio = (c.fecha || "").slice(0, 4);
     (gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 }).gastos += netoDeIvaMonto((c.monto || 0) - totalPercepciones(c), c.tipoFactura);
   });
-  // Retenciones de Ganancias sufridas en el año: pagos a cuenta del impuesto anual.
+  // Retenciones de Ganancias sufridas en el año del cobro: pagos a cuenta del impuesto anual.
   const retencionesGananciasPorAnio = {};
   ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && i.estado !== "Pendiente" && totalRetenciones(i, "Ganancias") > 0).forEach((i) => {
-    const anio = (i.fecha || "").slice(0, 4);
+    const anio = (i.fechaCobro || i.fecha || "").slice(0, 4);
     retencionesGananciasPorAnio[anio] = (retencionesGananciasPorAnio[anio] || 0) + totalRetenciones(i, "Ganancias");
     gananciasPorAnio[anio] ??= { ingresos: 0, gastos: 0 };
   });
@@ -7404,10 +7404,10 @@ export default function ConcretarApp() {
     ingresosGravablesPorMes[clave] = (ingresosGravablesPorMes[clave] || 0) + (f.monto || 0);
   });
   // Retenciones de Ingresos Brutos sufridas al cobrar: se descuentan de lo que hay que
-  // pagar ese mes (y si sobran, quedan como saldo a favor para el siguiente).
+  // pagar el mes del cobro (y si sobran, quedan como saldo a favor para el siguiente).
   const retencionesIibbPorMes = {};
   ingresos.filter((i) => !obraIdsPapelera.has(i.obraId) && i.estado !== "Pendiente" && totalRetenciones(i, "Ingresos Brutos") > 0).forEach((i) => {
-    const clave = claveMesCuentas(i.fecha);
+    const clave = claveMesCuentas(i.fechaCobro || i.fecha);
     retencionesIibbPorMes[clave] = (retencionesIibbPorMes[clave] || 0) + totalRetenciones(i, "Ingresos Brutos");
   });
   // Percepciones de Ingresos Brutos que nos cobraron los proveedores en sus facturas.
@@ -14731,19 +14731,19 @@ export default function ConcretarApp() {
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">IVA por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">IVA venta: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). IVA compra: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Si IVA venta supera a IVA compra (+ el saldo a favor que venía arrastrando) el mes da en contra (a pagar); si no, da a favor y ese saldo pasa al mes siguiente — no es plata que entra a la cuenta. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−). Las retenciones de IVA que te hicieron los clientes al cobrar (se cargan en "Marcar cobrado" o en el ingreso) y las percepciones de IVA que te cobraron los proveedores en sus facturas se descuentan de lo que hay que pagar ese mes.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">IVA venta: IVA de los Ingresos con Factura A o B (incluye facturas de venta futuras proyectadas desde una obra). IVA compra: IVA de los Gastos/Facturas con Factura A (la única que lo permite). No importa si la operación es Blanco o Negro — solo cuenta si tiene factura. Si IVA venta supera a IVA compra (+ el saldo a favor que venía arrastrando) el mes da en contra (a pagar); si no, da a favor y ese saldo pasa al mes siguiente — no es plata que entra a la cuenta. Cargá en "IVA real (contador)" lo que informe el contador: el saldo a favor que se arrastra al mes siguiente se recalcula solo con ese valor real, así los meses venideros quedan proyectados sobre lo que dice el contador. El botón +/- indica si ese valor es a favor (+) o a pagar (−). Las retenciones de IVA que te hicieron los clientes al cobrar (se cargan en "Marcar cobrado" o en el ingreso) y las percepciones de IVA que te cobraron los proveedores en sus facturas se descuentan de lo que hay que pagar: las retenciones en el mes en que cobraste, las percepciones en el mes de la factura de compra.</div>
               <TablaIvaMensual items={ivaMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iva", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iva", clave)} />
             </div>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ingresos Brutos por mes</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Se proyecta al 2% de los ingresos gravables (incluye facturas de venta futuras proyectadas desde una obra) hasta que cargues el "Ingresos Brutos real (contador)" de algún mes — ahí la alícuota efectiva se recalcula sola y ajusta la proyección de los meses siguientes. Las retenciones de Ingresos Brutos que te hicieron al cobrar y las percepciones de Ingresos Brutos de las facturas de compra se descuentan de lo que hay que pagar ese mes.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">Se proyecta al 2% de los ingresos gravables (incluye facturas de venta futuras proyectadas desde una obra) hasta que cargues el "Ingresos Brutos real (contador)" de algún mes — ahí la alícuota efectiva se recalcula sola y ajusta la proyección de los meses siguientes. Las retenciones de Ingresos Brutos que te hicieron al cobrar (en el mes en que cobraste) y las percepciones de Ingresos Brutos de las facturas de compra (en el mes de la factura) se descuentan de lo que hay que pagar.</div>
               <TablaIibbMensual items={iibbMensual} onActualizarReal={(clave, monto) => actualizarAjusteFiscal("iibb", clave, monto)} onBorrarReal={(clave) => borrarAjusteFiscal("iibb", clave)} />
             </div>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Ganancias por año</h3>
-              <div className="mb-1.5 text-[11px] text-slate-400">Ingresos y gastos netos de IVA, de todo lo que tenga Factura A, B o C — base aproximada para el Impuesto a las Ganancias. Cargá en "Ganancia real (contador)" el número que informe el contador para compararlo contra la estimación de la app. "Retenciones sufridas" suma las retenciones de Ganancias que te hicieron al cobrar: son pagos a cuenta del impuesto de ese año.</div>
+              <div className="mb-1.5 text-[11px] text-slate-400">Ingresos y gastos netos de IVA, de todo lo que tenga Factura A, B o C — base aproximada para el Impuesto a las Ganancias. Cargá en "Ganancia real (contador)" el número que informe el contador para compararlo contra la estimación de la app. "Retenciones sufridas" suma las retenciones de Ganancias que te hicieron al cobrar: son pagos a cuenta del impuesto del año en que cobraste.</div>
               <TablaGananciasAnual items={gananciasAnuales} onActualizarReal={(anio, monto) => actualizarAjusteFiscal("ganancia", anio, monto)} onBorrarReal={(anio) => borrarAjusteFiscal("ganancia", anio)} />
             </div>
           </div>
