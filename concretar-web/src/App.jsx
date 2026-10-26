@@ -5688,7 +5688,7 @@ export default function ConcretarApp() {
 
   const totalAlertas =
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length + ocsARevisar.length +
-    (hayDesvioAlerta ? 1 : 0) + asistenciasEditadas.length + asistenciasEliminadasRecientes.length +
+    asistenciasEditadas.length + asistenciasEliminadasRecientes.length +
     materialesVencidos.length + materialesProximos.length + pedidosPorAprobar.length + personalSinObra5Dias.length +
     gastosRecurrentesProximos.length + deudasTarjetaSocioPorVencer.length + echeqsPorConfirmarDebito.length;
 
@@ -7601,7 +7601,7 @@ export default function ConcretarApp() {
     grupo.items.push(m);
   }
   const movimientosMesActual = gruposMovimientos.find((g) => g.clave === mesActualClave)?.items || [];
-  const gruposMovimientosAnteriores = gruposMovimientos.filter((g) => g.clave !== mesActualClave);
+  const gruposMovimientosAnteriores = gruposMovimientos.filter((g) => g.clave !== mesActualClave).sort((a, b) => b.clave.localeCompare(a.clave));
 
   // ---------- IVA y Ganancias ----------
   // Lo que entra acá no depende de si la operación es "Blanco" o "Negro" en la
@@ -9057,7 +9057,8 @@ export default function ConcretarApp() {
   function balanceCliente(cli) {
     const obrasCliente = obras.filter((o) => o.clienteId === cli.id && o.estado !== "Papelera");
     const totalAcordado = obrasCliente.reduce((s, o) => s + (o.presupuesto || 0), 0);
-    const totalCobrado = ingresos.filter((i) => obrasCliente.some((o) => o.id === i.obraId)).reduce((s, i) => s + (i.monto || 0), 0);
+    // Solo lo cobrado de verdad: un ingreso "Pendiente" todavía lo debe el cliente.
+    const totalCobrado = ingresos.filter((i) => i.estado !== "Pendiente" && obrasCliente.some((o) => o.id === i.obraId)).reduce((s, i) => s + (i.monto || 0), 0);
     return { obrasCliente, totalAcordado, totalCobrado, saldo: totalAcordado - totalCobrado };
   }
 
@@ -14720,7 +14721,9 @@ export default function ConcretarApp() {
             gruposIngresosPorAnio[anio].push(i);
           });
           const ingresosAnioActual = gruposIngresosPorAnio[anioActualIngresos] || [];
-          const totalAnio = (items) => items.reduce((s, i) => s + (i.monto || 0), 0);
+          // Lo cobrado y lo pendiente van por separado: un ingreso "Pendiente" todavía no entró.
+          const totalAnio = (items) => items.filter((i) => i.estado !== "Pendiente").reduce((s, i) => s + (i.monto || 0), 0);
+          const pendienteAnio = (items) => items.filter((i) => i.estado === "Pendiente").reduce((s, i) => s + (i.monto || 0), 0);
           const aniosIngresosAnteriores = Object.keys(gruposIngresosPorAnio)
             .filter((a) => a !== anioActualIngresos)
             .sort((a, b) => b.localeCompare(a));
@@ -14908,8 +14911,13 @@ export default function ConcretarApp() {
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-2 border-stone-300 bg-stone-50 px-4 py-2.5">
-              <span className="text-sm font-bold text-slate-700">Total {anioActualIngresos}</span>
-              <span className="font-mono text-lg font-bold text-emerald-700">{fmtARS(totalAnio(ingresosAnioActual))}</span>
+              <span className="text-sm font-bold text-slate-700">Cobrado {anioActualIngresos}</span>
+              <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                {pendienteAnio(ingresosAnioActual) > 0 && (
+                  <span className="text-xs font-semibold text-amber-700">Pendiente de cobro <span className="font-mono">{fmtARS(pendienteAnio(ingresosAnioActual))}</span></span>
+                )}
+                <span className="font-mono text-lg font-bold text-emerald-700">{fmtARS(totalAnio(ingresosAnioActual))}</span>
+              </span>
             </div>
 
             {renderTablaIngresos(ingresosAnioActual)}
