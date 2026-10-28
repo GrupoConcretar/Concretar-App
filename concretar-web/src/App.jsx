@@ -2826,7 +2826,8 @@ function calcularEstadoPrestamo(p, pagos, hastaOverride) {
   const hasta = hastaOverride || (p.estado === "Pagado" ? (p.fechaPago || fechaCorte) : hoyISO());
   const interesAcumulado = saldoCapital * tasa * (diasTranscurridosDesde(fechaCorte, hasta) / 365);
   const totalPagado = pagosDelPrestamo.reduce((s, pg) => s + (pg.monto || 0), 0);
-  return { saldoCapital, interesAcumulado, totalADevolver: saldoCapital + interesAcumulado, totalPagado, pagos: pagosDelPrestamo, fechaCorte, dias: diasTranscurridosDesde(fechaCorte, hasta) };
+  // dias: desde el último pago (lo que viene acumulando interés); diasTotales: desde que se pidió.
+  return { saldoCapital, interesAcumulado, totalADevolver: saldoCapital + interesAcumulado, totalPagado, pagos: pagosDelPrestamo, fechaCorte, dias: diasTranscurridosDesde(fechaCorte, hasta), diasTotales: diasTranscurridosDesde(p.fecha, hasta) };
 }
 
 // Total adeudado por prestamista (Cuentas → Préstamos): agrupa todos los
@@ -2905,7 +2906,10 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
                 <td className="px-2 py-1 text-right font-mono text-emerald-700 whitespace-nowrap">{estado.totalPagado > 0 ? fmtARS(estado.totalPagado) : "—"}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(estado.saldoCapital)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{p.tasaAnualPct}%</td>
-                <td className="px-2 py-1 text-right font-mono text-slate-700">{estado.dias}</td>
+                <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">
+                  {estado.diasTotales}
+                  {estado.pagos.length > 0 && <div className="font-sans text-[10px] text-slate-400">{estado.dias} desde el último pago</div>}
+                </td>
                 <td className="px-2 py-1 text-right font-mono text-amber-700 whitespace-nowrap">{fmtARS(estado.interesAcumulado)}</td>
                 <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600 whitespace-nowrap">{fmtARS(estado.totalADevolver)}</td>
                 <td className="px-2 py-1 text-slate-600 whitespace-nowrap">{fmtFecha(p.fechaEstimadaDevolucion)}</td>
