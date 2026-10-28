@@ -7438,6 +7438,24 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     setAvanceAbiertoId(null);
     setEditandoAvanceId(null);
   }
+  // Pagos filtrados por obra: desde una obra se abre la ventana de Pagos mostrando
+  // solo lo de esa obra (jornales pendientes, tanteros, historial y liquidación).
+  const [obraPagosId, setObraPagosId] = useState(null);
+  function abrirPagos(vista = "pendientes", obraId = null) {
+    setObraPagosId(obraId);
+    setVistaLiquidacion(vista);
+    setShowTanterosFinalizados(false);
+    setSeleccionLiquidacion([]);
+    if (obraId) {
+      setObraHistorialId(obraId);
+      setObraFormalId(obraId);
+      setTanteroForm((f) => ({ ...f, obraId }));
+    }
+    setShowLiquidacionModal(true);
+  }
+  const tanterosVisibles = tanterosActivos.filter((t) => !obraPagosId || t.obraId === obraPagosId);
+  const semanasVisibles = semanasOrdenadas.filter((sk) => !obraPagosId || gruposSemana[sk][obraPagosId]);
+  const pendientesEnBlancoVisibles = pendientesEnBlanco.filter((g) => !obraPagosId || g.obraId === obraPagosId);
   function iniciarEdicionAvance(avance) {
     setAvanceForm({
       fecha: avance.fecha,
@@ -10165,6 +10183,121 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     cancelarRechazoOc();
   }
 
+  // Tarjeta de un grupo de tanteros (precio cerrado, pagado, saldo y sus pagos).
+  // Se usa en Pagos y en la sección "Personal y pagos" de cada obra.
+  function renderGrupoTantero(t) {
+    const obra = obras.find((o) => o.id === t.obraId);
+    const pagado = pagadoDeTantero(t.id);
+    const saldo = (t.precioTotal || 0) - pagado;
+    const integrantesNombres = (t.integrantes || []).map((id) => {
+      const p = personal.find((x) => x.id === id);
+      return p ? nombreCompletoDe(p) : null;
+    }).filter(Boolean);
+    const avancesGrupo = avancesTanteros.filter((a) => a.tanteroId === t.id).sort(porCargado);
+    return (
+      <div key={t.id} className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="font-bold text-slate-900">{t.nombreGrupo}</div>
+            <div className="text-sm text-slate-500">{obra?.nombre} · {integrantesNombres.length} integrante(s): {integrantesNombres.join(", ")}</div>
+          </div>
+          <button
+            onClick={() => {
+              if (avanceAbiertoId === t.id) {
+                setAvanceAbiertoId(null);
+                setEditandoAvanceId(null);
+                setAvanceForm(emptyAvanceForm);
+              } else {
+                setAvanceAbiertoId(t.id);
+                setEditandoAvanceId(null);
+                setAvanceForm(emptyAvanceForm);
+              }
+            }}
+            className={btnGhost}
+          >
+            {avanceAbiertoId === t.id ? "Cancelar" : "Registrar pago"}
+          </button>
+          <button onClick={() => finalizarTantero(t)} className={btnGhost}>
+            <span className="flex items-center gap-1"><CheckCircle2 size={13} /> Finalizado</span>
+          </button>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Precio cerrado</div>
+            <MoneyInput
+              value={t.precioTotal}
+              onBlur={(v) => updateRecord("tanteros", t.id, { precioTotal: v }, setTanteros)}
+              className="w-full rounded-md border border-stone-300 px-2 py-1 text-sm font-mono font-semibold text-slate-900"
+            />
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pagado</div>
+            <div className="font-mono font-semibold text-emerald-700">{fmtARS(pagado)}</div>
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Saldo</div>
+            <div className={`font-mono font-semibold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
+          </div>
+        </div>
+
+        {avanceAbiertoId === t.id && (
+          <form
+            className="mt-4 grid grid-cols-1 gap-3 rounded-md border border-stone-200 bg-stone-50 p-3 md:grid-cols-4"
+            onSubmit={(e) => submitAvanceForm(e, t.id)}
+          >
+            <Field label="Fecha">
+              <FechaInput required value={avanceForm.fecha} onChange={(e) => setAvanceForm((f) => ({ ...f, fecha: e.target.value }))} className={inputCls} />
+            </Field>
+            <Field label="Monto (ARS)">
+              <MoneyInput key={editandoAvanceId || "nuevo"} value={avanceForm.monto} onChange={(v) => setAvanceForm((f) => ({ ...f, monto: v }))} className={inputCls} />
+            </Field>
+            <Field label="Cuenta">
+              <select value={avanceForm.cuenta} onChange={(e) => setAvanceForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
+                <option value="">Sin definir</option>
+                {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </Field>
+            <div className="md:col-span-4">
+              <Field label="Descripción">
+                <input value={avanceForm.descripcion} onChange={(e) => setAvanceForm((f) => ({ ...f, descripcion: e.target.value }))} placeholder="Ej: 3er avance" className={inputCls} />
+              </Field>
+            </div>
+            <div className="flex items-center gap-2 md:col-span-4">
+              <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+                {editandoAvanceId ? "Guardar cambios" : "Guardar pago"}
+              </button>
+              {editandoAvanceId && (
+                <button
+                  type="button"
+                  onClick={() => { setEditandoAvanceId(null); setAvanceForm(emptyAvanceForm); }}
+                  className={btnGhost}
+                >
+                  Cancelar edición
+                </button>
+              )}
+            </div>
+          </form>
+        )}
+
+        {avancesGrupo.length > 0 && (
+          <div className="mt-4 space-y-1 border-t border-stone-100 pt-3">
+            {avancesGrupo.map((a) => (
+              <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                <span>{fmtFecha(a.fecha)} — {a.descripcion || "Avance"}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-slate-700">{fmtARS(a.monto)}</span>
+                  <button onClick={() => iniciarEdicionAvance(a)} title="Editar avance" className="text-slate-400 hover:text-slate-700"><Pencil size={13} /></button>
+                  <button onClick={() => deleteRecord("avances_tanteros", a.id, setAvancesTanteros)} title="Eliminar avance" className="text-slate-400 hover:text-rose-600"><Trash2 size={13} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (dbLoading) {
     return (
       <div className="flex h-full min-h-[720px] w-full flex-col items-center justify-center gap-3 rounded-xl border border-stone-200 bg-stone-100 text-slate-600">
@@ -11165,6 +11298,137 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     })()}
                   </Panel>
 
+                  {(() => {
+                    // Todo lo del personal de esta obra en un solo lugar: quiénes trabajan acá,
+                    // los grupos de tanteros (con sus pagos) y los jornales que faltan pagar.
+                    const cuadrilla = cuadrillasPorObra[obraSel.id] || { empresa: [], gruposTantero: [] };
+                    const tanterosObra = tanterosActivos.filter((t) => t.obraId === obraSel.id);
+                    const tanterosObraFinalizados = tanterosFinalizados.filter((t) => t.obraId === obraSel.id);
+                    const jornalesPendientes = [];
+                    semanasOrdenadas.forEach((sk) => {
+                      const porPersona = gruposSemana[sk][obraSel.id];
+                      if (!porPersona) return;
+                      Object.keys(porPersona).forEach((nombre) => {
+                        const g = porPersona[nombre];
+                        const extras = extrasDe(sk, String(obraSel.id), nombre).reduce((x, ex) => x + (ex.monto || 0), 0);
+                        jornalesPendientes.push({ semana: sk, nombre, horas: g.horas, monto: g.monto + extras });
+                      });
+                    });
+                    const totalJornalesPendientes = jornalesPendientes.reduce((x, j) => x + j.monto, 0);
+                    const blancoPendienteObra = pendientesEnBlanco.filter((g) => g.obraId === obraSel.id);
+                    const saldoTanteros = tanterosObra.reduce((x, t) => x + ((t.precioTotal || 0) - pagadoDeTantero(t.id)), 0);
+                    const nadie = cuadrilla.empresa.length === 0 && tanterosObra.length === 0;
+                    return (
+                      <Panel
+                        title="Personal y pagos"
+                        action={
+                          <div className="flex flex-wrap gap-2">
+                            {canEditarPersonal && <button onClick={() => setAsignarPersonalContexto(obraSel.id)} className={btnGhost}>Asignar personal</button>}
+                            {canVerLiquidacion && <button onClick={() => abrirPagos("historial", obraSel.id)} className={btnGhost}>Historial de pagos</button>}
+                          </div>
+                        }
+                      >
+                        <div className="space-y-5">
+                          {canVerLiquidacion && (
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                              <div className="rounded-md border border-stone-200 p-3">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-400">Mano de obra hasta hoy</div>
+                                <div className="font-mono text-sm font-semibold text-slate-800">{fmtARS(costoManoDeObraDeObra(obraSel.id))}</div>
+                              </div>
+                              <div className="rounded-md border border-stone-200 p-3">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-400">Jornales por pagar</div>
+                                <div className={`font-mono text-sm font-semibold ${totalJornalesPendientes > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalJornalesPendientes)}</div>
+                              </div>
+                              <div className="rounded-md border border-stone-200 p-3">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-400">Saldo a tanteros</div>
+                                <div className={`font-mono text-sm font-semibold ${saldoTanteros > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldoTanteros)}</div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div>
+                            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Trabajando en esta obra</div>
+                            {nadie ? (
+                              <div className="text-xs text-slate-400">No hay personal asignado a esta obra.</div>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                {cuadrilla.empresa.map((p) => (
+                                  <button key={p.id} onClick={() => { setTab("personal"); setViewingPersonId(p.id); }} className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-stone-50">
+                                    {nombreCompletoDe(p)} <span className="text-slate-400">· {p.categoria}</span>
+                                  </button>
+                                ))}
+                                {tanterosObra.map((t) => (
+                                  <span key={`t-${t.id}`} className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs text-amber-800">
+                                    Tanteros: {t.nombreGrupo} ({(t.integrantes || []).length})
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {canVerLiquidacion && (
+                            <div>
+                              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tanteros de esta obra</span>
+                                <span className="flex flex-wrap gap-2">
+                                  {tanterosObraFinalizados.length > 0 && (
+                                    <button onClick={() => { abrirPagos("tanteros", obraSel.id); setShowTanterosFinalizados(true); }} className={btnGhost}>Finalizados ({tanterosObraFinalizados.length})</button>
+                                  )}
+                                  <button onClick={() => { abrirPagos("tanteros", obraSel.id); setShowTanteroForm(true); }} className={btnGhost}><span className="flex items-center gap-1"><Plus size={13} /> Nuevo grupo</span></button>
+                                </span>
+                              </div>
+                              {tanterosObra.length === 0 ? (
+                                <div className="text-xs text-slate-400">No hay grupos de tanteros activos en esta obra.</div>
+                              ) : (
+                                <div className="space-y-3">{tanterosObra.map((t) => renderGrupoTantero(t))}</div>
+                              )}
+                            </div>
+                          )}
+
+                          {canVerLiquidacion && (
+                            <div>
+                              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Jornales por pagar</span>
+                                {jornalesPendientes.length > 0 && (
+                                  <button onClick={() => abrirPagos("pendientes", obraSel.id)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                                    <Wallet size={13} /> Pagar jornales
+                                  </button>
+                                )}
+                              </div>
+                              {jornalesPendientes.length === 0 ? (
+                                <div className="text-xs text-slate-400">No hay jornales pendientes de pago en esta obra.</div>
+                              ) : (
+                                <div className="overflow-x-auto rounded-md border border-stone-200">
+                                  <table className="w-full text-left text-xs">
+                                    <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                      <tr><th className="px-2 py-1.5">Semana del</th><th className="px-2 py-1.5">Persona</th><th className="px-2 py-1.5 text-right">Hs.</th><th className="px-2 py-1.5 text-right">Monto</th></tr>
+                                    </thead>
+                                    <tbody>
+                                      {jornalesPendientes.map((j) => (
+                                        <tr key={`${j.semana}|${j.nombre}`} className="border-t border-stone-100">
+                                          <td className="px-2 py-1 text-slate-600">{fmtFecha(j.semana)}</td>
+                                          <td className="px-2 py-1 font-medium text-slate-800">{j.nombre}</td>
+                                          <td className="px-2 py-1 text-right font-mono text-slate-500">{j.horas}</td>
+                                          <td className="px-2 py-1 text-right font-mono text-slate-800">{fmtARS(j.monto)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                              {blancoPendienteObra.length > 0 && (
+                                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                  <span>{blancoPendienteObra.length} quincena(s) de personal en blanco sin liquidar ({blancoPendienteObra.map((g) => etiquetaQuincena(g.mes, g.quincena)).join("; ")}).</span>
+                                  <button onClick={() => abrirPagos("formal", obraSel.id)} className={btnGhost}>Ir a liquidación</button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </Panel>
+                    );
+                  })()}
+
                   <Panel
                     title="Facturas y cobros"
                     action={
@@ -11383,7 +11647,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   <ClipboardCheck size={16} /> Cargar asistencia
                 </button>
                 {canVerLiquidacion && (
-                  <button onClick={() => setShowLiquidacionModal(true)} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
+                  <button onClick={() => abrirPagos()} className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50">
                     <Wallet size={16} /> Pagos
                   </button>
                 )}
@@ -12054,7 +12318,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-2 sm:p-6" onClick={() => setShowLiquidacionModal(false)}>
             <div className="max-h-full w-full max-w-6xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-2xl font-bold tracking-tight text-slate-900">Pagos</h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-2xl font-bold tracking-tight text-slate-900">Pagos{obraPagosId ? ` — ${obras.find((o) => o.id === obraPagosId)?.nombre || "Obra"}` : ""}</h2>
+                  {obraPagosId && <button onClick={() => setObraPagosId(null)} className={btnGhost}>Ver todas las obras</button>}
+                </div>
                 <button onClick={() => setShowLiquidacionModal(false)}><X size={20} /></button>
               </div>
               <div className="space-y-6">
@@ -12098,7 +12365,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   </div>
                 )}
 
-                {pendientesEnBlanco.length > 0 && (
+                {pendientesEnBlancoVisibles.length > 0 && (
                   <div>
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Personal en blanco — pendiente de liquidación formal</div>
                     <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
@@ -12114,7 +12381,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                           </tr>
                         </thead>
                         <tbody>
-                          {pendientesEnBlanco.map((g) => {
+                          {pendientesEnBlancoVisibles.map((g) => {
                             const obra = obras.find((o) => o.id === g.obraId);
                             const diasParaVencer = 5 - g.diasDesdeCierre;
                             return (
@@ -12149,21 +12416,22 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   </div>
                 )}
 
-                {pendientesEnBlanco.length > 0 && semanasOrdenadas.length > 0 && (
+                {pendientesEnBlancoVisibles.length > 0 && semanasVisibles.length > 0 && (
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Personal en negro — pago en mano</div>
                 )}
 
-                {semanasOrdenadas.length === 0 ? (
-                  pendientesEnBlanco.length === 0 && (
+                {semanasVisibles.length === 0 ? (
+                  pendientesEnBlancoVisibles.length === 0 && (
                     <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
                       No hay días pendientes de pago en ninguna obra. 🎉
                     </div>
                   )
                 ) : (
-                  semanasOrdenadas.map((semanaKey) => {
+                  semanasVisibles.map((semanaKey) => {
                     const obrasDeSemana = gruposSemana[semanaKey];
                     const filasSemana = [];
                     Object.keys(obrasDeSemana).forEach((obraId) => {
+                      if (obraPagosId && Number(obraId) !== obraPagosId) return;
                       const obra = obras.find((o) => o.id === Number(obraId));
                       const trabajadores = obrasDeSemana[obraId];
                       Object.keys(trabajadores).forEach((nombre) => {
@@ -12332,124 +12600,13 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   </Panel>
                 )}
 
-                {tanterosActivos.length === 0 ? (
+                {tanterosVisibles.length === 0 ? (
                   <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center text-sm text-slate-500">
-                    Todavía no hay grupos de tanteros activos.
+                    Todavía no hay grupos de tanteros activos{obraPagosId ? " en esta obra" : ""}.
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {tanterosActivos.map((t) => {
-                      const obra = obras.find((o) => o.id === t.obraId);
-                      const pagado = pagadoDeTantero(t.id);
-                      const saldo = (t.precioTotal || 0) - pagado;
-                      const integrantesNombres = (t.integrantes || []).map((id) => {
-                        const p = personal.find((x) => x.id === id);
-                        return p ? nombreCompletoDe(p) : null;
-                      }).filter(Boolean);
-                      const avancesGrupo = avancesTanteros.filter((a) => a.tanteroId === t.id).sort(porCargado);
-                      return (
-                        <div key={t.id} className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <div className="font-bold text-slate-900">{t.nombreGrupo}</div>
-                              <div className="text-sm text-slate-500">{obra?.nombre} · {integrantesNombres.length} integrante(s): {integrantesNombres.join(", ")}</div>
-                            </div>
-                            <button
-                              onClick={() => {
-                                if (avanceAbiertoId === t.id) {
-                                  setAvanceAbiertoId(null);
-                                  setEditandoAvanceId(null);
-                                  setAvanceForm(emptyAvanceForm);
-                                } else {
-                                  setAvanceAbiertoId(t.id);
-                                  setEditandoAvanceId(null);
-                                  setAvanceForm(emptyAvanceForm);
-                                }
-                              }}
-                              className={btnGhost}
-                            >
-                              {avanceAbiertoId === t.id ? "Cancelar" : "Cargar avance"}
-                            </button>
-                            <button onClick={() => finalizarTantero(t)} className={btnGhost}>
-                              <span className="flex items-center gap-1"><CheckCircle2 size={13} /> Finalizado</span>
-                            </button>
-                          </div>
-
-                          <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                            <div>
-                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Precio cerrado</div>
-                              <MoneyInput
-                                value={t.precioTotal}
-                                onBlur={(v) => updateRecord("tanteros", t.id, { precioTotal: v }, setTanteros)}
-                                className="w-full rounded-md border border-stone-300 px-2 py-1 text-sm font-mono font-semibold text-slate-900"
-                              />
-                            </div>
-                            <div>
-                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pagado</div>
-                              <div className="font-mono font-semibold text-emerald-700">{fmtARS(pagado)}</div>
-                            </div>
-                            <div>
-                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Saldo</div>
-                              <div className={`font-mono font-semibold ${saldo > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldo)}</div>
-                            </div>
-                          </div>
-
-                          {avanceAbiertoId === t.id && (
-                            <form
-                              className="mt-4 grid grid-cols-1 gap-3 rounded-md border border-stone-200 bg-stone-50 p-3 md:grid-cols-4"
-                              onSubmit={(e) => submitAvanceForm(e, t.id)}
-                            >
-                              <Field label="Fecha">
-                                <FechaInput required value={avanceForm.fecha} onChange={(e) => setAvanceForm((f) => ({ ...f, fecha: e.target.value }))} className={inputCls} />
-                              </Field>
-                              <Field label="Monto (ARS)">
-                                <MoneyInput key={editandoAvanceId || "nuevo"} value={avanceForm.monto} onChange={(v) => setAvanceForm((f) => ({ ...f, monto: v }))} className={inputCls} />
-                              </Field>
-                              <Field label="Cuenta">
-                                <select value={avanceForm.cuenta} onChange={(e) => setAvanceForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
-                                  <option value="">Sin definir</option>
-                                  {CUENTAS.map((c) => <option key={c}>{c}</option>)}
-                                </select>
-                              </Field>
-                              <div className="md:col-span-4">
-                                <Field label="Descripción">
-                                  <input value={avanceForm.descripcion} onChange={(e) => setAvanceForm((f) => ({ ...f, descripcion: e.target.value }))} placeholder="Ej: 3er avance" className={inputCls} />
-                                </Field>
-                              </div>
-                              <div className="flex items-center gap-2 md:col-span-4">
-                                <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
-                                  {editandoAvanceId ? "Guardar cambios" : "Guardar avance"}
-                                </button>
-                                {editandoAvanceId && (
-                                  <button
-                                    type="button"
-                                    onClick={() => { setEditandoAvanceId(null); setAvanceForm(emptyAvanceForm); }}
-                                    className={btnGhost}
-                                  >
-                                    Cancelar edición
-                                  </button>
-                                )}
-                              </div>
-                            </form>
-                          )}
-
-                          {avancesGrupo.length > 0 && (
-                            <div className="mt-4 space-y-1 border-t border-stone-100 pt-3">
-                              {avancesGrupo.map((a) => (
-                                <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                                  <span>{fmtFecha(a.fecha)} — {a.descripcion || "Avance"}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-slate-700">{fmtARS(a.monto)}</span>
-                                    <button onClick={() => iniciarEdicionAvance(a)} title="Editar avance" className="text-slate-400 hover:text-slate-700"><Pencil size={13} /></button>
-                                    <button onClick={() => deleteRecord("avances_tanteros", a.id, setAvancesTanteros)} title="Eliminar avance" className="text-slate-400 hover:text-rose-600"><Trash2 size={13} /></button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {tanterosVisibles.map((t) => renderGrupoTantero(t))}
                   </div>
                 )}
               </>
@@ -12457,7 +12614,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
 
             {vistaLiquidacion === "tanteros" && showTanterosFinalizados && (() => {
               const gruposPorMes = {};
-              tanterosFinalizados.forEach((t) => {
+              tanterosFinalizados.filter((t) => !obraPagosId || t.obraId === obraPagosId).forEach((t) => {
                 const clave = (t.fechaFinalizado || "").slice(0, 7) || "sin-fecha";
                 (gruposPorMes[clave] ??= []).push(t);
               });
