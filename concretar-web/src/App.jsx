@@ -336,7 +336,9 @@ const MANO_HABIL = ["Diestro", "Zurdo"];
 const TIPOS_SANGRE = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const TALLES_PANTALON = ["38", "40", "42", "44", "46", "48", "50", "52", "54"];
 const TALLES_CAMISA = ["S", "M", "L", "XL", "XXL"];
-const TALLES_GUANTES = ["S", "M", "L", "XL"];
+// En Argentina los guantes de trabajo se piden por número.
+const TALLES_GUANTES = ["7", "8", "9", "10", "11"];
+const GUANTE_DE_LETRA = { S: "7", M: "8", L: "9", XL: "10", XXL: "11" };
 const TALLES_CALZADO = ["37", "38", "39", "40", "41", "42", "43", "44", "45", "46"];
 const ESPECIALIDADES = ["Civil", "Metalúrgico", "Eléctrico", "Pintor", "Plomería", "Carpintero", "Hierrero"];
 // Mensaje para mandarle por WhatsApp a quien entra, así completa sus propios datos
@@ -466,8 +468,13 @@ function valorRespuestaAlta(campo, valor) {
     }
     case "talleCamisa":
       return talleLetra(valor, TALLES_CAMISA);
-    case "talleGuantes":
-      return talleLetra(valor, TALLES_GUANTES);
+    case "talleGuantes": {
+      // Por número ("9", "talle 9", "9 y medio" → 9); si contestan con letra, se pasa a número.
+      const n = (v.match(/\d{1,2}/) || [])[0];
+      if (n) return TALLES_GUANTES.includes(n) ? n : null;
+      const letra = talleLetra(valor, Object.keys(GUANTE_DE_LETRA));
+      return letra ? GUANTE_DE_LETRA[letra] : null;
+    }
     default:
       return null;
   }
