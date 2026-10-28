@@ -126,6 +126,148 @@ function MesPicker({ value, onChange, className = "" }) {
     </div>
   );
 }
+// ---------- Calendario en español (formato argentino) ----------
+// Reemplaza al <input type="date"> nativo, que según el celular o la compu sale en
+// inglés, con el mes adelante y la semana arrancando el domingo. Este siempre muestra
+// día/mes/año, en español y con la semana de lunes a domingo. Se puede escribir la
+// fecha (los "/" se ponen solos) o elegirla en el calendario. Se usa igual que el
+// input nativo: value/onChange (onChange recibe { target: { value: "AAAA-MM-DD" } })
+// o name/defaultValue para formularios que se leen con FormData.
+const MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const DIAS_SEMANA_CORTOS = ["lu", "ma", "mi", "ju", "vi", "sá", "do"];
+// Feriados cargados en Calendario: la app los completa en cada render para marcarlos en rojo.
+const feriadosCalendario = { fechas: new Set() };
+const pad2 = (n) => String(n).padStart(2, "0");
+const isoDeFecha = (y, m, d) => `${y}-${pad2(m + 1)}-${pad2(d)}`;
+function fechaISOValida(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  if (!m) return false;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.getFullYear() === Number(m[1]) && d.getMonth() === Number(m[2]) - 1 && d.getDate() === Number(m[3]);
+}
+const textoDeISO = (iso) => (fechaISOValida(iso) ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "");
+function FechaInput({ value, defaultValue, onChange, name, required, className, id, disabled }) {
+  const controlado = value !== undefined;
+  const [isoInterno, setIsoInterno] = useState(() => (controlado ? value : defaultValue) || "");
+  const iso = controlado ? value || "" : isoInterno;
+  const [texto, setTexto] = useState(() => textoDeISO(iso));
+  const [abierto, setAbierto] = useState(false);
+  // Si la fecha cambia desde afuera (otro campo, un formulario que se reinicia), se muestra la nueva.
+  useEffect(() => { setTexto(textoDeISO(iso)); }, [iso]);
+  function elegir(nuevo) {
+    if (!controlado) setIsoInterno(nuevo);
+    setTexto(textoDeISO(nuevo));
+    if (onChange) onChange({ target: { value: nuevo, name } });
+  }
+  function escribir(e) {
+    const digitos = e.target.value.replace(/\D/g, "").slice(0, 8);
+    let t = digitos;
+    if (digitos.length > 4) t = `${digitos.slice(0, 2)}/${digitos.slice(2, 4)}/${digitos.slice(4)}`;
+    else if (digitos.length > 2) t = `${digitos.slice(0, 2)}/${digitos.slice(2)}`;
+    setTexto(t);
+    if (digitos.length === 0) { if (iso) elegir(""); return; }
+    if (digitos.length === 8) {
+      const nuevo = `${digitos.slice(4, 8)}-${digitos.slice(2, 4)}-${digitos.slice(0, 2)}`;
+      if (fechaISOValida(nuevo) && nuevo !== iso) elegir(nuevo);
+    }
+  }
+  const incompleta = texto !== "" && texto !== textoDeISO(iso);
+  return (
+    <div className="relative flex min-w-0 items-stretch">
+      <input
+        id={id}
+        type="text"
+        inputMode="numeric"
+        placeholder="dd/mm/aaaa"
+        value={texto}
+        onChange={escribir}
+        onBlur={() => { if (incompleta) setTexto(textoDeISO(iso)); }}
+        disabled={disabled}
+        className={`${className || inputCls} w-full min-w-0 pr-8 ${incompleta ? "border-rose-400" : ""}`}
+      />
+      <button type="button" disabled={disabled} onClick={() => setAbierto(true)} aria-label="Abrir calendario" className="absolute inset-y-0 right-0 flex items-center px-2 text-slate-400 hover:text-amber-600">
+        <CalendarDays size={15} />
+      </button>
+      {/* Lleva el valor para FormData y para la validación "obligatorio" del formulario. */}
+      <input tabIndex={-1} aria-hidden="true" name={name} required={required} value={iso} onChange={() => {}} className="pointer-events-none absolute bottom-0 left-2 h-px w-px opacity-0" />
+      {abierto && <CalendarioPopup valor={iso} onElegir={(d) => { elegir(d); setAbierto(false); }} onBorrar={required ? null : () => { elegir(""); setAbierto(false); }} onCerrar={() => setAbierto(false)} />}
+    </div>
+  );
+}
+function CalendarioPopup({ valor, onElegir, onBorrar, onCerrar }) {
+  const hoy = hoyISO();
+  const base = fechaISOValida(valor) ? valor : hoy;
+  const [anio, setAnio] = useState(Number(base.slice(0, 4)));
+  const [mes, setMes] = useState(Number(base.slice(5, 7)) - 1);
+  function mover(delta) {
+    const d = new Date(anio, mes + delta, 1);
+    setAnio(d.getFullYear());
+    setMes(d.getMonth());
+  }
+  const primerDia = (new Date(anio, mes, 1).getDay() + 6) % 7; // lunes = 0
+  const diasDelMes = new Date(anio, mes + 1, 0).getDate();
+  const celdas = [...Array(primerDia).fill(null), ...Array.from({ length: diasDelMes }, (_, i) => i + 1)];
+  const anioActual = Number(hoy.slice(0, 4));
+  const anios = [];
+  for (let a = Math.min(anio, anioActual - 90); a <= Math.max(anio, anioActual + 10); a++) anios.push(a);
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onCerrar}>
+      <div className="w-full max-w-[300px] rounded-xl bg-white p-3 text-slate-800 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-2 flex items-center justify-between gap-1">
+          <button type="button" onClick={() => mover(-1)} aria-label="Mes anterior" className="rounded-md p-1.5 hover:bg-stone-100"><ChevronLeft size={16} /></button>
+          <div className="flex gap-1">
+            <select value={mes} onChange={(e) => setMes(Number(e.target.value))} className="rounded-md border border-stone-300 px-1 py-1 text-sm capitalize">
+              {MESES_LARGOS.map((m, i) => <option key={m} value={i}>{m}</option>)}
+            </select>
+            <select value={anio} onChange={(e) => setAnio(Number(e.target.value))} className="rounded-md border border-stone-300 px-1 py-1 text-sm">
+              {anios.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <button type="button" onClick={() => mover(1)} aria-label="Mes siguiente" className="rounded-md p-1.5 hover:bg-stone-100"><ChevronRight size={16} /></button>
+        </div>
+        <div className="grid grid-cols-7 gap-0.5 text-center">
+          {DIAS_SEMANA_CORTOS.map((d) => <div key={d} className="py-1 text-[11px] font-semibold uppercase text-slate-400">{d}</div>)}
+          {celdas.map((dia, i) => {
+            if (!dia) return <div key={`v${i}`} />;
+            const iso = isoDeFecha(anio, mes, dia);
+            const elegido = iso === valor;
+            const esHoy = iso === hoy;
+            const finde = i % 7 >= 5;
+            const feriado = feriadosCalendario.fechas.has(iso);
+            return (
+              <button
+                key={iso}
+                type="button"
+                onClick={() => onElegir(iso)}
+                title={feriado ? "Feriado" : undefined}
+                className={`rounded-md py-1.5 text-sm ${elegido ? "bg-amber-500 font-bold text-slate-900" : esHoy ? "border border-amber-500 font-semibold" : "hover:bg-stone-100"} ${!elegido && (feriado || finde) ? "text-rose-600" : ""}`}
+              >
+                {dia}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-2 border-t border-stone-100 pt-2">
+          <button type="button" onClick={() => onElegir(hoy)} className="rounded-md px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50">Hoy</button>
+          <div className="flex gap-1">
+            {onBorrar && <button type="button" onClick={onBorrar} className="rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-stone-100">Borrar</button>}
+            <button type="button" onClick={onCerrar} className="rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-stone-100">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+// Lo mismo para elegir un mes (reemplaza a <input type="month">), con name para FormData.
+function MesInput({ name, defaultValue, required, className }) {
+  const [valor, setValor] = useState(defaultValue || hoyISO().slice(0, 7));
+  return (
+    <div className="relative">
+      <MesPicker value={valor} onChange={setValor} className={className} />
+      <input type="hidden" name={name} value={valor} required={required} />
+    </div>
+  );
+}
 function fechaMasDias(dias) {
   const d = new Date();
   d.setDate(d.getDate() + dias);
@@ -1147,7 +1289,7 @@ function ModalMarcarCobrado({ titulo, monto, retencionesIniciales, onConfirmar, 
         </div>
         <div className="text-sm text-slate-700">{titulo} — <span className="font-mono font-semibold">{fmtARS(monto)}</span></div>
         <Field label="Fecha de cobro">
-          <input type="date" value={fechaCobro} onChange={(e) => setFechaCobro(e.target.value)} className={inputCls} />
+          <FechaInput value={fechaCobro} onChange={(e) => setFechaCobro(e.target.value)} className={inputCls} />
         </Field>
         <div className="text-[11px] text-slate-400">La orden de pago, la factura y los certificados de retención se suben con los botones "Documentos" de la obra.</div>
         <EditorRetenciones value={retenciones} onChange={setRetenciones} montoFactura={monto} />
@@ -1397,7 +1539,7 @@ function FormularioOC({ oc = null, obras, proveedores, catalogoMateriales = [], 
         <Field label="Proveedor">
           <ProveedorPicker proveedores={proveedores} onCrearProveedor={onCrearProveedor} defaultValue={oc?.proveedor || ""} onSeleccionar={setProveedor} />
         </Field>
-        <Field label="Fecha de la orden"><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
+        <Field label="Fecha de la orden"><FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
         <Field label="Factura que tiene que hacer">
           <select value={tipoFactura} onChange={(e) => setTipoFactura(e.target.value)} className={inputCls}>
             <option value="A">Factura A (precios sin IVA, se suma el IVA)</option>
@@ -1410,7 +1552,7 @@ function FormularioOC({ oc = null, obras, proveedores, catalogoMateriales = [], 
           <input value={condicionPago} onChange={(e) => setCondicionPago(e.target.value)} list="condiciones-pago-oc" placeholder="Ej: Cuenta corriente 30 días" className={inputCls} />
           <datalist id="condiciones-pago-oc">{CONDICIONES_PAGO_OC.map((c) => <option key={c} value={c} />)}</datalist>
         </Field>
-        <Field label="Fecha de entrega"><input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} className={inputCls} /></Field>
+        <Field label="Fecha de entrega"><FechaInput value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} className={inputCls} /></Field>
         <div className="md:col-span-3">
           <Field label="Lugar de entrega"><input value={lugarEntrega} onChange={(e) => setLugarEntrega(e.target.value)} placeholder="Dirección de la obra, horario de descarga, a quién preguntar…" className={inputCls} /></Field>
         </div>
@@ -1503,7 +1645,7 @@ function RecepcionOC({ oc, onGuardar, onCancelar }) {
   return (
     <form onSubmit={guardar} className="space-y-3 rounded-md border border-teal-200 bg-teal-50/60 p-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Field label="Fecha de entrega"><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
+        <Field label="Fecha de entrega"><FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
         <Field label="N° de remito"><input value={remito} onChange={(e) => setRemito(e.target.value)} placeholder="Ej: R-0001-00004567" className={inputCls} /></Field>
       </div>
       {items.length > 0 ? (
@@ -2231,8 +2373,8 @@ function FormEtapa({ inicial, onGuardar, onCancelar }) {
       <div className="sm:col-span-2">
         <Field label="Nombre de la etapa"><input value={nombre} onChange={(e) => setNombre(e.target.value)} required className={inputCls} /></Field>
       </div>
-      <Field label="Inicio"><input type="date" value={inicio} onChange={(e) => setInicio(e.target.value)} required className={inputCls} /></Field>
-      <Field label="Fin"><input type="date" value={fin} onChange={(e) => setFin(e.target.value)} required className={inputCls} /></Field>
+      <Field label="Inicio"><FechaInput value={inicio} onChange={(e) => setInicio(e.target.value)} required className={inputCls} /></Field>
+      <Field label="Fin"><FechaInput value={fin} onChange={(e) => setFin(e.target.value)} required className={inputCls} /></Field>
       <Field label="Avance (%)"><input type="number" min="0" max="100" value={avance} onChange={(e) => setAvance(e.target.value)} className={inputCls} /></Field>
       <div className="flex items-end gap-2 sm:col-span-5">
         <button className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Guardar</button>
@@ -2879,7 +3021,7 @@ function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
         </div>
         <form onSubmit={guardar} className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field label="Fecha">
-            <input type="date" value={form.fecha} onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+            <FechaInput value={form.fecha} onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
           </Field>
           <Field label="Acreedor (inversor / banco)">
             <input value={form.acreedor} onChange={(e) => setForm((f) => ({ ...f, acreedor: e.target.value }))} required className={inputCls} />
@@ -2903,7 +3045,7 @@ function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
             </select>
           </Field>
           <Field label="Fecha estimada de devolución">
-            <input type="date" value={form.fechaEstimadaDevolucion || ""} onChange={(e) => setForm((f) => ({ ...f, fechaEstimadaDevolucion: e.target.value }))} className={inputCls} />
+            <FechaInput value={form.fechaEstimadaDevolucion || ""} onChange={(e) => setForm((f) => ({ ...f, fechaEstimadaDevolucion: e.target.value }))} className={inputCls} />
           </Field>
           <div className="flex items-end gap-2 md:col-span-3">
             <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button>
@@ -2954,7 +3096,7 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
         </div>
         <form onSubmit={guardar} className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Field label="Fecha del pago">
-            <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} />
+            <FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} />
           </Field>
           <Field label="Cuenta de la que sale">
             <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={inputCls}>
@@ -3153,8 +3295,8 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
           {editando.origen === "compras_facturas" && (
             <>
               <Field label="Fecha">
-                <input
-                  type="date"
+                <FechaInput
+                 
                   value={form.fecha || ""}
                   onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
                   required
@@ -3247,8 +3389,8 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               )}
               {form.formaPago === "Banco" && form.medioBancario === "eCheq" && (
                 <Field label="Fecha de pago">
-                  <input
-                    type="date"
+                  <FechaInput
+                   
                     value={form.fechaPagoEcheq || ""}
                     onChange={(e) => setForm((f) => ({ ...f, fechaPagoEcheq: e.target.value }))}
                     required
@@ -3276,8 +3418,8 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               )}
               {form.formaPago === "Cuenta corriente" && form.estado === "Pendiente" && (
                 <Field label="Fecha de pago">
-                  <input
-                    type="date"
+                  <FechaInput
+                   
                     value={form.fechaVencimientoCc || ""}
                     onChange={(e) => setForm((f) => ({ ...f, fechaVencimientoCc: e.target.value }))}
                     required
@@ -3314,7 +3456,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                 </select>
               </Field>
               <Field label="Fecha">
-                <input type="date" value={form.fecha} onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+                <FechaInput value={form.fecha} onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
               </Field>
               <Field label="Mes planificado">
                 <div className="flex items-center gap-2">
@@ -3356,8 +3498,8 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
           {editando.origen === "ingresos" && (
             <>
               <Field label="Fecha de la factura">
-                <input
-                  type="date"
+                <FechaInput
+                 
                   value={form.fecha || ""}
                   onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
                   required
@@ -3402,12 +3544,12 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               </Field>
               {form.estado === "Pendiente" && (
                 <Field label="Fecha estimada de cobro">
-                  <input type="date" value={form.fechaCobroEstimada || ""} onChange={(e) => setForm((f) => ({ ...f, fechaCobroEstimada: e.target.value }))} className={inputCls} />
+                  <FechaInput value={form.fechaCobroEstimada || ""} onChange={(e) => setForm((f) => ({ ...f, fechaCobroEstimada: e.target.value }))} className={inputCls} />
                 </Field>
               )}
               {form.estado !== "Pendiente" && (
                 <Field label="Fecha de cobro">
-                  <input type="date" value={form.fechaCobro || form.fecha || ""} onChange={(e) => setForm((f) => ({ ...f, fechaCobro: e.target.value }))} className={inputCls} />
+                  <FechaInput value={form.fechaCobro || form.fecha || ""} onChange={(e) => setForm((f) => ({ ...f, fechaCobro: e.target.value }))} className={inputCls} />
                 </Field>
               )}
               <div className="md:col-span-2">
@@ -3426,7 +3568,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
           {editando.origen === "movimientos_cuenta" && (
             <>
               <Field label="Fecha">
-                <input type="date" value={form.fecha} onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+                <FechaInput value={form.fecha} onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
               </Field>
               <Field label="Detalle">
                 <input value={form.detalle || ""} onChange={(e) => setForm((f) => ({ ...f, detalle: e.target.value }))} placeholder="Ej: Pase de efectivo a banco" className={inputCls} />
@@ -3746,7 +3888,7 @@ function FilaGastoRecurrente({ g, onEditar, onEliminar, onPagar, onDeshacerPago 
       >
         <span className="font-semibold text-slate-800">{g.concepto}</span>
         <MoneyInput value={g.monto || 0} onChange={setMonto} puntoDecimalAlPegar className="w-32 rounded-md border border-stone-300 px-2 py-1 text-right text-xs" />
-        <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="rounded-md border border-stone-300 px-1.5 py-1 text-xs" />
+        <FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} className="rounded-md border border-stone-300 px-1.5 py-1 text-xs" />
         <select value={tipoMonto} onChange={(e) => setTipoMonto(e.target.value)} className="rounded-md border border-stone-300 px-1.5 py-1 text-xs">
           <option value="fijo">Monto fijo</option>
           <option value="variable">Monto variable</option>
@@ -3828,7 +3970,7 @@ function FormularioGastoRecurrente({ claveMes, onAgregar }) {
         <option value="fijo">Monto fijo (igual todos los meses)</option>
         <option value="variable">Monto variable (cambia cada mes)</option>
       </select>
-      <input name="fechaPagoAproximada" type="date" defaultValue={fechaPorDefecto} required className={inputCls} />
+      <FechaInput name="fechaPagoAproximada" defaultValue={fechaPorDefecto} required className={inputCls} />
       <select value={formaPago} onChange={(e) => setFormaPago(e.target.value)} className={inputCls}>
         {FORMAS_PAGO.filter((fp) => fp !== "Cuenta corriente").map((fp) => <option key={fp}>{fp}</option>)}
       </select>
@@ -3899,7 +4041,7 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
         )}
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-        <Field label="Fecha"><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
+        <Field label="Fecha"><FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
         <Field label="Monto entregado"><MoneyInput name="montoEntrega" value={inicial?.monto} onChange={setMonto} puntoDecimalAlPegar placeholder="0" className={inputCls} /></Field>
         <Field label="Sale de">
           <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={inputCls}>
@@ -3911,7 +4053,7 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
         </Field>
         {socioTarjeta && (
           <Field label="Fecha de pago de la tarjeta">
-            <input type="date" value={fechaPagoTarjeta} onChange={(e) => setFechaPagoTarjeta(e.target.value)} required className={inputCls} />
+            <FechaInput value={fechaPagoTarjeta} onChange={(e) => setFechaPagoTarjeta(e.target.value)} required className={inputCls} />
           </Field>
         )}
         <Field label="Nota (opcional)"><input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: recibo N° 1234" className={inputCls} /></Field>
@@ -3990,7 +4132,7 @@ function FormularioSaldoProveedor({ saldo, nombreProveedor, onGuardar }) {
         <Field label="Saldo que informa el proveedor">
           <MoneyInput key={resetKey} onChange={setImporte} onBlur={(n, tiene) => setImporte(tiene ? n : null)} puntoDecimalAlPegar placeholder="Ej: 935.999,21" className={inputCls} />
         </Field>
-        <Field label="Fecha del resumen"><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
+        <Field label="Fecha del resumen"><FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
         <Field label="Nota (opcional)"><input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: resumen de cuenta del 15/10" className={inputCls} /></Field>
         <button type="submit" disabled={guardando || diferencia === null || coincide} className={`${btnPrimary} disabled:opacity-50`}>
           {guardando ? "Guardando..." : "Corregir deuda"}
@@ -4055,7 +4197,7 @@ function FormularioCobroParcial({ onAgregar }) {
       }}
     >
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
-        <input name="fecha" type="date" defaultValue={hoyISO()} required className={`${inputCls} text-xs`} />
+        <FechaInput name="fecha" defaultValue={hoyISO()} required className={`${inputCls} text-xs`} />
         <MoneyInput key={resetKey} name="monto" placeholder="Monto" className={`${inputCls} text-xs`} />
         <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={`${inputCls} text-xs`}>
           {CUENTAS.map((c) => <option key={c}>{c}</option>)}
@@ -5612,6 +5754,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // Obras en la Papelera: sus gastos/ingresos/pedidos dejan de contar en todos lados
   // hasta que se restauren o se borren del todo (24hs), como si nunca hubieran existido.
   const obraIdsPapelera = new Set(obras.filter((o) => o.estado === "Papelera").map((o) => o.id));
+  feriadosCalendario.fechas = new Set(feriados.map((f) => f.fecha));
   // Retenciones con nombre propio ya usadas (ej. "Fondo minero"), para ofrecerlas en la lista.
   tiposRetencionExtra.lista = [...new Set([...ingresos, ...facturasVentaProyectadas].flatMap((x) => retencionesDe(x).map((r) => (r.tipo || "").trim())).filter((t) => t && !TIPOS_RETENCION.includes(t)))].sort();
 
@@ -6084,7 +6227,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         className="grid grid-cols-1 gap-4 md:grid-cols-3"
         onSubmit={(e) => guardarFormularioCompra(e, !!proveedorFijo, onGuardado)}
       >
-        <Field label="Fecha"><input key={leido.fecha ? `fecha-${k}` : "fecha"} name="fecha" type="date" defaultValue={leido.fecha || hoyISO()} required className={inputCls} /></Field>
+        <Field label="Fecha"><FechaInput key={leido.fecha ? `fecha-${k}` : "fecha"} name="fecha" defaultValue={leido.fecha || hoyISO()} required className={inputCls} /></Field>
         <Field label="Obra">
           <div className="flex items-center gap-2">
             <span className="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: colorDeObra(obras.find((o) => String(o.id) === facturaObraId)) }} />
@@ -6165,10 +6308,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               </select>
             </Field>
             <Field label="Fecha de pago">
-              <input
+              <FechaInput
                 key={facturaPlazoEcheq}
                 name="fechaPagoEcheq"
-                type="date"
+               
                 defaultValue={fechaMasDias(facturaPlazoEcheq === "personalizado" ? 30 : Number(facturaPlazoEcheq))}
                 required
                 className={inputCls}
@@ -6187,7 +6330,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
             </Field>
             {facturaEstadoCC === "Pendiente" ? (
               <Field label="Fecha de pago">
-                <input name="fechaVencimientoCc" type="date" defaultValue={fechaMasDias(30)} required className={inputCls} />
+                <FechaInput name="fechaVencimientoCc" defaultValue={fechaMasDias(30)} required className={inputCls} />
                 <div className="mt-1 text-[11px] text-slate-400">Queda "Pendiente" hasta esa fecha — la marcás como "Pagada" a mano desde la tabla cuando la saldemos.</div>
               </Field>
             ) : (
@@ -6502,11 +6645,11 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       <form className={`grid grid-cols-1 gap-3 rounded-lg border p-3 sm:grid-cols-5 ${editando ? "border-amber-300 bg-amber-50/40" : "mb-4 border-stone-200 bg-stone-50"}`} onSubmit={submitFacturaVentaProyectadaForm}>
         {editando && <div className="text-xs font-semibold text-slate-700 sm:col-span-5">Modificar factura de venta futura</div>}
         <Field label="Posible día de factura">
-          <input type="date" value={facturaVentaProyectadaForm.fecha} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+          <FechaInput value={facturaVentaProyectadaForm.fecha} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
           <div className="mt-1 text-[11px] text-slate-400">Decide el mes de IVA/Ingresos Brutos.</div>
         </Field>
         <Field label="Posible día de cobro">
-          <input type="date" value={facturaVentaProyectadaForm.fechaCobroEstimada} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, fechaCobroEstimada: e.target.value }))} required className={inputCls} />
+          <FechaInput value={facturaVentaProyectadaForm.fechaCobroEstimada} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, fechaCobroEstimada: e.target.value }))} required className={inputCls} />
           <div className="mt-1 text-[11px] text-slate-400">Decide el mes en Próximos pagos e ingresos.</div>
         </Field>
         <Field label="Concepto">
@@ -10497,7 +10640,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   <Field label={`Presupuesto (ARS)${resumenObraImportado ? " — se completa con el Excel" : ""}`}>
                     <MoneyInput name="presupuesto" placeholder={resumenObraImportado ? String(resumenObraImportado.precioTotalConIva) : "0,00"} className={inputCls} />
                   </Field>
-                  <Field label="Fecha de inicio"><input name="inicio" type="date" required className={inputCls} /></Field>
+                  <Field label="Fecha de inicio"><FechaInput name="inicio" required className={inputCls} /></Field>
                   <Field label="Duración (meses)"><input name="meses" type="number" min="1" required className={inputCls} /></Field>
                   <Field label="Tipo de factura de la obra">
                     <select name="tipoFacturacion" defaultValue="A" required className={inputCls}>
@@ -10509,11 +10652,11 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     <div className="mt-1 text-[11px] text-slate-400">Se usa como valor por defecto al cargar los cobros de esta obra. La C es cuando se factura por monotributo y "Sin factura" cuando no se factura: las dos cuentan como ingreso de dinero pero no entran en el cálculo de IVA ni Ingresos Brutos.</div>
                   </Field>
                   <Field label="Posible día de factura (opcional)">
-                    <input name="facturaFecha" type="date" className={inputCls} />
+                    <FechaInput name="facturaFecha" className={inputCls} />
                     <div className="mt-1 text-[11px] text-slate-400">Si la completás, se carga de una en "Facturas y cobros" con el Presupuesto como monto. Si no, lo cargás después entrando a la obra.</div>
                   </Field>
                   <Field label="Posible día de cobro (opcional)">
-                    <input name="facturaFechaCobro" type="date" className={inputCls} />
+                    <FechaInput name="facturaFechaCobro" className={inputCls} />
                   </Field>
                   <Field label="Encargado de obra">
                     <select name="encargadoId" className={inputCls}>
@@ -11479,7 +11622,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     </select>
                   </Field>
                   <Field label="Fecha de nacimiento">
-                    <input type="date" value={personalForm.fechaNacimiento} onChange={(e) => pf("fechaNacimiento")(e.target.value)} className={inputCls} />
+                    <FechaInput value={personalForm.fechaNacimiento} onChange={(e) => pf("fechaNacimiento")(e.target.value)} className={inputCls} />
                   </Field>
                   <Field label="Dirección">
                     <input value={personalForm.direccion} onChange={(e) => pf("direccion")(e.target.value)} className={inputCls} />
@@ -11745,7 +11888,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               </div>
               <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={submitAsistenciaForm}>
                 <Field label="Fecha">
-                  <input type="date" required value={asistenciaForm.fecha} onChange={(e) => asf("fecha")(e.target.value)} className={inputCls} />
+                  <FechaInput required value={asistenciaForm.fecha} onChange={(e) => asf("fecha")(e.target.value)} className={inputCls} />
                 </Field>
                 <Field label="Nombre y apellido">
                   {(() => {
@@ -11830,7 +11973,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                 <Panel title="Editar asistencia" action={<button onClick={cancelEditAsistencia}><X size={16} /></button>}>
                   <form className="grid grid-cols-1 gap-4 md:grid-cols-2" onSubmit={submitEditAsistencia}>
                     <Field label="Fecha">
-                      <input type="date" required value={editAsistenciaDraft.fecha} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, fecha: e.target.value }))} className={inputCls} />
+                      <FechaInput required value={editAsistenciaDraft.fecha} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, fecha: e.target.value }))} className={inputCls} />
                     </Field>
                     <Field label="Nombre y apellido">
                       <select required value={editAsistenciaDraft.nombre} onChange={(e) => setEditAsistenciaDraft((d) => ({ ...d, nombre: e.target.value }))} className={inputCls}>
@@ -12257,7 +12400,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                               onSubmit={(e) => submitAvanceForm(e, t.id)}
                             >
                               <Field label="Fecha">
-                                <input type="date" required value={avanceForm.fecha} onChange={(e) => setAvanceForm((f) => ({ ...f, fecha: e.target.value }))} className={inputCls} />
+                                <FechaInput required value={avanceForm.fecha} onChange={(e) => setAvanceForm((f) => ({ ...f, fecha: e.target.value }))} className={inputCls} />
                               </Field>
                               <Field label="Monto (ARS)">
                                 <MoneyInput key={editandoAvanceId || "nuevo"} value={avanceForm.monto} onChange={(v) => setAvanceForm((f) => ({ ...f, monto: v }))} className={inputCls} />
@@ -13420,13 +13563,13 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                                 )}
                               </div>
                               <Field label="¿Cuándo lo necesitás?">
-                                <input type="date" required value={pedidoFechaNecesaria} onChange={(e) => setPedidoFechaNecesaria(e.target.value)} className={inputCls} />
+                                <FechaInput required value={pedidoFechaNecesaria} onChange={(e) => setPedidoFechaNecesaria(e.target.value)} className={inputCls} />
                               </Field>
                             </div>
                           ) : (
                             <div className="mb-4 max-w-xs">
                               <Field label="¿Cuándo lo necesitás?">
-                                <input type="date" required value={pedidoFechaNecesaria} onChange={(e) => setPedidoFechaNecesaria(e.target.value)} className={inputCls} />
+                                <FechaInput required value={pedidoFechaNecesaria} onChange={(e) => setPedidoFechaNecesaria(e.target.value)} className={inputCls} />
                               </Field>
                               <div className="mt-1 text-[11px] text-slate-400">El proveedor y los precios los define Logística cuando el pedido esté aprobado.</div>
                             </div>
@@ -14864,7 +15007,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     setShowIngresoForm(false);
                   }}
                 >
-                  <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
+                  <Field label="Fecha"><FechaInput name="fecha" defaultValue={hoyISO()} required className={inputCls} /></Field>
                   <Field label="Obra">
                     <select name="obraId" className={inputCls}>
                       <option value="">General (sin obra específica)</option>
@@ -14895,7 +15038,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   </Field>
                   {ingresoEstado === "Pendiente" && (
                     <Field label="Fecha estimada de cobro">
-                      <input name="fechaCobroEstimada" type="date" defaultValue={hoyISO()} required className={inputCls} />
+                      <FechaInput name="fechaCobroEstimada" defaultValue={hoyISO()} required className={inputCls} />
                     </Field>
                   )}
                   <div className="md:col-span-3">
@@ -15028,7 +15171,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     setShowMovimientoForm(false);
                   }}
                 >
-                  <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
+                  <Field label="Fecha"><FechaInput name="fecha" defaultValue={hoyISO()} required className={inputCls} /></Field>
                   <Field label="Detalle"><input name="detalle" required placeholder="Ej: Pase de efectivo a banco" className={inputCls} /></Field>
                   <Field label="Cuenta donde sale">
                     <select name="cuentaOrigen" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
@@ -15246,7 +15389,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                                 {debitandoCheque?.id === c.id ? (
                                   <span className="flex flex-wrap items-center justify-end gap-1">
                                     <span className="text-[10px] text-slate-500">Debitado el</span>
-                                    <input type="date" value={debitandoCheque.fecha} onChange={(e) => setDebitandoCheque({ id: c.id, fecha: e.target.value })} className="rounded-md border border-stone-300 px-1.5 py-0.5 text-xs" />
+                                    <FechaInput value={debitandoCheque.fecha} onChange={(e) => setDebitandoCheque({ id: c.id, fecha: e.target.value })} className="rounded-md border border-stone-300 px-1.5 py-0.5 text-xs" />
                                     <button
                                       onClick={async () => { await marcarFacturaPagada(c, debitandoCheque.fecha || hoyISO()); setDebitandoCheque(null); }}
                                       className="rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700"
@@ -15383,7 +15526,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                 <div className="mb-3 text-xs text-slate-500">Plata de un inversor o del banco. El capital entra a la cuenta que elijas como plata real, pero es una deuda — el interés corre solo, día a día, hasta que lo marques como devuelto. Queda siempre en "General", sin obra asociada.</div>
                 <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitPrestamoForm}>
                   <Field label="Fecha">
-                    <input type="date" value={prestamoForm.fecha} onChange={(e) => setPrestamoForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+                    <FechaInput value={prestamoForm.fecha} onChange={(e) => setPrestamoForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
                   </Field>
                   <Field label="Acreedor (inversor / banco)">
                     <input value={prestamoForm.acreedor} onChange={(e) => setPrestamoForm((f) => ({ ...f, acreedor: e.target.value }))} required placeholder="Ej: Juan Pérez, Banco San Juan" className={inputCls} />
@@ -15406,7 +15549,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     </select>
                   </Field>
                   <Field label="Fecha estimada de devolución">
-                    <input type="date" value={prestamoForm.fechaEstimadaDevolucion} onChange={(e) => setPrestamoForm((f) => ({ ...f, fechaEstimadaDevolucion: e.target.value }))} className={inputCls} />
+                    <FechaInput value={prestamoForm.fechaEstimadaDevolucion} onChange={(e) => setPrestamoForm((f) => ({ ...f, fechaEstimadaDevolucion: e.target.value }))} className={inputCls} />
                   </Field>
                   <div className="flex items-end"><button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Guardar</button></div>
                 </form>
@@ -15922,7 +16065,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                 </div>
                 <form className="grid grid-cols-1 gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-3" onSubmit={submitSueldoPlanForm}>
                   <Field label="Fecha">
-                    <input type="date" value={sueldoPlanForm.fecha} onChange={(e) => setSueldoPlanForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
+                    <FechaInput value={sueldoPlanForm.fecha} onChange={(e) => setSueldoPlanForm((f) => ({ ...f, fecha: e.target.value }))} required className={inputCls} />
                   </Field>
                   <Field label="Monto total ($)">
                     <MoneyInput key={sueldoPlanMontoResetKey} value={sueldoPlanForm.monto} onChange={(v) => setSueldoPlanForm((f) => ({ ...f, monto: v }))} className={inputCls} />
@@ -16269,7 +16412,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                             });
                           }}
                         >
-                          <Field label="Fecha"><input name="fecha" type="date" defaultValue={hoyISO()} required className={inputCls} /></Field>
+                          <Field label="Fecha"><FechaInput name="fecha" defaultValue={hoyISO()} required className={inputCls} /></Field>
                           <Field label="Obra (opcional)">
                             <select name="obraId" className={inputCls}>
                               <option value="">General (sin obra específica)</option>
@@ -16533,10 +16676,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                         </div>
                         <div className="flex flex-wrap items-end gap-2">
                           <Field label="Desde">
-                            <input type="date" value={historialFiltroDesde} onChange={(e) => setHistorialFiltroDesde(e.target.value)} className={inputCls} />
+                            <FechaInput value={historialFiltroDesde} onChange={(e) => setHistorialFiltroDesde(e.target.value)} className={inputCls} />
                           </Field>
                           <Field label="Hasta">
-                            <input type="date" value={historialFiltroHasta} onChange={(e) => setHistorialFiltroHasta(e.target.value)} className={inputCls} />
+                            <FechaInput value={historialFiltroHasta} onChange={(e) => setHistorialFiltroHasta(e.target.value)} className={inputCls} />
                           </Field>
                           <Field label="Obra">
                             <select value={historialFiltroObraId} onChange={(e) => setHistorialFiltroObraId(e.target.value)} className={inputCls}>
@@ -16632,7 +16775,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                                 }}
                               >
                                 <Field label="Mes de esas facturas">
-                                  <input type="month" name="mes" defaultValue={hoyISO().slice(0, 7)} required className={inputCls} />
+                                  <MesInput name="mes" defaultValue={hoyISO().slice(0, 7)} required />
                                 </Field>
                                 <Field label="Facturas (PDF o foto, se pueden elegir varias)">
                                   <input type="file" name="archivos" accept="application/pdf,image/*" multiple required className="w-64 text-xs text-slate-600" />
@@ -16870,7 +17013,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               {showFeriadoForm && (
                 <form className="mb-4 grid grid-cols-1 gap-3 rounded-md border border-stone-200 bg-stone-50 p-3 md:grid-cols-3" onSubmit={submitFeriadoForm}>
                   <Field label="Fecha">
-                    <input type="date" required value={feriadoForm.fecha} onChange={(e) => setFeriadoForm((f) => ({ ...f, fecha: e.target.value }))} className={inputCls} />
+                    <FechaInput required value={feriadoForm.fecha} onChange={(e) => setFeriadoForm((f) => ({ ...f, fecha: e.target.value }))} className={inputCls} />
                   </Field>
                   <div className="md:col-span-2">
                     <Field label="Descripción">
