@@ -4513,7 +4513,9 @@ function monthsBetween(d1, d2) {
   return (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
 }
 
-export default function ConcretarApp() {
+// usuario: el perfil de quien ingresó (tabla "usuarios"); en modo demo es null y se
+// elige el rol a mano para probar.
+function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const [tab, setTab] = useState("general");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // El contenido scrollea dentro de <main>, no en el body — al abrir un formulario
@@ -5097,7 +5099,8 @@ export default function ConcretarApp() {
   }
 
   // ---------- Rol actual (simula el login hasta que armemos uno real) ----------
-  const [currentRole, setCurrentRole] = useState("Gerente");
+  const [currentRole, setCurrentRole] = useState(usuario?.rol || "Gerente");
+  const [cambiandoContrasena, setCambiandoContrasena] = useState(false);
   const canCrearPersonal = ROLES_ALTA_PERSONAL.includes(currentRole);
   const canEditarPersonal = ROLES_EDITAR_PERSONAL.includes(currentRole);
 
@@ -10099,17 +10102,28 @@ export default function ConcretarApp() {
             </button>
           ))}
         </nav>
-        <div className="border-t border-white/10 px-5 py-4">
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ingresando como</div>
-          <select
-            value={currentRole}
-            onChange={(e) => setCurrentRole(e.target.value)}
-            className="w-full rounded-md border border-white/20 bg-black/20 px-2 py-1.5 text-xs text-slate-100"
-          >
-            {ROLES.map((r) => <option key={r}>{r}</option>)}
-          </select>
-          <div className="mt-1 text-[10px] text-slate-500">Simula el login hasta que armemos uno real</div>
-        </div>
+        {usuario ? (
+          <div className="border-t border-white/10 px-5 py-4">
+            <div className="text-sm font-semibold text-white">{usuario.nombre}</div>
+            <div className="text-[11px] text-slate-400">{usuario.rol} · {usuario.email}</div>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold">
+              <button onClick={() => setCambiandoContrasena(true)} className="text-slate-300 hover:text-white">Cambiar contraseña</button>
+              <button onClick={onCerrarSesion} className="text-amber-400 hover:text-amber-300">Cerrar sesión</button>
+            </div>
+          </div>
+        ) : (
+          <div className="border-t border-white/10 px-5 py-4">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ingresando como</div>
+            <select
+              value={currentRole}
+              onChange={(e) => setCurrentRole(e.target.value)}
+              className="w-full rounded-md border border-white/20 bg-black/20 px-2 py-1.5 text-xs text-slate-100"
+            >
+              {ROLES.map((r) => <option key={r}>{r}</option>)}
+            </select>
+            <div className="mt-1 text-[10px] text-slate-500">Modo demo: elegí el rol para probar</div>
+          </div>
+        )}
         <div className="border-t border-white/10 px-5 py-4 text-[11px] text-slate-500">
           {isSupabaseConfigured ? (
             <span className="flex items-center gap-1.5 text-emerald-400"><Database size={12} /> Conectado a Supabase</span>
@@ -17166,6 +17180,137 @@ export default function ConcretarApp() {
           onClose={() => setShowHistorialCobrosSocios(false)}
         />
       )}
+      {cambiandoContrasena && <ModalCambiarContrasena onClose={() => setCambiandoContrasena(false)} />}
     </div>
   );
+}
+
+// ---------- Ingreso con usuario y contraseña ----------
+// Cada persona entra con su mail y contraseña (Supabase Auth). Además tiene que estar
+// habilitada en la tabla "usuarios", que define su rol; sin eso no ve nada (la base de
+// datos solo responde a usuarios activos).
+function PantallaLogin() {
+  const [email, setEmail] = useState("");
+  const [contrasena, setContrasena] = useState("");
+  const [verContrasena, setVerContrasena] = useState(false);
+  const [error, setError] = useState("");
+  const [entrando, setEntrando] = useState(false);
+  async function ingresar(e) {
+    e.preventDefault();
+    if (entrando) return;
+    setEntrando(true);
+    setError("");
+    const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: contrasena });
+    if (err) {
+      setError(/invalid/i.test(err.message) ? "Mail o contraseña incorrectos."
+        : /fetch|network/i.test(err.message) ? "No hay conexión. Revisá internet y probá de nuevo."
+        : `No se pudo ingresar: ${err.message}`);
+    }
+    setEntrando(false);
+  }
+  return (
+    <div className="flex min-h-screen w-full items-center justify-center p-4" style={{ backgroundColor: BRAND.navy900, fontFamily: BRAND.font }}>
+      <form onSubmit={ingresar} className="w-full max-w-sm space-y-4 rounded-xl bg-white p-6 shadow-xl">
+        <div>
+          <img src="/gc-logo-navy.png" alt="Grupo Concretar" className="h-8 w-auto" />
+          <h1 className="mt-3 text-xl font-bold text-slate-900">Ingresar a Concretar App</h1>
+        </div>
+        <Field label="Mail">
+          <input id="login-email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required className={inputCls} />
+        </Field>
+        <Field label="Contraseña">
+          <div className="flex gap-2">
+            <input id="login-contrasena" type={verContrasena ? "text" : "password"} autoComplete="current-password" value={contrasena} onChange={(e) => setContrasena(e.target.value)} required className={`${inputCls} min-w-0 flex-1`} />
+            <button type="button" onClick={() => setVerContrasena((v) => !v)} className={btnGhost}>{verContrasena ? "Ocultar" : "Ver"}</button>
+          </div>
+        </Field>
+        {error && <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
+        <button disabled={entrando} className="w-full rounded-md bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-900 hover:bg-amber-400 disabled:opacity-50">{entrando ? "Ingresando…" : "Ingresar"}</button>
+      </form>
+    </div>
+  );
+}
+
+function ModalCambiarContrasena({ onClose }) {
+  const [nueva, setNueva] = useState("");
+  const [repetida, setRepetida] = useState("");
+  const [mensaje, setMensaje] = useState(null); // { tipo: "error" | "ok", texto }
+  const [guardando, setGuardando] = useState(false);
+  async function guardar(e) {
+    e.preventDefault();
+    if (nueva.length < 8) { setMensaje({ tipo: "error", texto: "Usá al menos 8 caracteres." }); return; }
+    if (nueva !== repetida) { setMensaje({ tipo: "error", texto: "Las dos contraseñas no coinciden." }); return; }
+    setGuardando(true);
+    const { error } = await supabase.auth.updateUser({ password: nueva });
+    setGuardando(false);
+    if (error) setMensaje({ tipo: "error", texto: `No se pudo cambiar: ${error.message}` });
+    else { setMensaje({ tipo: "ok", texto: "Listo, tu contraseña nueva ya funciona." }); setNueva(""); setRepetida(""); }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <form onSubmit={guardar} onClick={(e) => e.stopPropagation()} className="w-full max-w-sm space-y-3 rounded-xl bg-white p-5 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold text-slate-900">Cambiar contraseña</h2>
+          <button type="button" onClick={onClose} aria-label="Cerrar"><X size={18} /></button>
+        </div>
+        <Field label="Contraseña nueva"><input id="contrasena-nueva" type="password" autoComplete="new-password" value={nueva} onChange={(e) => setNueva(e.target.value)} className={inputCls} /></Field>
+        <Field label="Repetila"><input id="contrasena-repetida" type="password" autoComplete="new-password" value={repetida} onChange={(e) => setRepetida(e.target.value)} className={inputCls} /></Field>
+        {mensaje && <div className={`rounded-md px-3 py-2 text-sm ${mensaje.tipo === "ok" ? "border border-emerald-200 bg-emerald-50 text-emerald-700" : "border border-rose-200 bg-rose-50 text-rose-700"}`}>{mensaje.texto}</div>}
+        <button disabled={guardando} className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">{guardando ? "Guardando…" : "Guardar contraseña"}</button>
+      </form>
+    </div>
+  );
+}
+
+function PantallaCentrada({ children }) {
+  return (
+    <div className="flex min-h-screen w-full flex-col items-center justify-center gap-3 p-6 text-center text-slate-600" style={{ fontFamily: BRAND.font }}>
+      {children}
+    </div>
+  );
+}
+
+export default function App() {
+  // Modo demo (sin Supabase): entra directo, con el selector de rol para probar.
+  if (!isSupabaseConfigured) return <ConcretarApp />;
+  return <AppConLogin />;
+}
+
+function AppConLogin() {
+  const [sesion, setSesion] = useState(undefined); // undefined = todavía no se sabe
+  const [perfil, setPerfil] = useState(undefined); // undefined = cargando; null = sin acceso
+  const [errorPerfil, setErrorPerfil] = useState(null);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSesion(data.session || null));
+    const { data } = supabase.auth.onAuthStateChange((_evento, s) => setSesion(s || null));
+    return () => data.subscription.unsubscribe();
+  }, []);
+  const userId = sesion?.user?.id || null;
+  useEffect(() => {
+    if (!userId) { setPerfil(undefined); return; }
+    let cancelado = false;
+    setErrorPerfil(null);
+    supabase.from("usuarios").select("*").eq("id", userId).maybeSingle().then(({ data, error }) => {
+      if (cancelado) return;
+      if (error) { setErrorPerfil(error.message); setPerfil(null); return; }
+      setPerfil(data && data.activo ? rowToCamel(data) : null);
+    });
+    return () => { cancelado = true; };
+  }, [userId]);
+  const cerrarSesion = () => supabase.auth.signOut();
+
+  if (sesion === undefined) return <PantallaCentrada><Loader2 size={28} className="animate-spin text-amber-500" /></PantallaCentrada>;
+  if (!sesion) return <PantallaLogin />;
+  if (perfil === undefined) return <PantallaCentrada><Loader2 size={28} className="animate-spin text-amber-500" /><div className="text-sm">Cargando tu usuario…</div></PantallaCentrada>;
+  if (!perfil) {
+    return (
+      <PantallaCentrada>
+        <AlertTriangle size={28} className="text-rose-500" />
+        <div className="text-sm font-semibold text-slate-800">Tu cuenta ({sesion.user.email}) no tiene acceso a la app.</div>
+        <div className="max-w-sm text-xs text-slate-500">{errorPerfil ? `Error: ${errorPerfil}` : "Pedile a Gerencia que te habilite."}</div>
+        <button onClick={cerrarSesion} className="mt-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700">Cerrar sesión</button>
+      </PantallaCentrada>
+    );
+  }
+  return <ConcretarApp key={perfil.id} usuario={perfil} onCerrarSesion={cerrarSesion} />;
 }
