@@ -736,6 +736,23 @@ async function sbSelect(table) {
   return data.map(rowToCamel);
 }
 
+// "Failed to fetch" = se cortó la conexión antes de que llegara la respuesta (señal, wifi).
+const esErrorDeConexion = (error) => /failed to fetch|networkerror|load failed|network request failed/i.test(error?.message || "");
+const mensajeDeError = (error) => (esErrorDeConexion(error)
+  ? "se cortó la conexión a internet y el cambio no se guardó. Revisá la señal y probá de nuevo."
+  : error.message);
+// Para operaciones que se pueden repetir sin duplicar nada (modificar, borrar):
+// si se corta la conexión, se reintenta solo un par de veces antes de avisar.
+async function conReintento(operacion) {
+  let resultado = await operacion();
+  for (const espera of [800, 2000]) {
+    if (!esErrorDeConexion(resultado.error)) break;
+    await new Promise((r) => setTimeout(r, espera));
+    resultado = await operacion();
+  }
+  return resultado;
+}
+
 async function sbInsert(table, obj) {
   // Si se copia un archivo que todavía no se bajó (ej. la factura de una factura de
   // venta futura que pasa al cobro), se baja antes para guardar el archivo real.
@@ -745,7 +762,7 @@ async function sbInsert(table, obj) {
   }
   obj = conArchivos;
   const { data, error } = await supabase.from(table).insert(objToSnake(obj)).select().single();
-  if (error) throw new Error(`No se pudo guardar en "${table}": ${error.message}`);
+  if (error) throw new Error(`No se pudo guardar en "${table}": ${mensajeDeError(error)}`);
   return rowToCamel(data);
 }
 
@@ -755,18 +772,18 @@ async function sbUpdate(table, id, patch) {
   // En las tablas con archivos no se pide la fila de vuelta (traería el archivo entero):
   // devuelve null y quien llama combina el cambio con lo que ya tenía.
   if (ARCHIVOS_DIFERIDOS[table]) {
-    const { error } = await supabase.from(table).update(objToSnake(patch)).eq("id", id);
-    if (error) throw new Error(`No se pudo actualizar "${table}": ${error.message}`);
+    const { error } = await conReintento(() => supabase.from(table).update(objToSnake(patch)).eq("id", id));
+    if (error) throw new Error(`No se pudo actualizar "${table}": ${mensajeDeError(error)}`);
     return null;
   }
-  const { data, error } = await supabase.from(table).update(objToSnake(patch)).eq("id", id).select().single();
-  if (error) throw new Error(`No se pudo actualizar "${table}": ${error.message}`);
+  const { data, error } = await conReintento(() => supabase.from(table).update(objToSnake(patch)).eq("id", id).select().single());
+  if (error) throw new Error(`No se pudo actualizar "${table}": ${mensajeDeError(error)}`);
   return rowToCamel(data);
 }
 
 async function sbDelete(table, id) {
-  const { error } = await supabase.from(table).delete().eq("id", id);
-  if (error) throw new Error(`No se pudo eliminar en "${table}": ${error.message}`);
+  const { error } = await conReintento(() => supabase.from(table).delete().eq("id", id));
+  if (error) throw new Error(`No se pudo eliminar en "${table}": ${mensajeDeError(error)}`);
 }
 
 function readFileAsDataURL(file) {
