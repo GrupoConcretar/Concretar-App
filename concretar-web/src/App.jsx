@@ -9,7 +9,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck, ScanLine
 } from "lucide-react";
 import { leerFactura } from "./lectorFacturas.js";
 
@@ -5587,6 +5587,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       };
 
       campo("DNI", p.dni);
+      if (p.cuil) campo("CUIL", p.cuil);
       campo("Categoría", p.categoria);
       campo("Fecha de nacimiento", p.fechaNacimiento ? fmtFecha(p.fechaNacimiento) : "—");
       campo("Dirección", p.direccion);
@@ -5662,13 +5663,15 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   }
 
   const emptyPersonalForm = {
-    nombre: "", apellido: "", dni: "", categoria: CATEGORIAS_PERSONAL[0],
+    nombre: "", apellido: "", dni: "", cuil: "", categoria: CATEGORIAS_PERSONAL[0],
     estado: "Activo", direccion: "", fechaNacimiento: "", fotoPersona: null, dniFrente: null, dniDorso: null,
     manoHabil: "Diestro", tipoSangre: "", tarjetaIeric: "No", observaciones: "",
     especialidad: "", tallePantalon: "", talleCamisa: "", talleGuantes: "", talleCalzado: "",
     tipoTrabajador: "En negro", aseguradoPor: "No",
   };
   const [personalForm, setPersonalForm] = useState(emptyPersonalForm);
+  const personalFormRef = useRef(personalForm);
+  personalFormRef.current = personalForm;
   const [editingPersonalId, setEditingPersonalId] = useState(null);
   const pf = (key) => (val) => setPersonalForm((f) => ({ ...f, [key]: val }));
 
@@ -5677,6 +5680,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       nombre: p.nombre || "",
       apellido: p.apellido || "",
       dni: p.dni || "",
+      cuil: p.cuil || "",
       categoria: p.categoria || CATEGORIAS_PERSONAL[0],
       estado: p.estado || "Activo",
       direccion: p.direccion || "",
@@ -5697,6 +5701,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       aseguradoPor: p.aseguradoPor || "No",
     });
     setEditingPersonalId(p.id);
+    setLecturaDni(null);
     setShowPersonalForm(true);
     setViewingPersonId(null);
     scrollContenidoArriba();
@@ -5706,6 +5711,57 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     setPersonalForm(emptyPersonalForm);
     setEditingPersonalId(null);
     setShowPersonalForm(false);
+    setLecturaDni(null);
+    lecturaDniActual.current++;
+  }
+
+  // ---------- Lector de DNI ----------
+  // Lee las fotos del DNI y completa los campos vacíos. Si un campo ya tenía otro dato
+  // (ej. la dirección actual no es la del DNI), no lo pisa: lo ofrece para reemplazar.
+  const [lecturaDni, setLecturaDni] = useState(null);
+  const lecturaDniActual = useRef(0);
+  const CAMPOS_DNI = [
+    ["apellido", "Apellido"], ["nombre", "Nombre"], ["dni", "DNI"], ["cuil", "CUIL"],
+    ["fechaNacimiento", "Fecha de nacimiento"], ["direccion", "Dirección"],
+  ];
+  const comparableDni = (v) => String(v || "").normalize("NFD").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  async function leerDatosDni(frente, dorso) {
+    if (!frente && !dorso) return;
+    const lectura = ++lecturaDniActual.current; // si se sube otra foto mientras lee, vale la última
+    setLecturaDni({ estado: "leyendo" });
+    let leidos;
+    try {
+      const { leerDni } = await import("./lectorDni.js");
+      const datos = await leerDni({ frente, dorso });
+      leidos = { ...datos, direccion: datos.domicilio };
+    } catch (err) {
+      console.error(err);
+      if (lectura === lecturaDniActual.current) setLecturaDni({ estado: "error" });
+      return;
+    }
+    if (lectura !== lecturaDniActual.current) return;
+    // Se compara con lo que hay en el formulario ahora (pudo cambiar mientras se leía).
+    const actual = personalFormRef.current;
+    const cambios = {};
+    const completados = [];
+    const diferencias = [];
+    for (const [campo, etiqueta] of CAMPOS_DNI) {
+      const valor = leidos[campo];
+      if (!valor) continue;
+      if (!String(actual[campo] || "").trim()) {
+        cambios[campo] = valor;
+        completados.push(etiqueta);
+      } else if (comparableDni(actual[campo]) !== comparableDni(valor)) {
+        diferencias.push({ campo, etiqueta, valor });
+      }
+    }
+    setPersonalForm((f) => ({ ...f, ...cambios }));
+    const algo = CAMPOS_DNI.some(([campo]) => leidos[campo]);
+    setLecturaDni({ estado: algo ? "listo" : "sin-datos", completados, diferencias });
+  }
+  function usarDatoDni(campo, valor) {
+    pf(campo)(valor);
+    setLecturaDni((l) => l && { ...l, diferencias: l.diferencias.filter((d) => d.campo !== campo) });
   }
 
   function submitPersonalForm(e) {
@@ -5714,6 +5770,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       nombre: personalForm.nombre,
       apellido: personalForm.apellido,
       dni: personalForm.dni,
+      cuil: personalForm.cuil,
       categoria: personalForm.categoria,
       estado: personalForm.estado,
       direccion: personalForm.direccion,
@@ -11953,6 +12010,52 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   <AsistenteAltaWhatsApp onCompletar={(datos) => setPersonalForm((f) => ({ ...f, ...datos }))} />
                 )}
                 <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitPersonalForm}>
+                  <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-3 md:col-span-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><ScanLine size={16} className="text-sky-700" /> Lector de DNI</div>
+                        <div className="text-xs text-slate-600">Subí la foto del dorso (y la del frente) y se completan los datos solos.</div>
+                      </div>
+                      {(personalForm.dniFrente || personalForm.dniDorso) && lecturaDni?.estado !== "leyendo" && (
+                        <button type="button" onClick={() => leerDatosDni(personalForm.dniFrente, personalForm.dniDorso)} className={btnGhost}>
+                          Leer datos del DNI
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <PhotoInput label="DNI frente" value={personalForm.dniFrente} onChange={pf("dniFrente")} />
+                      <PhotoInput label="DNI dorso" value={personalForm.dniDorso} onChange={(v) => {
+                        pf("dniDorso")(v);
+                        if (v) leerDatosDni(personalForm.dniFrente, v);
+                      }} />
+                    </div>
+                    {lecturaDni?.estado === "leyendo" && (
+                      <div className="mt-3 flex items-center gap-2 text-xs font-medium text-sky-800">
+                        <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-700 border-t-transparent" />
+                        Leyendo el DNI… puede tardar unos segundos.
+                      </div>
+                    )}
+                    {lecturaDni?.estado === "listo" && (
+                      <div className="mt-3 space-y-1.5 text-xs">
+                        {lecturaDni.completados.length > 0 ? (
+                          <div className="font-medium text-emerald-800">Se completó: {lecturaDni.completados.join(", ")}. Revisalo antes de guardar (el DNI no trae acentos ni Ñ).</div>
+                        ) : (
+                          <div className="text-slate-600">Se leyó el DNI; los campos ya estaban completos.</div>
+                        )}
+                        {lecturaDni.diferencias.map((d) => (
+                          <div key={d.campo} className="flex flex-wrap items-center gap-2 text-amber-800">
+                            <span>{d.etiqueta} en el DNI: <b>{d.campo === "fechaNacimiento" ? fmtFecha(d.valor) : d.valor}</b></span>
+                            <button type="button" onClick={() => usarDatoDni(d.campo, d.valor)} className="rounded border border-amber-300 bg-white px-2 py-0.5 font-semibold hover:bg-amber-50">Usar este</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(lecturaDni?.estado === "sin-datos" || lecturaDni?.estado === "error") && (
+                      <div className="mt-3 text-xs font-medium text-rose-700">
+                        No se pudieron leer los datos. Probá con una foto más nítida, de cerca, derecha y sin reflejos (sobre todo la del dorso), o cargalos a mano.
+                      </div>
+                    )}
+                  </div>
                   <Field label="Nombre">
                     <input value={personalForm.nombre} onChange={(e) => pf("nombre")(e.target.value)} required className={inputCls} />
                   </Field>
@@ -11961,6 +12064,9 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   </Field>
                   <Field label="DNI">
                     <input value={personalForm.dni} onChange={(e) => pf("dni")(e.target.value)} className={inputCls} />
+                  </Field>
+                  <Field label="CUIL">
+                    <input value={personalForm.cuil} onChange={(e) => pf("cuil")(e.target.value)} placeholder="20-12345678-9" className={inputCls} />
                   </Field>
                   <Field label="Categoría">
                     <select value={personalForm.categoria} onChange={(e) => pf("categoria")(e.target.value)} className={inputCls}>
@@ -12047,8 +12153,6 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     </Field>
                   </div>
                   <PhotoInput label="Foto de la persona" value={personalForm.fotoPersona} onChange={pf("fotoPersona")} />
-                  <PhotoInput label="DNI frente" value={personalForm.dniFrente} onChange={pf("dniFrente")} />
-                  <PhotoInput label="DNI dorso" value={personalForm.dniDorso} onChange={pf("dniDorso")} />
                   <div className="flex items-end gap-2 md:col-span-3">
                     <button className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
                       {editingPersonalId ? "Guardar cambios" : "Guardar"}
@@ -12171,6 +12275,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
 
               <div className="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 md:grid-cols-3">
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">DNI</div><div className="font-mono text-slate-800">{viewingPerson.dni || "—"}</div></div>
+                {viewingPerson.cuil && <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">CUIL</div><div className="font-mono text-slate-800">{viewingPerson.cuil}</div></div>}
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Costo por hora</div><div className="font-mono text-slate-800">{(() => { const c = costosCategoria.find((x) => x.categoria === viewingPerson.categoria)?.costoHora; return c ? fmtARS(c) : "Sin definir"; })()}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Última obra</div><div className="text-slate-800">{ultimaObraDe(nombreCompletoDe(viewingPerson)) || "—"}</div></div>
                 <div><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fecha de nacimiento</div><div className="text-slate-800">{viewingPerson.fechaNacimiento ? fmtFecha(viewingPerson.fechaNacimiento) : "—"}</div></div>

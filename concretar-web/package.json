@@ -4,12 +4,16 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "copiar-ocr": "node scripts/copiar-ocr.js",
+    "predev": "node scripts/copiar-ocr.js",
     "dev": "vite",
+    "prebuild": "node scripts/copiar-ocr.js",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
+    "@tesseract.js-data/spa": "^1.0.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.2",
     "jsqr": "^1.4.0",
@@ -19,6 +23,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.12.7",
+    "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
