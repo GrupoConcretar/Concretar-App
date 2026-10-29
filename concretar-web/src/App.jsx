@@ -3163,7 +3163,7 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
 // que se está editando ya era de una obra finalizada, esa se sigue mostrando para no
 // perder el dato.
 function obrasSeleccionables(obras, idActual = null) {
-  return obras.filter((o) => (o.estado !== "Papelera" && o.estado !== "Finalizada") || (idActual != null && idActual !== "" && String(o.id) === String(idActual)));
+  return obras.filter((o) => !o.esCentro && ((o.estado !== "Papelera" && o.estado !== "Finalizada") || (idActual != null && idActual !== "" && String(o.id) === String(idActual))));
 }
 // Modal para editar un gasto/factura o un cobro de socio ya cargado — accesible
 // desde su propia tabla y desde el ledger de Movimientos en Cuentas. Sirve sobre
@@ -3729,7 +3729,7 @@ const btnGhostDanger = "rounded-md border border-rose-300 px-2.5 py-1 text-xs fo
 function ModalAsignarPersonal({ personal, obras, obraContextoId, asignacionManualDe, nombreCompletoDe, onGuardar, onClose }) {
   const [filtro, setFiltro] = useState(obraContextoId != null ? String(obraContextoId) : "todos");
   const [busqueda, setBusqueda] = useState("");
-  const obrasEnCurso = obras.filter((o) => o.estado === "En curso");
+  const obrasEnCurso = obras.filter((o) => o.estado === "En curso" && !o.esCentro);
 
   const coincideFiltro = (p) => {
     if (filtro === "todos") return true;
@@ -5935,8 +5935,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const [archivoObraNombre, setArchivoObraNombre] = useState("");
   const [creandoObra, setCreandoObra] = useState(false);
   const obraFileInputRef = useRef(null);
-  // Contratos dentro de una obra: cada contrato es una obra "hija" (obraPadreId) con su
-  // propio presupuesto/Excel, gastos, cobros y personal. La obra principal muestra el total.
+  // Centro de costos: agrupa los contratos de un mismo cliente. Cada contrato es una obra
+  // "hija" (obraPadreId) con su propio presupuesto/Excel, gastos, cobros y personal, y toma
+  // el cliente y el tipo de factura del centro. Un centro nuevo (esCentro) no tiene datos
+  // propios; las obras de antes que ya tenían datos siguen siendo su "Contrato original".
   const [nuevaObraPadreId, setNuevaObraPadreId] = useState(null);
   const obraPadreNueva = nuevaObraPadreId ? obras.find((o) => o.id === nuevaObraPadreId) : null;
   const contratosDe = (padreId) => obras.filter((o) => o.obraPadreId === padreId && o.estado !== "Papelera");
@@ -6004,8 +6006,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     setCreandoObra(true);
     const presupuestoObra = Number(f.get("presupuesto")) || resumenObraImportado?.precioTotalConIva || 0;
     const padre = obraPadreNueva;
+    const tipoFacturacion = padre ? padre.tipoFacturacion || "A" : f.get("tipoFacturacion");
+    const nombreNuevoContrato = (f.get("nombre") || "").trim() || `Contrato ${contratosDe(padre?.id).length + (padre?.esCentro ? 1 : 2)}`;
     const nuevaObra = await addRecord("obras", {
-      nombre: padre ? `${padre.nombre} — ${f.get("nombre")}` : f.get("nombre"),
+      nombre: padre ? `${padre.nombre} — ${nombreNuevoContrato}` : f.get("nombre"),
       obraPadreId: padre ? padre.id : null,
       clienteId: padre ? padre.clienteId ?? null : f.get("clienteId") ? Number(f.get("clienteId")) : null,
       cliente: padre ? padre.cliente || "" : nombreComercial(clientes.find((c) => c.id === Number(f.get("clienteId")))) || "",
@@ -6017,7 +6021,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       horaApertura: f.get("horaApertura"),
       diaCierre: f.get("diaCierre"),
       horaCierre: f.get("horaCierre"),
-      tipoFacturacion: f.get("tipoFacturacion"),
+      tipoFacturacion,
       color: padre ? colorDeObra(padre) : PALETA_OBRA[obras.length % PALETA_OBRA.length],
     }, setObras);
     if (nuevaObra) {
@@ -6031,7 +6035,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           fecha: f.get("facturaFecha"),
           fechaCobroEstimada: f.get("facturaFechaCobro") || f.get("facturaFecha"),
           monto: presupuestoObra,
-          tipoFactura: f.get("tipoFacturacion"),
+          tipoFactura: tipoFacturacion,
         }, setFacturasVentaProyectadas);
       }
     }
@@ -6042,6 +6046,28 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     // Un contrato nuevo se abre directamente, para seguir cargándolo.
     if (padre && nuevaObra) abrirObra(nuevaObra);
     setNuevaObraPadreId(null);
+  }
+  async function submitNuevoCentro(e) {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    setCreandoObra(true);
+    const clienteId = Number(f.get("clienteId")) || null;
+    const centro = await addRecord("obras", {
+      nombre: f.get("nombre"),
+      esCentro: true,
+      clienteId,
+      cliente: nombreComercial(clientes.find((c) => c.id === clienteId)) || "",
+      tipoFacturacion: f.get("tipoFacturacion"),
+      presupuesto: 0,
+      meses: 1,
+      inicio: hoyISO(),
+      estado: "En curso",
+      color: PALETA_OBRA[obras.length % PALETA_OBRA.length],
+    }, setObras);
+    setCreandoObra(false);
+    setShowObraForm(false);
+    // Se abre el centro para cargarle el primer contrato.
+    if (centro) { abrirObra(centro); scrollContenidoArriba(); }
   }
   function cambiarEstadoObra(obra, nuevoEstado) {
     if ((nuevoEstado === "Pausada" || nuevoEstado === "Finalizada") && !window.confirm(`¿${nuevoEstado === "Pausada" ? "Pausar" : "Finalizar"} "${obra.nombre}"? El personal que estaba afectado queda liberado para asignarse a otra obra.`)) return;
@@ -6059,11 +6085,20 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       await updateRecord("herramientas", h.id, { ubicacion: "Oficina", estado: "Disponible", fechaUltimoCambioEstado: new Date().toISOString() }, setHerramientas);
     }
     await updateRecord("obras", obra.id, { estado: "Papelera", fechaCancelacion: new Date().toISOString() }, setObras);
+    // Los contratos del centro de costos van con él (si no, quedarían sueltos sin verse).
+    for (const c of contratosDe(obra.id)) {
+      for (const h of herramientas.filter((h) => h.ubicacion === c.nombre)) {
+        await updateRecord("herramientas", h.id, { ubicacion: "Oficina", estado: "Disponible", fechaUltimoCambioEstado: new Date().toISOString() }, setHerramientas);
+      }
+      await updateRecord("obras", c.id, { estado: "Papelera", fechaCancelacion: new Date().toISOString() }, setObras);
+    }
     return true;
   }
   function restaurarObra(obra) {
     if (!window.confirm(`¿Restaurar "${obra.nombre}"? Vuelve a quedar "En curso" y sus gastos/ingresos vuelven a contar en los balances.`)) return;
     updateRecord("obras", obra.id, { estado: "En curso", fechaCancelacion: null }, setObras);
+    obras.filter((c) => c.obraPadreId === obra.id && c.estado === "Papelera")
+      .forEach((c) => updateRecord("obras", c.id, { estado: "En curso", fechaCancelacion: null }, setObras));
   }
 
   // ---------- Planificación (etapas de obra / Gantt) ----------
@@ -6133,20 +6168,37 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     const f = new FormData(e.target);
     const nuevoClienteId = f.get("clienteId") ? Number(f.get("clienteId")) : null;
     const nuevoTipoFacturacion = f.get("tipoFacturacion") || "A";
+    const nuevoNombre = f.get("nombre");
+    const nuevoCliente = nombreComercial(clientes.find((c) => c.id === nuevoClienteId)) || obra.cliente;
     await updateRecord("obras", obra.id, {
-      nombre: f.get("nombre"),
+      nombre: nuevoNombre,
       clienteId: nuevoClienteId,
-      cliente: nombreComercial(clientes.find((c) => c.id === nuevoClienteId)) || obra.cliente,
-      presupuesto: Number(f.get("presupuesto")) || obra.presupuesto,
-      encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
+      cliente: nuevoCliente,
+      ...(obra.esCentro ? {} : {
+        presupuesto: Number(f.get("presupuesto")) || obra.presupuesto,
+        encargadoId: f.get("encargadoId") ? Number(f.get("encargadoId")) : null,
+      }),
       tipoFacturacion: nuevoTipoFacturacion,
     }, setObras);
+    // Las herramientas se ubican por el nombre de la obra: si cambia, se mudan con ella.
+    const renombrar = async (viejo, nuevo) => {
+      if (viejo === nuevo) return;
+      for (const h of herramientas.filter((h) => h.ubicacion === viejo)) await updateRecord("herramientas", h.id, { ubicacion: nuevo }, setHerramientas);
+    };
+    await renombrar(obra.nombre, nuevoNombre);
+    // Los contratos llevan el nombre, el cliente y el tipo de factura del centro.
+    for (const c of contratosDe(obra.id)) {
+      const nombreC = `${nuevoNombre} — ${nombreContrato(c)}`;
+      await updateRecord("obras", c.id, { nombre: nombreC, clienteId: nuevoClienteId, cliente: nuevoCliente, tipoFacturacion: nuevoTipoFacturacion }, setObras);
+      await renombrar(c.nombre, nombreC);
+    }
     // Las facturas de venta futuras todavía no se emitieron, así que si cambia el tipo
     // de factura de la obra se ofrece pasarlas al tipo nuevo (si no, seguirían sumando
     // o dejando de sumar IVA/Ingresos Brutos con el tipo viejo). Los cobros ya
     // registrados no se tocan: esos ya se facturaron (o no) como se cargaron.
     if (nuevoTipoFacturacion !== (obra.tipoFacturacion || "A")) {
-      const proyectadasConOtroTipo = facturasVentaProyectadas.filter((fv) => fv.obraId === obra.id && fv.tipoFactura !== nuevoTipoFacturacion);
+      const idsFamilia = [obra.id, ...contratosDe(obra.id).map((c) => c.id)];
+      const proyectadasConOtroTipo = facturasVentaProyectadas.filter((fv) => idsFamilia.includes(fv.obraId) && fv.tipoFactura !== nuevoTipoFacturacion);
       const nombreTipo = (t) => (t === "Sin factura" ? "Sin factura" : `Factura ${t}`);
       if (proyectadasConOtroTipo.length > 0 && window.confirm(`"${obra.nombre}" tiene ${proyectadasConOtroTipo.length} factura${proyectadasConOtroTipo.length > 1 ? "s" : ""} de venta futura con otro tipo de factura. ¿Pasarla${proyectadasConOtroTipo.length > 1 ? "s" : ""} también a "${nombreTipo(nuevoTipoFacturacion)}"? Los cobros ya registrados no se modifican.`)) {
         await Promise.all(proyectadasConOtroTipo.map((fv) => updateRecord("facturas_venta_proyectadas", fv.id, { tipoFactura: nuevoTipoFacturacion }, setFacturasVentaProyectadas)));
@@ -8125,7 +8177,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     return `${fecha.getFullYear()}-${mm}-${dd}`;
   }
   const resumenPorObra = obras
-    .filter((o) => o.estado !== "Papelera")
+    .filter((o) => o.estado !== "Papelera" && !o.esCentro)
     .map((o) => {
       const pg = presupuestoGeneral.find((p) => p.obraId === o.id);
       const presupuestadoManoObra = pg?.totalManoObra ?? null;
@@ -10785,10 +10837,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               </div>
             </Panel>
 
-            {obras.filter((o) => o.estado === "En curso").length > 0 && (
+            {obras.some((o) => o.estado === "En curso" && !o.esCentro) && (
               <Panel title="Ir a una obra">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {obras.filter((o) => o.estado === "En curso").map((o) => (
+                  {obras.filter((o) => o.estado === "En curso" && !o.esCentro).map((o) => (
                     <button key={o.id} onClick={() => { setTab("obras"); abrirObra(o); }} className="flex items-center justify-between rounded-md border border-stone-200 bg-white px-3 py-2 text-left text-sm hover:bg-stone-50">
                       <span className="font-medium text-slate-800">{o.nombre}</span>
                       <ArrowRightLeft size={14} className="text-slate-400" />
@@ -10820,14 +10872,14 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   </button>
                 </div>
                 <button onClick={() => { setNuevaObraPadreId(null); setShowObraForm((v) => !v); }} className={btnPrimary}>
-                  <Plus size={16} /> Nueva obra
+                  <Plus size={16} /> Nuevo centro de costos
                 </button>
               </div>
             </div>
 
             {vistaObras === "planificacion" ? (
               <PlanificacionObras
-                obras={obras.filter((o) => o.estado !== "Papelera" && o.estado !== "Finalizada")}
+                obras={obras.filter((o) => o.estado !== "Papelera" && o.estado !== "Finalizada" && !o.esCentro)}
                 etapas={etapasObra}
                 agregandoEtapaObraId={agregandoEtapaObraId}
                 setAgregandoEtapaObraId={setAgregandoEtapaObraId}
@@ -10864,14 +10916,12 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               })}
             </div>
 
-            {showObraForm && (
-              <Panel title={obraPadreNueva ? `Nuevo contrato en ${obraPadreNueva.nombre}` : "Añadir obra"} action={<button onClick={() => { setShowObraForm(false); setNuevaObraPadreId(null); }}><X size={16} /></button>}>
-                <form key={nuevaObraPadreId || "obra"} className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitNuevaObra}>
-                  <Field label={obraPadreNueva ? "Nombre del contrato" : "Nombre de la obra"}><input name="nombre" required placeholder={obraPadreNueva ? "Ej: Quincho" : ""} className={inputCls} /></Field>
+            {showObraForm && !obraPadreNueva && (
+              <Panel title="Nuevo centro de costos" action={<button onClick={() => setShowObraForm(false)}><X size={16} /></button>}>
+                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitNuevoCentro}>
+                  <Field label="Nombre del centro de costos"><input name="nombre" required placeholder="Ej: Edificio Belgrano 450" className={inputCls} /></Field>
                   <Field label="Cliente">
-                    {obraPadreNueva ? (
-                      <div className={`${inputCls} bg-stone-100 text-slate-600`}>{obraPadreNueva.cliente || "—"}</div>
-                    ) : clientes.length === 0 ? (
+                    {clientes.length === 0 ? (
                       <div className="rounded-md border border-dashed border-stone-300 px-2 py-2 text-xs text-slate-500">
                         No hay clientes cargados — andá primero a "Clientes/Proveedores" y dalo de alta.
                       </div>
@@ -10882,47 +10932,35 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                       </select>
                     )}
                   </Field>
-                  <Field label={`Presupuesto (ARS)${resumenObraImportado ? " — se completa con el Excel" : ""}`}>
-                    <MoneyInput name="presupuesto" placeholder={resumenObraImportado ? String(resumenObraImportado.precioTotalConIva) : "0,00"} className={inputCls} />
-                  </Field>
-                  <Field label="Fecha de inicio"><FechaInput name="inicio" required className={inputCls} /></Field>
-                  <Field label="Duración (meses)"><input name="meses" type="number" min="1" required className={inputCls} /></Field>
-                  <Field label="Tipo de factura de la obra">
-                    <select name="tipoFacturacion" defaultValue={obraPadreNueva?.tipoFacturacion || "A"} required className={inputCls}>
+                  <Field label="Tipo de factura">
+                    <select name="tipoFacturacion" defaultValue="A" required className={inputCls}>
                       <option value="A">A</option>
                       <option value="B">B</option>
                       <option value="C">C (monotributo)</option>
                       <option value="Sin factura">Sin factura</option>
                     </select>
-                    <div className="mt-1 text-[11px] text-slate-400">Se usa como valor por defecto al cargar los cobros de esta obra. La C es cuando se factura por monotributo y "Sin factura" cuando no se factura: las dos cuentan como ingreso de dinero pero no entran en el cálculo de IVA ni Ingresos Brutos.</div>
+                    <div className="mt-1 text-[11px] text-slate-400">Todos los contratos y certificados de este centro de costos usan este tipo de factura. La C es cuando se factura por monotributo y "Sin factura" cuando no se factura: las dos cuentan como ingreso de dinero pero no entran en el cálculo de IVA ni Ingresos Brutos.</div>
                   </Field>
-                  <Field label="Posible día de factura (opcional)">
-                    <FechaInput name="facturaFecha" className={inputCls} />
-                    <div className="mt-1 text-[11px] text-slate-400">Si la completás, se carga de una en "Facturas y cobros" con el Presupuesto como monto. Si no, lo cargás después entrando a la obra.</div>
-                  </Field>
-                  <Field label="Posible día de cobro (opcional)">
-                    <FechaInput name="facturaFechaCobro" className={inputCls} />
-                  </Field>
-                  <Field label="Encargado de obra">
-                    <select name="encargadoId" className={inputCls}>
-                      <option value="">Sin asignar</option>
-                      {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Hora de apertura">
-                    <input name="horaApertura" type="time" defaultValue="08:00" className={inputCls} />
-                  </Field>
-                  <Field label="Día de cierre semanal">
-                    <select name="diaCierre" defaultValue="Viernes" className={inputCls}>
-                      {DIAS_SEMANA.map((d) => <option key={d}>{d}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Hora de cierre">
-                    <input name="horaCierre" type="time" defaultValue="18:00" className={inputCls} />
-                  </Field>
+                  <div className="text-xs text-slate-500 md:col-span-2 md:self-end">
+                    Después de guardarlo, adentro del centro de costos vas a poder cargar cada contrato con su Excel, presupuesto, fechas y horarios.
+                  </div>
+                  <div className="flex items-end">
+                    <button disabled={creandoObra} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+                      {creandoObra ? "Guardando..." : "Guardar"}
+                    </button>
+                  </div>
+                </form>
+              </Panel>
+            )}
 
+            {showObraForm && obraPadreNueva && (
+              <Panel title={`Nuevo contrato en ${obraPadreNueva.nombre}`} action={<button onClick={() => { setShowObraForm(false); setNuevaObraPadreId(null); quitarExcelNuevaObra(); }}><X size={16} /></button>}>
+                <form key={nuevaObraPadreId} className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitNuevaObra}>
+                  <div className="text-xs text-slate-500 md:col-span-3">
+                    Cliente: <b className="text-slate-700">{obraPadreNueva.cliente || "—"}</b> · Factura: <b className="text-slate-700">{(obraPadreNueva.tipoFacturacion || "A") === "Sin factura" ? "Sin factura" : `Tipo ${obraPadreNueva.tipoFacturacion || "A"}`}</b> <span className="text-slate-400">(se toman del centro de costos)</span>
+                  </div>
                   <div className="md:col-span-3 rounded-md border border-dashed border-amber-300 bg-amber-50 p-4">
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800">Presupuesto de la obra (opcional acá, se puede importar después)</div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800">1. Planilla del presupuesto (Excel)</div>
                     <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-stone-50">
                       <Upload size={16} /> Subir Planilla Interna (.xlsx)
                       <input ref={obraFileInputRef} type="file" accept=".xlsx,.xls" onChange={handleExcelUploadNuevaObra} className="hidden" />
@@ -10962,9 +11000,39 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     )}
                   </div>
 
+                  <Field label="Nombre del contrato"><input name="nombre" placeholder={`Ej: Quincho — vacío: "Contrato ${contratosDe(obraPadreNueva.id).length + (obraPadreNueva.esCentro ? 1 : 2)}"`} className={inputCls} /></Field>
+                  <Field label={`Presupuesto (ARS)${resumenObraImportado ? " — completado con el Excel" : ""}`}>
+                    <MoneyInput key={resumenObraImportado ? `excel-${resumenObraImportado.precioTotalConIva}` : "manual"} name="presupuesto" value={resumenObraImportado ? resumenObraImportado.precioTotalConIva : undefined} className={inputCls} />
+                  </Field>
+                  <Field label="Fecha de inicio"><FechaInput name="inicio" required className={inputCls} /></Field>
+                  <Field label="Duración (meses)"><input name="meses" type="number" min="1" required className={inputCls} /></Field>
+                  <Field label="Posible día de factura (opcional)">
+                    <FechaInput name="facturaFecha" className={inputCls} />
+                    <div className="mt-1 text-[11px] text-slate-400">Si la completás, se carga de una en "Facturas y cobros" con el Presupuesto como monto. Si no, lo cargás después entrando al contrato.</div>
+                  </Field>
+                  <Field label="Posible día de cobro (opcional)">
+                    <FechaInput name="facturaFechaCobro" className={inputCls} />
+                  </Field>
+                  <Field label="Encargado de obra">
+                    <select name="encargadoId" className={inputCls}>
+                      <option value="">Sin asignar</option>
+                      {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Hora de apertura">
+                    <input name="horaApertura" type="time" defaultValue="08:00" className={inputCls} />
+                  </Field>
+                  <Field label="Día de cierre semanal">
+                    <select name="diaCierre" defaultValue="Viernes" className={inputCls}>
+                      {DIAS_SEMANA.map((d) => <option key={d}>{d}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Hora de cierre">
+                    <input name="horaCierre" type="time" defaultValue="16:00" className={inputCls} />
+                  </Field>
                   <div className="flex items-end">
                     <button disabled={creandoObra} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
-                      {creandoObra ? "Guardando..." : "Guardar"}
+                      {creandoObra ? "Guardando..." : "Guardar contrato"}
                     </button>
                   </div>
                 </form>
@@ -10977,7 +11045,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               )}
               {obras.filter((o) => o.estado === filtroObrasEstado && o.obraPadreId == null).map((o) => {
                 const encargado = personal.find((p) => p.id === o.encargadoId);
-                const gentePropia = personal.filter((p) => obraActualDe(p)?.id === o.id).length;
+                const familiaCard = o.esCentro ? contratosDe(o.id) : [o, ...contratosDe(o.id)];
+                const gentePropia = personal.filter((p) => familiaCard.some((c) => c.id === obraActualDe(p)?.id)).length;
                 if (o.estado === "Papelera") {
                   const horasRestantes = horasRestantesPapelera(o);
                   return (
@@ -11016,14 +11085,18 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                             {clientes.map((c) => <option key={c.id} value={c.id}>{nombreComercial(c)}{c.nombreFantasia && c.nombreFantasia.trim() && c.nombreFantasia.trim() !== c.razonSocial ? ` (${c.razonSocial})` : ""}</option>)}
                           </select>
                         </Field>
-                        <Field label="Presupuesto (ARS)"><MoneyInput name="presupuesto" value={o.presupuesto} className={inputCls} /></Field>
-                        <Field label="Encargado de obra">
-                          <select name="encargadoId" defaultValue={o.encargadoId || ""} className={inputCls}>
-                            <option value="">Sin asignar</option>
-                            {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
-                          </select>
-                        </Field>
-                        <Field label="Tipo de factura de la obra">
+                        {!o.esCentro && (
+                          <>
+                            <Field label="Presupuesto (ARS)"><MoneyInput name="presupuesto" value={o.presupuesto} className={inputCls} /></Field>
+                            <Field label="Encargado de obra">
+                              <select name="encargadoId" defaultValue={o.encargadoId || ""} className={inputCls}>
+                                <option value="">Sin asignar</option>
+                                {personal.map((p) => <option key={p.id} value={p.id}>{nombreCompletoDe(p)}</option>)}
+                              </select>
+                            </Field>
+                          </>
+                        )}
+                        <Field label={contratosDe(o.id).length > 0 ? "Tipo de factura (se aplica a todos los contratos)" : "Tipo de factura de la obra"}>
                           <select name="tipoFacturacion" defaultValue={o.tipoFacturacion || "A"} className={inputCls}>
                             <option value="A">A</option>
                             <option value="B">B</option>
@@ -11032,7 +11105,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                           </select>
                         </Field>
 
-                        {!presupuestoGeneral.some((p) => p.obraId === o.id) && (
+                        {!o.esCentro && !presupuestoGeneral.some((p) => p.obraId === o.id) && (
                           <div className="rounded-md border border-dashed border-amber-300 bg-amber-50 p-4">
                             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800">Todavía no tiene presupuesto — importalo ahora si querés</div>
                             <label className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-stone-50">
@@ -11102,18 +11175,23 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                             </button>
                           </div>
                         </div>
+                        {o.esCentro && <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Centro de costos</div>}
                         <div className="mt-3 flex justify-between text-sm">
-                          <span className="text-slate-500">Presupuesto{contratosDe(o.id).length > 0 ? ` (${contratosDe(o.id).length + 1} contratos)` : ""}</span>
-                          <span className="font-mono font-semibold">{fmtARS([o, ...contratosDe(o.id)].reduce((x, c) => x + (c.presupuesto || 0), 0))}</span>
+                          <span className="text-slate-500">{o.esCentro ? `Total (${familiaCard.length} contrato${familiaCard.length === 1 ? "" : "s"})` : `Presupuesto${familiaCard.length > 1 ? ` (${familiaCard.length} contratos)` : ""}`}</span>
+                          <span className="font-mono font-semibold">{fmtARS(familiaCard.reduce((x, c) => x + (c.presupuesto || 0), 0))}</span>
                         </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-slate-500">Duración</span>
-                          <span>{o.meses} meses desde {fmtFecha(o.inicio)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-slate-500">Encargado</span>
-                          <span>{encargado ? nombreCompletoDe(encargado) : <span className="text-slate-400">Sin asignar</span>}</span>
-                        </div>
+                        {!o.esCentro && (
+                          <>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-slate-500">Duración</span>
+                              <span>{o.meses} meses desde {fmtFecha(o.inicio)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-slate-500">Encargado</span>
+                              <span>{encargado ? nombreCompletoDe(encargado) : <span className="text-slate-400">Sin asignar</span>}</span>
+                            </div>
+                          </>
+                        )}
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Factura</span>
                           <span>{(o.tipoFacturacion || "A") === "Sin factura" ? "Sin factura" : `Tipo ${o.tipoFacturacion || "A"}`}</span>
@@ -11135,7 +11213,72 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           </div>
         )}
 
-        {tab === "obras" && viewingObraId && obraSel && (
+        {tab === "obras" && viewingObraId && obraSel?.esCentro && (() => {
+          // Vista del centro de costos: sus contratos, el total y el alta de contratos nuevos.
+          const contratos = contratosDe(obraSel.id);
+          const resumenes = contratos.map((c) => resumenPorObra.find((r) => r.obra.id === c.id)).filter(Boolean);
+          const suma = (k) => resumenes.reduce((x, r) => x + (r[k] || 0), 0);
+          return (
+            <div className="space-y-6">
+              <button onClick={() => setViewingObraId(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
+                ← Volver a Obras
+              </button>
+              <div className="relative overflow-hidden rounded-lg border border-stone-200 bg-white p-5 pl-6 shadow-sm">
+                <div className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: colorDeObra(obraSel) }} />
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Centro de costos</div>
+                    <h2 className="text-xl font-bold text-slate-900">{obraSel.nombre}</h2>
+                    <div className="text-sm text-slate-500">
+                      {obraSel.cliente || "Sin cliente"} · {(obraSel.tipoFacturacion || "A") === "Sin factura" ? "Sin factura" : `Factura ${obraSel.tipoFacturacion || "A"}`}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => iniciarEdicionObra(obraSel)} className={btnGhost}><span className="flex items-center gap-1"><Pencil size={13} /> Editar</span></button>
+                    <button onClick={() => abrirNuevoContrato(obraSel)} className={btnPrimary}><Plus size={16} /> Nuevo contrato</button>
+                  </div>
+                </div>
+                {contratos.length > 0 && (
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-stone-100 pt-4 text-sm sm:grid-cols-4">
+                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Total de los contratos</div><div className="font-mono font-semibold text-slate-900">{fmtARS(suma("precioObra"))}</div></div>
+                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Cobrado</div><div className="font-mono font-semibold text-emerald-700">{fmtARS(suma("cobrado"))}</div></div>
+                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Falta cobrar</div><div className="font-mono font-semibold text-rose-600">{fmtARS(suma("faltaCobrar"))}</div></div>
+                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Gastado</div><div className="font-mono font-semibold text-slate-800">{fmtARS(suma("gastado"))}</div></div>
+                  </div>
+                )}
+              </div>
+              {contratos.length === 0 ? (
+                <div className="rounded-lg border-2 border-dashed border-stone-300 bg-white p-8 text-center">
+                  <div className="text-sm text-slate-600">Este centro de costos todavía no tiene contratos.</div>
+                  <button onClick={() => abrirNuevoContrato(obraSel)} className={`${btnPrimary} mx-auto mt-3`}><Plus size={16} /> Cargar el primer contrato</button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {contratos.map((c) => {
+                    const r = resumenPorObra.find((x) => x.obra.id === c.id);
+                    const encargadoC = personal.find((p) => p.id === c.encargadoId);
+                    return (
+                      <button key={c.id} onClick={() => abrirObra(c)} className="rounded-lg border border-stone-200 bg-white p-4 text-left shadow-sm hover:border-amber-300 hover:shadow-md">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="font-semibold text-slate-900">{nombreContrato(c)}</div>
+                          <Badge estado={c.estado} />
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">{c.meses} meses desde {fmtFecha(c.inicio)} · {encargadoC ? nombreCompletoDe(encargadoC) : "Sin encargado"}</div>
+                        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                          <div><div className="text-slate-400">Presupuesto</div><div className="font-mono font-semibold text-slate-900">{fmtARS(r?.precioObra || 0)}</div></div>
+                          <div><div className="text-slate-400">Cobrado</div><div className="font-mono font-semibold text-emerald-700">{fmtARS(r?.cobrado || 0)}</div></div>
+                          <div><div className="text-slate-400">Falta cobrar</div><div className="font-mono font-semibold text-rose-600">{fmtARS(r?.faltaCobrar || 0)}</div></div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {tab === "obras" && viewingObraId && obraSel && !obraSel.esCentro && (
           <div className="space-y-6">
             <button onClick={() => setViewingObraId(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
               ← Volver a Obras
@@ -11145,8 +11288,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               // Contratos de esta obra: la principal + sus contratos. Se pasa de uno a otro
               // con un toque, y arriba se ve el total de todos juntos.
               const principal = obraSel.obraPadreId ? obras.find((o) => o.id === obraSel.obraPadreId) || obraSel : obraSel;
-              const familia = [principal, ...contratosDe(principal.id)];
-              if (familia.length === 1) {
+              const familia = principal.esCentro ? contratosDe(principal.id) : [principal, ...contratosDe(principal.id)];
+              if (!principal.esCentro && familia.length === 1) {
                 return (
                   <div className="flex justify-end">
                     <button onClick={() => abrirNuevoContrato(principal)} className={btnGhost}><span className="flex items-center gap-1"><Plus size={13} /> Agregar otro contrato a esta obra</span></button>
@@ -11158,7 +11301,11 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               return (
                 <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{principal.nombre} · {familia.length} contratos</span>
+                    {principal.esCentro ? (
+                      <button onClick={() => abrirObra(principal)} className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 underline decoration-dotted hover:text-amber-700">Centro de costos: {principal.nombre} · {familia.length} contrato{familia.length === 1 ? "" : "s"}</button>
+                    ) : (
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{principal.nombre} · {familia.length} contratos</span>
+                    )}
                     <button onClick={() => abrirNuevoContrato(principal)} className={btnGhost}><span className="flex items-center gap-1"><Plus size={13} /> Nuevo contrato</span></button>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -12887,7 +13034,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
             {vistaLiquidacion === "historial" && (
               <>
                 <select className={inputCls} value={obraHistorialId} onChange={(e) => setObraHistorialId(e.target.value)}>
-                  {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                  {obras.filter((o) => o.estado !== "Papelera" && !o.esCentro).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                 </select>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -12980,7 +13127,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   <div className="min-w-[200px]">
                     <Field label="Obra">
                       <select value={obraFormalId} onChange={(e) => setObraFormalId(e.target.value)} className={inputCls}>
-                        {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                        {obras.filter((o) => o.estado !== "Papelera" && !o.esCentro).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                       </select>
                     </Field>
                   </div>
@@ -13377,7 +13524,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   <select className={inputCls} value={filtroHerr.ubicacion} onChange={(e) => setFiltroHerr((f) => ({ ...f, ubicacion: e.target.value }))}>
                     <option>Todas</option>
                     <option>Oficina</option>
-                    {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id}>{o.nombre}</option>)}
+                    {obras.filter((o) => o.estado !== "Papelera" && !o.esCentro).map((o) => <option key={o.id}>{o.nombre}</option>)}
                   </select>
                   <select className={inputCls} value={filtroHerr.estado} onChange={(e) => setFiltroHerr((f) => ({ ...f, estado: e.target.value }))}>
                     <option>Todos</option>
@@ -13705,7 +13852,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                             className={inputCls}
                           >
                             <option>Oficina</option>
-                            {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id}>{o.nombre}</option>)}
+                            {obras.filter((o) => o.estado !== "Papelera" && !o.esCentro).map((o) => <option key={o.id}>{o.nombre}</option>)}
                           </select>
                         </Field>
                         <Field label="Destino">
@@ -14748,7 +14895,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                                       <Field label="Obra destino">
                                         <select value={obraParaStock} onChange={(e) => setObraParaStock(e.target.value)} className={inputCls}>
                                           <option value="">-- Elegir --</option>
-                                          {obras.filter((o) => o.estado === "En curso").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                                          {obras.filter((o) => o.estado === "En curso" && !o.esCentro).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                                         </select>
                                       </Field>
                                     </div>
@@ -16775,7 +16922,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                           <Field label="Obra (opcional)">
                             <select name="obraId" className={inputCls}>
                               <option value="">General (sin obra específica)</option>
-                              {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                              {obras.filter((o) => o.estado !== "Papelera" && !o.esCentro).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                             </select>
                           </Field>
                           <Field label="Monto (ARS)"><MoneyInput name="monto" className={inputCls} /></Field>
@@ -17043,7 +17190,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                           <Field label="Obra">
                             <select value={historialFiltroObraId} onChange={(e) => setHistorialFiltroObraId(e.target.value)} className={inputCls}>
                               <option value="">Todas las obras</option>
-                              {obras.filter((o) => o.estado !== "Papelera").map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                              {obras.filter((o) => o.estado !== "Papelera" && !o.esCentro).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                             </select>
                           </Field>
                           {(historialFiltroDesde || historialFiltroHasta || historialFiltroObraId) && (
@@ -17404,7 +17551,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
 
             <Panel title="Ficha horaria por obra">
               <div className="space-y-3">
-                {obras.filter((o) => o.estado !== "Papelera" && o.estado !== "Finalizada").map((o) => (
+                {obras.filter((o) => o.estado !== "Papelera" && o.estado !== "Finalizada" && !o.esCentro).map((o) => (
                   <div key={o.id} className="rounded-lg border border-stone-200 p-4">
                     {editandoHorarioObraId === o.id ? (
                       <form className="space-y-3" onSubmit={guardarHorarioObra}>
