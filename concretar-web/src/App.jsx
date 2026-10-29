@@ -701,7 +701,6 @@ const ARCHIVOS_DIFERIDOS = {
   ingresos: ["archivo", "aviso_pago_archivo"],
   facturas_venta_proyectadas: ["archivo"],
   cobros_socios: ["archivo"],
-  adicionales_obra: ["archivo"],
 };
 const MARCA_DIFERIDO = "diferido:";
 const esArchivoDiferido = (v) => typeof v === "string" && v.startsWith(MARCA_DIFERIDO);
@@ -1680,54 +1679,6 @@ function RecepcionOC({ oc, onGuardar, onCancelar }) {
       <div className="flex gap-2">
         <button disabled={guardando} className="rounded-md bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50">{guardando ? "Guardando…" : "Guardar entrega"}</button>
         <button type="button" onClick={onCancelar} className={btnGhost}>Cancelar</button>
-      </div>
-    </form>
-  );
-}
-
-// Alta / edición de un adicional de obra (trabajo extra que pidió el cliente).
-const ESTADOS_ADICIONAL = ["Presupuestado", "Aprobado", "Rechazado"];
-function FormularioAdicional({ inicial = null, onGuardar, onCancelar }) {
-  const [fecha, setFecha] = useState(inicial?.fecha || hoyISO());
-  const [descripcion, setDescripcion] = useState(inicial?.descripcion || "");
-  const [monto, setMonto] = useState(inicial?.monto || 0);
-  const [estado, setEstado] = useState(inicial?.estado || "Presupuestado");
-  const [archivo, setArchivo] = useState({ archivo: inicial?.archivo || null, nombreArchivo: inicial?.nombreArchivo || null, tipoArchivo: inicial?.tipoArchivo || null });
-  const [guardando, setGuardando] = useState(false);
-  async function guardar(e) {
-    e.preventDefault();
-    if (guardando) return;
-    if (!descripcion.trim()) { alert("Escribí qué trabajo es."); return; }
-    if (!(Number(monto) > 0)) { alert("Cargá el monto del adicional."); return; }
-    setGuardando(true);
-    try { await onGuardar({ fecha, descripcion: descripcion.trim(), monto: Number(monto), estado, ...archivo }); } finally { setGuardando(false); }
-  }
-  return (
-    <form onSubmit={guardar} className="grid grid-cols-1 gap-3 rounded-md border border-stone-200 bg-stone-50 p-3 md:grid-cols-4">
-      <div className="md:col-span-2">
-        <Field label="Trabajo adicional"><input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Ej: Pintura del quincho" className={inputCls} /></Field>
-      </div>
-      <Field label="Monto"><MoneyInput value={monto || undefined} onChange={setMonto} className={inputCls} /></Field>
-      <Field label="Fecha"><FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
-      <Field label="Estado">
-        <select value={estado} onChange={(e) => setEstado(e.target.value)} className={inputCls}>
-          <option value="Presupuestado">Presupuestado (falta que lo apruebe)</option>
-          <option value="Aprobado">Aprobado por el cliente</option>
-          <option value="Rechazado">Rechazado</option>
-        </select>
-      </Field>
-      <div className="md:col-span-3">
-        <ArchivoInput
-          label="Presupuesto o aprobación del cliente (opcional: PDF, foto o captura de WhatsApp)"
-          value={archivo.archivo}
-          nombreArchivo={archivo.nombreArchivo}
-          onChange={(a, nombreArchivo, tipoArchivo) => setArchivo({ archivo: a, nombreArchivo, tipoArchivo })}
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-2 md:col-span-4">
-        <button disabled={guardando} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">{guardando ? "Guardando…" : inicial ? "Guardar cambios" : "Guardar adicional"}</button>
-        <button type="button" onClick={onCancelar} className={btnGhost}>Cancelar</button>
-        <span className="text-[11px] text-slate-400">Solo los aprobados se suman al precio de la obra.</span>
       </div>
     </form>
   );
@@ -5059,8 +5010,6 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // Archivos de los cobros de obras (factura, certificados de retención, orden de pago),
   // atados a una factura de venta futura y, cuando se cobra, al ingreso.
   const [documentosCobros, setDocumentosCobros] = useState([]);
-  // Adicionales: trabajos extra que el cliente pide dentro de la misma obra.
-  const [adicionalesObra, setAdicionalesObra] = useState([]);
   const [facturasVarias, setFacturasVarias] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VARIAS);
   const [sueldosPlanificados, setSueldosPlanificados] = useState(isSupabaseConfigured ? [] : DEMO_SUELDOS_PLANIFICADOS);
   const [facturasVentaProyectadas, setFacturasVentaProyectadas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VENTA_PROYECTADAS);
@@ -5124,7 +5073,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp, dcob, adic] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp, dcob] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -5138,7 +5087,6 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"), sbSelect("notas_credito"), sbSelect("facturas_varias"),
           sbSelect("sueldos_planificados"), sbSelect("facturas_venta_proyectadas"), sbSelect("gastos_recurrentes"),
           sbSelect("entregas_proveedores"), sbSelect("correcciones_deuda_proveedor"), sbSelect("documentos_cobros"),
-          sbSelect("adicionales_obra"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -5187,7 +5135,6 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         setEntregasProveedores(entp);
         setCorreccionesDeuda(cdp);
         setDocumentosCobros(dcob);
-        setAdicionalesObra(adic);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -5819,9 +5766,6 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // hasta que se restauren o se borren del todo (24hs), como si nunca hubieran existido.
   const obraIdsPapelera = new Set(obras.filter((o) => o.estado === "Papelera").map((o) => o.id));
   feriadosCalendario.fechas = new Set(feriados.map((f) => f.fecha));
-  // Precio de una obra = lo acordado al principio + los adicionales que el cliente aprobó.
-  const adicionalesAprobadosDe = (obraId) => adicionalesObra.filter((a) => a.obraId === obraId && a.estado === "Aprobado").reduce((x, a) => x + (Number(a.monto) || 0), 0);
-  const precioTotalObra = (o) => (o?.presupuesto || 0) + adicionalesAprobadosDe(o?.id);
   // Retenciones con nombre propio ya usadas (ej. "Fondo minero"), para ofrecerlas en la lista.
   tiposRetencionExtra.lista = [...new Set([...ingresos, ...facturasVentaProyectadas].flatMap((x) => retencionesDe(x).map((r) => (r.tipo || "").trim())).filter((t) => t && !TIPOS_RETENCION.includes(t)))].sort();
 
@@ -8091,7 +8035,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       const pg = presupuestoGeneral.find((p) => p.obraId === o.id);
       const presupuestadoManoObra = pg?.totalManoObra ?? null;
       const presupuestadoEqYMat = pg ? (pg.totalEquipos || 0) + (pg.totalMateriales || 0) + (pg.totalHerramientas || 0) : null;
-      const precioObra = (o.presupuesto || pg?.precioTotalConIva || 0) + adicionalesAprobadosDe(o.id);
+      const precioObra = o.presupuesto || pg?.precioTotalConIva || 0;
       const cobrado = ingresos.filter((i) => i.obraId === o.id && i.estado !== "Pendiente").reduce((s, i) => s + (i.monto || 0), 0);
       // Los "Jornales de la semana" que se generan al pagar la asistencia ya cuentan en la
       // mano de obra (costoManoDeObraDeObra), así que no se suman acá otra vez.
@@ -9287,7 +9231,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   }
   function balanceCliente(cli) {
     const obrasCliente = obras.filter((o) => o.clienteId === cli.id && o.estado !== "Papelera");
-    const totalAcordado = obrasCliente.reduce((s, o) => s + precioTotalObra(o), 0);
+    const totalAcordado = obrasCliente.reduce((s, o) => s + (o.presupuesto || 0), 0);
     // Solo lo cobrado de verdad: un ingreso "Pendiente" todavía lo debe el cliente.
     const totalCobrado = ingresos.filter((i) => i.estado !== "Pendiente" && obrasCliente.some((o) => o.id === i.obraId)).reduce((s, i) => s + (i.monto || 0), 0);
     return { obrasCliente, totalAcordado, totalCobrado, saldo: totalAcordado - totalCobrado };
@@ -10250,17 +10194,6 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     cancelarRechazoOc();
   }
 
-  // ---------- Adicionales de obra ----------
-  const [adicionalForm, setAdicionalForm] = useState(null); // null | "nuevo" | id del que se edita
-  async function guardarAdicional(obraId, datos) {
-    if (adicionalForm === "nuevo") await addRecord("adicionales_obra", { obraId, ...datos }, setAdicionalesObra);
-    else await updateRecord("adicionales_obra", adicionalForm, datos, setAdicionalesObra);
-    setAdicionalForm(null);
-  }
-  function eliminarAdicional(a) {
-    deleteRecord("adicionales_obra", a.id, setAdicionalesObra);
-  }
-
   // Tarjeta de un grupo de tanteros (precio cerrado, pagado, saldo y sus pagos).
   // Se usa en Pagos y en la sección "Personal y pagos" de cada obra.
   function renderGrupoTantero(t) {
@@ -11069,8 +11002,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                           </div>
                         </div>
                         <div className="mt-3 flex justify-between text-sm">
-                          <span className="text-slate-500">Presupuesto{adicionalesAprobadosDe(o.id) > 0 ? " + adicionales" : ""}</span>
-                          <span className="font-mono font-semibold">{fmtARS(precioTotalObra(o))}</span>
+                          <span className="text-slate-500">Presupuesto</span>
+                          <span className="font-mono font-semibold">{fmtARS(o.presupuesto)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Duración</span>
@@ -11375,62 +11308,6 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                       );
                     })()}
                   </Panel>
-
-                  {(() => {
-                    // Trabajos extra que pidió el cliente dentro de esta obra: los aprobados
-                    // se suman al precio (balance, falta cobrar y saldo del cliente).
-                    const adicionales = adicionalesObra.filter((a) => a.obraId === obraSel.id).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || b.id - a.id);
-                    const aprobados = adicionalesAprobadosDe(obraSel.id);
-                    const pendientes = adicionales.filter((a) => a.estado === "Presupuestado").reduce((x, a) => x + (Number(a.monto) || 0), 0);
-                    const editando = typeof adicionalForm === "number" ? adicionales.find((a) => a.id === adicionalForm) : null;
-                    const chip = { Aprobado: "border-emerald-300 bg-emerald-50 text-emerald-700", Presupuestado: "border-amber-300 bg-amber-50 text-amber-700", Rechazado: "border-slate-300 bg-slate-50 text-slate-500" };
-                    return (
-                      <Panel
-                        title="Adicionales"
-                        action={<button onClick={() => setAdicionalForm(adicionalForm === "nuevo" ? null : "nuevo")} className={btnGhost}><span className="flex items-center gap-1"><Plus size={13} /> Agregar adicional</span></button>}
-                      >
-                        <div className="space-y-3">
-                          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-                            <span className="text-slate-500">Presupuesto original <span className="font-mono font-semibold text-slate-800">{fmtARS(obraSel.presupuesto)}</span></span>
-                            <span className="text-slate-500">+ Adicionales aprobados <span className="font-mono font-semibold text-emerald-700">{fmtARS(aprobados)}</span></span>
-                            <span className="text-slate-500">= Precio total <span className="font-mono font-bold text-slate-900">{fmtARS(precioTotalObra(obraSel))}</span></span>
-                            {pendientes > 0 && <span className="text-amber-700">Falta aprobar <span className="font-mono font-semibold">{fmtARS(pendientes)}</span></span>}
-                          </div>
-                          {(adicionalForm === "nuevo" || editando) && (
-                            <FormularioAdicional key={adicionalForm} inicial={editando} onGuardar={(d) => guardarAdicional(obraSel.id, d)} onCancelar={() => setAdicionalForm(null)} />
-                          )}
-                          {adicionales.length === 0 ? (
-                            <div className="text-xs text-slate-400">Si el cliente pide trabajos extra dentro de esta obra, cargalos acá. Cuando los aprueba, se suman al precio de la obra.</div>
-                          ) : (
-                            <div className="divide-y divide-stone-100 rounded-md border border-stone-200">
-                              {adicionales.map((a) => (
-                                <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
-                                  <div className="min-w-0">
-                                    <div className="font-medium text-slate-800">{a.descripcion}</div>
-                                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                      <span>{fmtFecha(a.fecha)}</span>
-                                      {a.archivo && (
-                                        <a href={a.archivo} onClick={(e) => { e.preventDefault(); abrirArchivo(a.archivo); }} className="flex items-center gap-1 text-sky-700 hover:underline"><FileText size={12} /> {a.nombreArchivo || "Ver archivo"}</a>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className={`font-mono font-semibold ${a.estado === "Rechazado" ? "text-slate-400 line-through" : "text-slate-800"}`}>{fmtARS(a.monto)}</span>
-                                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${chip[a.estado] || chip.Presupuestado}`}>{a.estado}</span>
-                                    {a.estado === "Presupuestado" && (
-                                      <button onClick={() => updateRecord("adicionales_obra", a.id, { estado: "Aprobado" }, setAdicionalesObra)} className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"><Check size={12} /> Aprobado</button>
-                                    )}
-                                    <button onClick={() => setAdicionalForm(a.id)} title="Modificar" className={btnGhostSm}><Pencil size={11} /></button>
-                                    <BotonEliminar onClick={() => eliminarAdicional(a)} title="Eliminar adicional" />
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </Panel>
-                    );
-                  })()}
 
                   {(() => {
                     // Todo lo del personal de esta obra en un solo lugar: quiénes trabajan acá,
