@@ -5888,8 +5888,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         const data = new Uint8Array(evt.target.result);
         const wb = XLSX.read(data, { type: "array", cellDates: true });
         const { resumen, items } = parsePresupuestoGeneral(wb);
-        if (items.length === 0) {
-          alert("No se pudo leer ningún ítem de Equipos, Herramientas o Materiales. Revisá que sea la Planilla Interna de Costeo.");
+        if (items.length === 0 && !resumen.precioTotalConIva) {
+          alert("No se pudo leer ningún ítem ni el precio total. Revisá que sea la Planilla Interna de Costeo.");
         }
         setResumenObraImportado(resumen);
         setItemsObraImportados(items);
@@ -9581,10 +9581,14 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     const filaDesdeParaCascada = Math.max(filaSubtotalMateriales, filaSubtotalHerr);
     const { valor: precioTotalSinIvaRaw, fila: filaPrecioSinIva } = numeroDespuesDe(rows, "PRECIO TOTAL $ SIN IVA", filaDesdeParaCascada);
     const { valor: precioTotalConIvaRaw } = numeroDespuesDe(rows, "PRECIO TOTAL $ CON IVA", filaPrecioSinIva >= 0 ? filaPrecioSinIva : filaDesdeParaCascada);
+    // Obra sin factura: la planilla termina en un único "PRECIO TOTAL $" (sin la apertura con/sin IVA),
+    // que ya incluye gastos generales, beneficios e impuestos. Ese es el precio final.
+    const precioTotalFinalRaw = precioTotalSinIvaRaw || precioTotalConIvaRaw ? 0 : numeroDespuesDe(rows, "PRECIO TOTAL $", filaDesdeParaCascada).valor;
     const subtotal123 = totalManoObra + totalEquipos + totalMateriales + totalHerramientas;
-    // Si no se encontró la cascada de IVA (obra en negro), el total es directo la suma de las 3-4 secciones.
-    const precioTotalSinIva = precioTotalSinIvaRaw || subtotal123;
-    const precioTotalConIva = precioTotalConIvaRaw || precioTotalSinIva;
+    // Solo si la planilla no tiene ningún "PRECIO TOTAL", se usa la suma de las 3-4 secciones.
+    const aCentavos = (n) => Math.round(n * 100) / 100;
+    const precioTotalSinIva = aCentavos(precioTotalSinIvaRaw || precioTotalFinalRaw || subtotal123);
+    const precioTotalConIva = aCentavos(precioTotalConIvaRaw || precioTotalSinIva);
 
     const itemsEquipos = leerItemsSeccion(rows, filaHeaderEquipos, filaSubtotalEquipos, "Equipos");
     const itemsMateriales = leerItemsSeccion(rows, filaHeaderMateriales, filaSubtotalMateriales, "Materiales");
@@ -10876,7 +10880,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                           <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.totalMateriales)}</div>
                         </div>
                         <div className="rounded-md border border-amber-300 bg-white p-2 sm:col-span-2">
-                          <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">Total con IVA</div>
+                          <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">{resumenObraImportado.precioTotalConIva > resumenObraImportado.precioTotalSinIva ? "Total con IVA" : "Precio total (sin IVA)"}</div>
                           <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.precioTotalConIva)}</div>
                         </div>
                         <div className="text-[11px] text-slate-500 sm:col-span-2 sm:self-center">{itemsObraImportados.length} ítem(s) de Equipos/Herramientas/Materiales detectados.</div>
@@ -10988,7 +10992,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                                   <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.totalMateriales)}</div>
                                 </div>
                                 <div className="rounded-md border border-amber-300 bg-white p-2 sm:col-span-2">
-                                  <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">Total con IVA</div>
+                                  <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">{resumenObraImportado.precioTotalConIva > resumenObraImportado.precioTotalSinIva ? "Total con IVA" : "Precio total (sin IVA)"}</div>
                                   <div className="font-mono text-sm font-bold text-slate-900">{fmtARS(resumenObraImportado.precioTotalConIva)}</div>
                                 </div>
                                 <div className="text-[11px] text-slate-500 sm:col-span-2 sm:self-center">{itemsObraImportados.length} ítem(s) de Equipos/Herramientas/Materiales detectados.</div>
