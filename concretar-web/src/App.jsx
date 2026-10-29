@@ -5861,6 +5861,22 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const [archivoObraNombre, setArchivoObraNombre] = useState("");
   const [creandoObra, setCreandoObra] = useState(false);
   const obraFileInputRef = useRef(null);
+  // Contratos dentro de una obra: cada contrato es una obra "hija" (obraPadreId) con su
+  // propio presupuesto/Excel, gastos, cobros y personal. La obra principal muestra el total.
+  const [nuevaObraPadreId, setNuevaObraPadreId] = useState(null);
+  const obraPadreNueva = nuevaObraPadreId ? obras.find((o) => o.id === nuevaObraPadreId) : null;
+  const contratosDe = (padreId) => obras.filter((o) => o.obraPadreId === padreId && o.estado !== "Papelera");
+  const nombreContrato = (o) => {
+    const padre = o.obraPadreId ? obras.find((x) => x.id === o.obraPadreId) : null;
+    return padre && o.nombre.startsWith(`${padre.nombre} — `) ? o.nombre.slice(padre.nombre.length + 3) : o.nombre;
+  };
+  function abrirNuevoContrato(padre) {
+    setNuevaObraPadreId(padre.id);
+    setViewingObraId(null);
+    setVistaObras("lista");
+    setShowObraForm(true);
+    scrollContenidoArriba();
+  }
 
   function handleExcelUploadNuevaObra(e) {
     const file = e.target.files[0];
@@ -5913,10 +5929,12 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     const f = new FormData(e.target);
     setCreandoObra(true);
     const presupuestoObra = Number(f.get("presupuesto")) || resumenObraImportado?.precioTotalConIva || 0;
+    const padre = obraPadreNueva;
     const nuevaObra = await addRecord("obras", {
-      nombre: f.get("nombre"),
-      clienteId: f.get("clienteId") ? Number(f.get("clienteId")) : null,
-      cliente: nombreComercial(clientes.find((c) => c.id === Number(f.get("clienteId")))) || "",
+      nombre: padre ? `${padre.nombre} — ${f.get("nombre")}` : f.get("nombre"),
+      obraPadreId: padre ? padre.id : null,
+      clienteId: padre ? padre.clienteId ?? null : f.get("clienteId") ? Number(f.get("clienteId")) : null,
+      cliente: padre ? padre.cliente || "" : nombreComercial(clientes.find((c) => c.id === Number(f.get("clienteId")))) || "",
       presupuesto: presupuestoObra,
       meses: Number(f.get("meses")) || 1,
       inicio: f.get("inicio"),
@@ -5926,7 +5944,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       diaCierre: f.get("diaCierre"),
       horaCierre: f.get("horaCierre"),
       tipoFacturacion: f.get("tipoFacturacion"),
-      color: PALETA_OBRA[obras.length % PALETA_OBRA.length],
+      color: padre ? colorDeObra(padre) : PALETA_OBRA[obras.length % PALETA_OBRA.length],
     }, setObras);
     if (nuevaObra) {
       await importarPresupuestoAObra(nuevaObra.id);
@@ -5947,6 +5965,9 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     quitarExcelNuevaObra();
     setCreandoObra(false);
     setShowObraForm(false);
+    // Un contrato nuevo se abre directamente, para seguir cargándolo.
+    if (padre && nuevaObra) abrirObra(nuevaObra);
+    setNuevaObraPadreId(null);
   }
   function cambiarEstadoObra(obra, nuevoEstado) {
     if ((nuevoEstado === "Pausada" || nuevoEstado === "Finalizada") && !window.confirm(`¿${nuevoEstado === "Pausada" ? "Pausar" : "Finalizar"} "${obra.nombre}"? El personal que estaba afectado queda liberado para asignarse a otra obra.`)) return;
@@ -10720,7 +10741,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     <CalendarClock size={13} /> Planificación
                   </button>
                 </div>
-                <button onClick={() => setShowObraForm((v) => !v)} className={btnPrimary}>
+                <button onClick={() => { setNuevaObraPadreId(null); setShowObraForm((v) => !v); }} className={btnPrimary}>
                   <Plus size={16} /> Nueva obra
                 </button>
               </div>
@@ -10750,7 +10771,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                 { estado: "Pausada", label: "Pausadas", activeCls: "border-rose-600 bg-rose-600 text-white", idleCls: "border-rose-300 text-rose-700 hover:bg-rose-50" },
                 { estado: "Papelera", label: "Papelera", activeCls: "border-slate-500 bg-slate-500 text-white", idleCls: "border-slate-300 text-slate-600 hover:bg-slate-50" },
               ].map((f) => {
-                const cantidad = obras.filter((o) => o.estado === f.estado).length;
+                const cantidad = obras.filter((o) => o.estado === f.estado && o.obraPadreId == null).length;
                 const activo = filtroObrasEstado === f.estado;
                 return (
                   <button
@@ -10766,11 +10787,13 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
             </div>
 
             {showObraForm && (
-              <Panel title="Añadir obra" action={<button onClick={() => setShowObraForm(false)}><X size={16} /></button>}>
-                <form className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitNuevaObra}>
-                  <Field label="Nombre de la obra"><input name="nombre" required className={inputCls} /></Field>
+              <Panel title={obraPadreNueva ? `Nuevo contrato en ${obraPadreNueva.nombre}` : "Añadir obra"} action={<button onClick={() => { setShowObraForm(false); setNuevaObraPadreId(null); }}><X size={16} /></button>}>
+                <form key={nuevaObraPadreId || "obra"} className="grid grid-cols-1 gap-4 md:grid-cols-3" onSubmit={submitNuevaObra}>
+                  <Field label={obraPadreNueva ? "Nombre del contrato" : "Nombre de la obra"}><input name="nombre" required placeholder={obraPadreNueva ? "Ej: Quincho" : ""} className={inputCls} /></Field>
                   <Field label="Cliente">
-                    {clientes.length === 0 ? (
+                    {obraPadreNueva ? (
+                      <div className={`${inputCls} bg-stone-100 text-slate-600`}>{obraPadreNueva.cliente || "—"}</div>
+                    ) : clientes.length === 0 ? (
                       <div className="rounded-md border border-dashed border-stone-300 px-2 py-2 text-xs text-slate-500">
                         No hay clientes cargados — andá primero a "Clientes/Proveedores" y dalo de alta.
                       </div>
@@ -10787,7 +10810,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   <Field label="Fecha de inicio"><FechaInput name="inicio" required className={inputCls} /></Field>
                   <Field label="Duración (meses)"><input name="meses" type="number" min="1" required className={inputCls} /></Field>
                   <Field label="Tipo de factura de la obra">
-                    <select name="tipoFacturacion" defaultValue="A" required className={inputCls}>
+                    <select name="tipoFacturacion" defaultValue={obraPadreNueva?.tipoFacturacion || "A"} required className={inputCls}>
                       <option value="A">A</option>
                       <option value="B">B</option>
                       <option value="C">C (monotributo)</option>
@@ -10871,10 +10894,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
             )}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {obras.filter((o) => o.estado === filtroObrasEstado).length === 0 && (
+              {obras.filter((o) => o.estado === filtroObrasEstado && o.obraPadreId == null).length === 0 && (
                 <div className="text-sm text-slate-400 md:col-span-2">No hay obras en este estado.</div>
               )}
-              {obras.filter((o) => o.estado === filtroObrasEstado).map((o) => {
+              {obras.filter((o) => o.estado === filtroObrasEstado && o.obraPadreId == null).map((o) => {
                 const encargado = personal.find((p) => p.id === o.encargadoId);
                 const gentePropia = personal.filter((p) => obraActualDe(p)?.id === o.id).length;
                 if (o.estado === "Papelera") {
@@ -11002,8 +11025,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                           </div>
                         </div>
                         <div className="mt-3 flex justify-between text-sm">
-                          <span className="text-slate-500">Presupuesto</span>
-                          <span className="font-mono font-semibold">{fmtARS(o.presupuesto)}</span>
+                          <span className="text-slate-500">Presupuesto{contratosDe(o.id).length > 0 ? ` (${contratosDe(o.id).length + 1} contratos)` : ""}</span>
+                          <span className="font-mono font-semibold">{fmtARS([o, ...contratosDe(o.id)].reduce((x, c) => x + (c.presupuesto || 0), 0))}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Duración</span>
@@ -11039,6 +11062,48 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
             <button onClick={() => setViewingObraId(null)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
               ← Volver a Obras
             </button>
+
+            {(() => {
+              // Contratos de esta obra: la principal + sus contratos. Se pasa de uno a otro
+              // con un toque, y arriba se ve el total de todos juntos.
+              const principal = obraSel.obraPadreId ? obras.find((o) => o.id === obraSel.obraPadreId) || obraSel : obraSel;
+              const familia = [principal, ...contratosDe(principal.id)];
+              if (familia.length === 1) {
+                return (
+                  <div className="flex justify-end">
+                    <button onClick={() => abrirNuevoContrato(principal)} className={btnGhost}><span className="flex items-center gap-1"><Plus size={13} /> Agregar otro contrato a esta obra</span></button>
+                  </div>
+                );
+              }
+              const resumenes = familia.map((o) => resumenPorObra.find((r) => r.obra.id === o.id)).filter(Boolean);
+              const suma = (k) => resumenes.reduce((x, r) => x + (r[k] || 0), 0);
+              return (
+                <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{principal.nombre} · {familia.length} contratos</span>
+                    <button onClick={() => abrirNuevoContrato(principal)} className={btnGhost}><span className="flex items-center gap-1"><Plus size={13} /> Nuevo contrato</span></button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {familia.map((o) => {
+                      const r = resumenPorObra.find((x) => x.obra.id === o.id);
+                      const actual = o.id === obraSel.id;
+                      return (
+                        <button key={o.id} onClick={() => abrirObra(o)} className={`rounded-md border px-3 py-1.5 text-left text-sm ${actual ? "border-amber-500 bg-amber-50 font-semibold text-slate-900" : "border-stone-300 bg-white text-slate-700 hover:bg-stone-50"}`}>
+                          <div>{o.id === principal.id ? "Contrato original" : nombreContrato(o)}</div>
+                          <div className="font-mono text-[11px] text-slate-500">{fmtARS(r?.precioObra || 0)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 border-t border-stone-100 pt-3 text-sm sm:grid-cols-4">
+                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Total de los contratos</div><div className="font-mono font-semibold text-slate-900">{fmtARS(suma("precioObra"))}</div></div>
+                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Cobrado</div><div className="font-mono font-semibold text-emerald-700">{fmtARS(suma("cobrado"))}</div></div>
+                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Falta cobrar</div><div className="font-mono font-semibold text-rose-600">{fmtARS(suma("faltaCobrar"))}</div></div>
+                    <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Gastado</div><div className="font-mono font-semibold text-slate-800">{fmtARS(suma("gastado"))}</div></div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {(() => {
               const encargadoObra = personal.find((p) => p.id === obraSel.encargadoId);
