@@ -541,9 +541,16 @@ const ROLES_FINANZAS = ["Gerente", "Contador"];
 // Precios de pedidos de obra: el capataz arma el pedido a ciegas (sin precios ni proveedor),
 // eso lo ve y lo carga Logística cuando el pedido llega aprobado.
 const ROLES_VEN_PRECIOS_PEDIDO = ["Gerente", "Contador", "Logística"];
-// Hay dos cuentas de Mercado Pago (una por socio) — van separadas para no mezclar
-// la plata de una con la de la otra.
-const CUENTAS = ["Efectivo", "Banco", "MP Pablo", "MP Ricardo"];
+// Cuentas de la empresa para cargar movimientos nuevos.
+const CUENTAS = ["Efectivo", "Banco", "Mercado Pago"];
+// Antes había una cuenta de Mercado Pago por socio. Lo ya cargado con ellas queda como
+// estaba (y sigue sumando en su saldo hasta que se pase a "Mercado Pago"), pero ya no
+// se ofrecen para cargar nada nuevo.
+const CUENTAS_ANTERIORES = ["MP Pablo", "MP Ricardo"];
+// Opciones de un selector de cuenta: las vigentes, más la cuenta vieja si el registro
+// que se está editando ya la tenía (así no se cambia sola al abrirlo).
+const cuentasPara = (actual) => (CUENTAS_ANTERIORES.includes(actual) ? [...CUENTAS, actual] : CUENTAS);
+const cuentaVigente = (cuenta) => (CUENTAS_ANTERIORES.includes(cuenta) ? "Mercado Pago" : cuenta);
 // Tarjetas de crédito personales de los socios. No son cuentas de la empresa: si se
 // le paga algo a un proveedor con una de ellas, no sale plata de ninguna cuenta —
 // queda como deuda de la empresa con ese socio (un préstamo sin interés, a
@@ -555,7 +562,8 @@ const TOLERANCIA_REDONDEO_DEUDA = 1;
 const esTarjetaSocio = (cuenta) => Object.prototype.hasOwnProperty.call(TARJETAS_SOCIOS, cuenta || "");
 // "Cuenta corriente" es su propia forma de pago (no es un medio del Banco: es una
 // deuda con el proveedor, todavía no se sabe por qué canal real se va a saldar).
-const FORMAS_PAGO = ["Banco", "MP Pablo", "MP Ricardo", "Efectivo", "Cuenta corriente"];
+const FORMAS_PAGO = ["Banco", "Mercado Pago", "Efectivo", "Cuenta corriente"];
+const formasPagoPara = (actual) => (CUENTAS_ANTERIORES.includes(actual) ? [...FORMAS_PAGO, actual] : FORMAS_PAGO);
 // "eCheq" sí es un medio del Banco: queda "Pendiente" hasta su fecha en vez de
 // acreditarse al toque como Débito/Transferencia y Crédito.
 const MEDIOS_BANCARIOS = ["Débito/Transferencia", "eCheq", "Crédito"];
@@ -3068,7 +3076,7 @@ function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
           </Field>
           <Field label="Cuenta donde entró">
             <select value={form.cuenta} onChange={(e) => setForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
-              {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+              {cuentasPara(form.cuenta).map((c) => <option key={c}>{c}</option>)}
               {esTarjetaSocio(form.cuenta) && <option value={form.cuenta}>Tarjeta de crédito de {TARJETAS_SOCIOS[form.cuenta]}</option>}
             </select>
           </Field>
@@ -3093,7 +3101,7 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
   const [monto, setMonto] = useState(0);
   // Si el préstamo nació de la tarjeta de un socio, esa "cuenta" no es de la empresa:
   // la devolución tiene que salir de una cuenta real.
-  const [cuenta, setCuenta] = useState(CUENTAS.includes(prestamo?.cuenta) ? prestamo.cuenta : CUENTAS[0]);
+  const [cuenta, setCuenta] = useState(CUENTAS.includes(cuentaVigente(prestamo?.cuenta)) ? cuentaVigente(prestamo.cuenta) : CUENTAS[0]);
   // MoneyInput solo lee su prop "value" al montarse (para no pelearle al usuario
   // mientras tipea) — cambiar esta key fuerza que lo tome de nuevo cuando lo
   // llenamos nosotros con el botón de acceso rápido, en vez de tipeándolo.
@@ -3128,7 +3136,7 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
           </Field>
           <Field label="Cuenta de la que sale">
             <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={inputCls}>
-              {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+              {cuentasPara(cuenta).map((c) => <option key={c}>{c}</option>)}
             </select>
           </Field>
           <div className="md:col-span-2">
@@ -3392,7 +3400,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                   }}
                   className={inputCls}
                 >
-                  {FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}
+                  {formasPagoPara(form.formaPago).map((fp) => <option key={fp}>{fp}</option>)}
                 </select>
               </Field>
               {form.formaPago === "Banco" && (
@@ -3502,7 +3510,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               </Field>
               <Field label="Cuenta">
                 <select value={form.cuenta} onChange={(e) => setForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
-                  {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                  {cuentasPara(form.cuenta).map((c) => <option key={c}>{c}</option>)}
                 </select>
               </Field>
               {form.cuenta === "Banco" && (
@@ -3548,7 +3556,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               </Field>
               <Field label="Cuenta">
                 <select value={form.cuenta} onChange={(e) => setForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
-                  {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                  {cuentasPara(form.cuenta).map((c) => <option key={c}>{c}</option>)}
                 </select>
               </Field>
               {form.cuenta === "Banco" && (
@@ -3606,12 +3614,12 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
               </Field>
               <Field label="Cuenta donde sale">
                 <select value={form.cuentaOrigen} onChange={(e) => setForm((f) => ({ ...f, cuentaOrigen: e.target.value }))} className={inputCls}>
-                  {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                  {cuentasPara(form.cuentaOrigen).map((c) => <option key={c}>{c}</option>)}
                 </select>
               </Field>
               <Field label="Cuenta que recibe">
                 <select value={form.cuentaDestino} onChange={(e) => setForm((f) => ({ ...f, cuentaDestino: e.target.value }))} className={inputCls}>
-                  {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                  {cuentasPara(form.cuentaDestino).map((c) => <option key={c}>{c}</option>)}
                 </select>
               </Field>
             </>
@@ -4000,7 +4008,7 @@ function FormularioGastoRecurrente({ claveMes, onAgregar }) {
       </select>
       <FechaInput name="fechaPagoAproximada" defaultValue={fechaPorDefecto} required className={inputCls} />
       <select value={formaPago} onChange={(e) => setFormaPago(e.target.value)} className={inputCls}>
-        {FORMAS_PAGO.filter((fp) => fp !== "Cuenta corriente").map((fp) => <option key={fp}>{fp}</option>)}
+        {formasPagoPara(formaPago).filter((fp) => fp !== "Cuenta corriente").map((fp) => <option key={fp}>{fp}</option>)}
       </select>
       {formaPago === "Banco" && (
         <select value={medioBancario} onChange={(e) => setMedioBancario(e.target.value)} className={`${inputCls} sm:col-span-2`}>
@@ -4073,7 +4081,7 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
         <Field label="Monto entregado"><MoneyInput name="montoEntrega" value={inicial?.monto} onChange={setMonto} puntoDecimalAlPegar placeholder="0" className={inputCls} /></Field>
         <Field label="Sale de">
           <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={inputCls}>
-            {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+            {cuentasPara(cuenta).map((c) => <option key={c}>{c}</option>)}
             <optgroup label="Tarjeta de crédito de un socio">
               {Object.entries(TARJETAS_SOCIOS).map(([t, socio]) => <option key={t} value={t}>Tarjeta de crédito de {socio}</option>)}
             </optgroup>
@@ -4228,7 +4236,7 @@ function FormularioCobroParcial({ onAgregar }) {
         <FechaInput name="fecha" defaultValue={hoyISO()} required className={`${inputCls} text-xs`} />
         <MoneyInput key={resetKey} name="monto" placeholder="Monto" className={`${inputCls} text-xs`} />
         <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={`${inputCls} text-xs`}>
-          {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+          {cuentasPara(cuenta).map((c) => <option key={c}>{c}</option>)}
         </select>
         {cuenta === "Banco" && (
           <select value={medioBancario} onChange={(e) => setMedioBancario(e.target.value)} className={`${inputCls} text-xs`}>
@@ -6445,7 +6453,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         </Field>
         <Field label="Forma de pago">
           <select name="formaPago" value={facturaFormaPago} onChange={(e) => setFacturaFormaPago(e.target.value)} className={inputCls}>
-            {FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}
+            {formasPagoPara(facturaFormaPago).map((fp) => <option key={fp}>{fp}</option>)}
           </select>
         </Field>
         {facturaFormaPago === "Banco" && (
@@ -6844,7 +6852,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         </Field>
         <Field label="Cuenta">
           <select value={facturaVentaProyectadaForm.cuenta} onChange={(e) => setFacturaVentaProyectadaForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
-            {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+            {cuentasPara(facturaVentaProyectadaForm.cuenta).map((c) => <option key={c}>{c}</option>)}
           </select>
         </Field>
         {facturaVentaProyectadaForm.cuenta === "Banco" && (
@@ -7625,7 +7633,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     setAvanceAbiertoId(avance.tanteroId);
   }
 
-  // ---------- Resumen de Cuentas (Efectivo/Banco/MP Pablo/MP Ricardo) ----------
+  // ---------- Resumen de Cuentas (Efectivo/Banco/Mercado Pago) ----------
   const canVerFinanzas = ROLES_FINANZAS.includes(currentRole);
   // El capataz arma el pedido de obra sin ver precios ni proveedor — eso es cosa de Logística.
   const canVerPreciosPedido = ROLES_VEN_PRECIOS_PEDIDO.includes(currentRole);
@@ -7670,7 +7678,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     return totalIngresos - totalEgresos + totalManual + totalPrestamos - totalPagosPrestamos - totalCobrosSocios - totalAvancesTanteros - totalEntregasProveedores;
   }
 
-  const saldoTotalCuentas = CUENTAS.reduce((s, c) => s + saldoCuenta(c), 0);
+  // Las cuentas viejas de Mercado Pago (una por socio) se siguen mostrando mientras les
+  // quede plata o dinero real cargado, para poder pasarla a "Mercado Pago".
+  const cuentasVisibles = [...CUENTAS, ...CUENTAS_ANTERIORES.filter((c) => Math.abs(saldoCuenta(c)) >= 1 || (dineroReal.find((d) => d.cuenta === c)?.monto || 0) !== 0)];
+  const saldoTotalCuentas = [...CUENTAS, ...CUENTAS_ANTERIORES].reduce((s, c) => s + saldoCuenta(c), 0);
 
   // ---------- Préstamos (inversores/banco) ----------
   const emptyPrestamoForm = { fecha: hoyISO(), acreedor: "", capital: 0, tasaAnualPct: "", cuenta: CUENTAS[0], fechaEstimadaDevolucion: "" };
@@ -8714,7 +8725,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   }
   // Para cada cuenta sin arqueo manual todavía, usamos el calculado como mejor
   // estimación disponible — así el total refleja la plata real que sabemos que hay.
-  const dineroRealTotalCuentas = CUENTAS.reduce((s, c) => s + (dineroRealDe(c) ?? saldoCuenta(c)), 0);
+  const dineroRealTotalCuentas = cuentasVisibles.reduce((s, c) => s + (dineroRealDe(c) ?? saldoCuenta(c)), 0);
   const diferenciaTotalCuentas = dineroRealTotalCuentas - saldoTotalCuentas;
   // Diferencia entre la plata real y la de la app: verde si hay plata de más, rojo si
   // falta, gris si coincide (menos de $1) o todavía no se cargó el dato real.
@@ -8750,7 +8761,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const [previewArregloCaja, setPreviewArregloCaja] = useState(null);
   function prepararArregloCaja() {
     const diffs = [];
-    for (const cuenta of CUENTAS) {
+    for (const cuenta of cuentasVisibles) {
       const real = dineroRealDe(cuenta);
       if (real === null) continue;
       const calculado = saldoCuenta(cuenta);
@@ -9209,7 +9220,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     saldarFacturasConEntregas(nota.proveedor, entregasProveedores, [], [...notasCredito, { ...nota, eliminadoEn: null }]);
   }
   function marcarFacturaPagada(factura, fechaDebito = null) {
-    // Restaura la cuenta real (Banco/Efectivo/MP Pablo/MP Ricardo) para que vuelva a contar
+    // Restaura la cuenta real (Banco/Efectivo/Mercado Pago) para que vuelva a contar
     // en su balance — por si venía de marcarCompraPendiente, que la había vaciado.
     // Los gastos viejos que todavía tienen el formaPago plano "eCheq" (de antes de
     // anidarlo bajo Banco) cuentan igual a la balanza de Banco.
@@ -10417,7 +10428,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
             <Field label="Cuenta">
               <select value={avanceForm.cuenta} onChange={(e) => setAvanceForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
                 <option value="">Sin definir</option>
-                {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                {cuentasPara(avanceForm.cuenta).map((c) => <option key={c}>{c}</option>)}
               </select>
             </Field>
             <div className="md:col-span-4">
@@ -15526,7 +15537,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     <select name="tipoFactura" defaultValue="Sin factura" className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
                   </Field>
                   <Field label="Cuenta">
-                    <select name="cuenta" value={ingresoCuenta} onChange={(e) => setIngresoCuenta(e.target.value)} className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
+                    <select name="cuenta" value={ingresoCuenta} onChange={(e) => setIngresoCuenta(e.target.value)} className={inputCls}>{cuentasPara(ingresoCuenta).map((c) => <option key={c}>{c}</option>)}</select>
                   </Field>
                   {ingresoCuenta === "Banco" && (
                     <Field label="Medio">
@@ -15680,7 +15691,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   <Field label="Fecha"><FechaInput name="fecha" defaultValue={hoyISO()} required className={inputCls} /></Field>
                   <Field label="Detalle"><input name="detalle" required placeholder="Ej: Pase de efectivo a banco" className={inputCls} /></Field>
                   <Field label="Cuenta donde sale">
-                    <select name="cuentaOrigen" className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
+                    <select name="cuentaOrigen" className={inputCls}>{cuentasVisibles.map((c) => <option key={c}>{c}</option>)}</select>
                   </Field>
                   <Field label="Cuenta que recibe">
                     <select name="cuentaDestino" defaultValue={CUENTAS[1]} className={inputCls}>{CUENTAS.map((c) => <option key={c}>{c}</option>)}</select>
@@ -15693,14 +15704,14 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
 
             {/* Celular: tarjetas apiladas, sin scroll horizontal. */}
             <div className="space-y-2 sm:hidden">
-              {CUENTAS.map((cuenta) => {
+              {cuentasVisibles.map((cuenta) => {
                 const total = saldoCuenta(cuenta);
                 const real = dineroRealDe(cuenta);
                 const diferencia = real === null ? null : real - total;
                 return (
                   <div key={cuenta} className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1.5 font-semibold text-slate-800"><CuentaIcon cuenta={cuenta} size={15} />{cuenta}</span>
+                      <span className="flex items-center gap-1.5 font-semibold text-slate-800"><CuentaIcon cuenta={cuenta} size={15} />{cuenta}{CUENTAS_ANTERIORES.includes(cuenta) && <span className="text-[10px] font-normal text-slate-400">(anterior)</span>}</span>
                       <span className={`font-mono text-base font-bold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2 border-t border-stone-100 pt-2">
@@ -15741,13 +15752,13 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {CUENTAS.map((cuenta) => {
+                  {cuentasVisibles.map((cuenta) => {
                     const total = saldoCuenta(cuenta);
                     const real = dineroRealDe(cuenta);
                     const diferencia = real === null ? null : real - total;
                     return (
                       <tr key={cuenta} className="border-t border-stone-100">
-                        <td className="px-4 py-2"><span className="flex items-center gap-2 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={16} />{cuenta}</span></td>
+                        <td className="px-4 py-2"><span className="flex items-center gap-2 font-medium text-slate-800"><CuentaIcon cuenta={cuenta} size={16} />{cuenta}{CUENTAS_ANTERIORES.includes(cuenta) && <span className="text-[10px] font-normal text-slate-400" title="Ya no se usa para lo nuevo: pasá lo que quede a Mercado Pago con un movimiento entre cuentas">(anterior)</span>}</span></td>
                         <td className={`px-4 py-2 text-right font-mono font-semibold ${total < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtARS(total)}</td>
                         <td className="px-4 py-2 text-right">
                           <MoneyInput value={real ?? 0} onBlur={(v) => actualizarDineroReal(cuenta, v)} className="w-32 rounded-md border border-stone-300 px-2 py-1 text-right text-sm" />
@@ -16051,7 +16062,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   </Field>
                   <Field label="Cuenta donde entra">
                     <select value={prestamoForm.cuenta} onChange={(e) => setPrestamoForm((f) => ({ ...f, cuenta: e.target.value }))} className={inputCls}>
-                      {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+                      {cuentasPara(prestamoForm.cuenta).map((c) => <option key={c}>{c}</option>)}
                     </select>
                   </Field>
                   <Field label="Fecha estimada de devolución">
