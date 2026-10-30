@@ -5186,45 +5186,51 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     }
   }
   // Impuesto a los Créditos y Débitos Bancarios (Ley 25.413): 0,6% sobre todo
-  // movimiento real de dinero que entra o sale de la cuenta "Banco". Se
-  // detecta acá, en el único punto por el que pasan todas las altas (gasto,
-  // ingreso, cobro de socio, transferencia), para no depender de sumarlo a
-  // mano en cada formulario. Un "Arreglo de caja" no es plata que entra o
-  // sale de verdad (es un ajuste contra la cuenta puente "Ajuste"), así que
-  // se excluye por su detalle.
+  // movimiento real de dinero que entra o sale de la cuenta "Banco" o del Mercado Pago
+  // de la empresa (los MP de cada socio no, son de sus monotributos). Se detecta acá,
+  // en el único punto por el que pasan todas las altas (gasto, ingreso, cobro de
+  // socio, transferencia), para no depender de sumarlo a mano en cada formulario. Un
+  // "Arreglo de caja" no es plata que entra o sale de verdad (es un ajuste contra la
+  // cuenta puente "Ajuste"), así que se excluye por su detalle. El impuesto se
+  // descuenta de la misma cuenta por la que pasó la plata.
   const IMPUESTO_DEBITO_CREDITO_PCT = 0.006;
+  const CUENTAS_CON_IMPUESTO_DEB_CRED = ["Banco", "Mercado Pago"];
   function registrarImpuestoBancario(table, row) {
     if (!row) return;
-    let monto = 0;
-    if ((table === "ingresos" || table === "compras_facturas" || table === "cobros_socios" || table === "entregas_proveedores") && row.cuenta === "Banco") {
-      monto = row.monto || 0;
+    const montoPorCuenta = {};
+    const sumar = (cuenta) => {
+      if (CUENTAS_CON_IMPUESTO_DEB_CRED.includes(cuenta)) montoPorCuenta[cuenta] = (montoPorCuenta[cuenta] || 0) + (row.monto || 0);
+    };
+    if (table === "ingresos" || table === "compras_facturas" || table === "cobros_socios" || table === "entregas_proveedores") {
+      sumar(row.cuenta);
     } else if (table === "movimientos_cuenta" && !/^Arreglo de caja #/.test(row.detalle || "")) {
-      if (row.cuentaOrigen === "Banco") monto += row.monto || 0;
-      if (row.cuentaDestino === "Banco") monto += row.monto || 0;
+      sumar(row.cuentaOrigen);
+      sumar(row.cuentaDestino);
     }
-    if (!monto) return;
-    const impuesto = Math.round(monto * IMPUESTO_DEBITO_CREDITO_PCT * 100) / 100;
-    if (impuesto <= 0) return;
-    addRecord("compras_facturas", {
-      fecha: row.fecha || hoyISO(),
-      obraId: row.obraId ?? null,
-      ordenCompraId: null,
-      proveedor: "Impuesto Débito/Crédito",
-      categoria: "Varios",
-      descripcion: `Impuesto a los Créditos y Débitos Bancarios (0,6% s/ ${fmtARS(monto)})`,
-      monto: impuesto,
-      comprobante: "",
-      tipoFactura: "Sin factura",
-      formaPago: "Banco",
-      medioBancario: "Débito/Transferencia",
-      fechaPagoEcheq: null,
-      fechaVencimientoCc: null,
-      cuenta: "Banco",
-      estado: "Pagada",
-      archivo: null,
-      nombreArchivo: null,
-      tipoArchivo: null,
-    }, setComprasFacturas, { sinImpuestoBancario: true });
+    for (const [cuenta, monto] of Object.entries(montoPorCuenta)) {
+      const impuesto = Math.round(monto * IMPUESTO_DEBITO_CREDITO_PCT * 100) / 100;
+      if (impuesto <= 0) continue;
+      addRecord("compras_facturas", {
+        fecha: row.fecha || hoyISO(),
+        obraId: row.obraId ?? null,
+        ordenCompraId: null,
+        proveedor: "Impuesto Débito/Crédito",
+        categoria: "Varios",
+        descripcion: `Impuesto a los Créditos y Débitos ${cuenta === "Banco" ? "Bancarios" : `(${cuenta})`} (0,6% s/ ${fmtARS(monto)})`,
+        monto: impuesto,
+        comprobante: "",
+        tipoFactura: "Sin factura",
+        formaPago: cuenta,
+        medioBancario: cuenta === "Banco" ? "Débito/Transferencia" : null,
+        fechaPagoEcheq: null,
+        fechaVencimientoCc: null,
+        cuenta,
+        estado: "Pagada",
+        archivo: null,
+        nombreArchivo: null,
+        tipoArchivo: null,
+      }, setComprasFacturas, { sinImpuestoBancario: true });
+    }
   }
 
   async function updateRecord(table, id, patch, setter) {
