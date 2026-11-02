@@ -55,25 +55,28 @@ const SAF = ["administrativa financiera", "adm. financiera", "(saf)"];
 const DESPACHO = ["despacho"];
 const DELEGACION = ["delegacion fiscal"];
 const DMYOM = ["direccion de mantenimiento", "mantenimiento y obras menores"];
+// Días según la planilla "Circuito administrativo para pago de obra" de la oficina; donde
+// da un rango se toma el máximo ("nota" muestra el rango). Los pasos que esa planilla no
+// trae (1, 3, 5, 6, 11, 17 y 19) quedan con una estimación propia.
 export const PASOS_EXPEDIENTE = [
   { n: 1, oficina: "Administración OM", motivo: "Agregar documentación al expediente", dias: 3, claves: ADM_OM },
-  { n: 2, oficina: "Contable de obra", motivo: "Imputación contable", dias: 3, claves: CONTABLE },
+  { n: 2, oficina: "Contable de obra", motivo: "Imputación contable", dias: 1, claves: CONTABLE },
   { n: 3, oficina: "Secret. Adm. Financiera (SAF)", motivo: "V°B° en imputación contable", dias: 3, claves: SAF },
-  { n: 4, oficina: "Despacho", motivo: "Confección de contrato", dias: 5, claves: DESPACHO },
+  { n: 4, oficina: "Despacho", motivo: "Confección de contrato", dias: 15, nota: "10 a 15 días", claves: DESPACHO },
   { n: 5, oficina: "Administración OM", motivo: "Firma de contrato y posterior aforado", dias: 5, claves: ADM_OM },
   { n: 6, oficina: "Despacho", motivo: "Proyecto de resolución", dias: 5, claves: DESPACHO },
-  { n: 7, oficina: "Asesoría Letrada", motivo: "Dictamen", dias: 10, claves: ["asesoria letrada"] },
-  { n: 8, oficina: "Despacho", motivo: "Resolución", dias: 5, claves: DESPACHO },
-  { n: 9, oficina: "Administración OM", motivo: "Firma de resolución", dias: 3, claves: ADM_OM },
+  { n: 7, oficina: "Asesoría Letrada", motivo: "Dictamen", dias: 5, claves: ["asesoria letrada"] },
+  { n: 8, oficina: "Despacho", motivo: "Resolución", dias: 3, nota: "4° piso", claves: DESPACHO },
+  { n: 9, oficina: "Administración OM", motivo: "Firma de resolución", dias: 2, nota: "carga de obra / formulario de garantía", claves: ADM_OM },
   { n: 10, oficina: "Delegación Fiscal", motivo: "V°B° de auditor técnico y delegados", dias: 7, claves: DELEGACION },
   { n: 11, oficina: "Administración OM", motivo: "Notificar resolución a la empresa", dias: 3, claves: ADM_OM },
-  { n: 12, oficina: "DMyOM", motivo: "A la espera de certificación", dias: 20, claves: DMYOM },
-  { n: 13, oficina: "DMyOM", motivo: "Con certificados aprobados", dias: 5, claves: DMYOM },
-  { n: 14, oficina: "Contable de obra", motivo: "Compromiso", dias: 3, claves: CONTABLE },
-  { n: 15, oficina: "Delegación Fiscal", motivo: "Aprobar compromiso", dias: 5, claves: DELEGACION },
-  { n: 16, oficina: "Contable de obra", motivo: "A la espera de factura", dias: 3, claves: CONTABLE },
+  { n: 12, oficina: "DMyOM", motivo: "A la espera de certificación", dias: 40, nota: "certifica Obras por Terceros: 30 a 40 días", claves: DMYOM },
+  { n: 13, oficina: "DMyOM", motivo: "Con certificados aprobados", dias: 2, nota: "aprobación del certificado por el director", claves: DMYOM },
+  { n: 14, oficina: "Contable de obra", motivo: "Compromiso", dias: 2, claves: CONTABLE },
+  { n: 15, oficina: "Delegación Fiscal", motivo: "Aprobar compromiso", dias: 3, claves: DELEGACION },
+  { n: 16, oficina: "Contable de obra", motivo: "A la espera de factura", dias: 3, nota: "pide la factura y hace el ordenado", claves: CONTABLE },
   { n: 17, oficina: "Secret. Adm. Financiera (SAF)", motivo: "Aprobar ordenado en curso", dias: 5, claves: SAF },
-  { n: 18, oficina: "Administración OM", motivo: "Firma de ordenado aprobado", dias: 3, claves: ADM_OM },
+  { n: 18, oficina: "Administración OM", motivo: "Firma de ordenado aprobado", dias: 1, claves: ADM_OM },
   { n: 19, oficina: "Habilitación", motivo: "Para pago", dias: 7, claves: ["habilitacion"] },
   { n: 20, oficina: "Pagado", motivo: "Cobrado por la empresa", dias: 0, claves: [] },
 ];

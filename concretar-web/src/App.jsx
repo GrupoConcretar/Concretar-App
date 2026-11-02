@@ -1176,6 +1176,7 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
             <span className="min-w-0 flex-1">
               <span className="font-semibold text-slate-800">{p.oficina}</span>
               <span className="text-slate-500"> — {p.motivo}</span>
+              {p.nota && <span className="block text-[11px] text-slate-400">Planilla: {p.nota}</span>}
             </span>
             <span className="flex items-center gap-1 text-xs text-slate-500" title="Días hábiles estimados para este paso (sin fines de semana ni feriados)">
               <input
