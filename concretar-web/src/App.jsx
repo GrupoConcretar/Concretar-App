@@ -6085,7 +6085,18 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     addRecord("alertas_descartadas", { tipo, clave, obraId }, setAlertasDescartadas);
   }
 
+  // Expedientes del Estado cuyo paso actual ya lleva más días hábiles que lo estimado.
+  const expedientesAtrasados = expedientesObra
+    .map((exp) => {
+      const obra = obras.find((o) => o.id === exp.obraId);
+      const paso = calcularPasosExpediente(exp, hoyISO(), feriadosExpedientes()).find((p) => p.estado !== "hecho");
+      return { exp, obra, paso };
+    })
+    .filter(({ obra, paso }) => obra && obra.estado !== "Papelera" && obra.estado !== "Finalizada" && paso?.estado === "atrasado")
+    .sort((a, b) => (b.paso.transcurridos - b.paso.dias) - (a.paso.transcurridos - a.paso.dias));
+
   const totalAlertas =
+    expedientesAtrasados.length +
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length + ocsARevisar.length +
     asistenciasEditadas.length + asistenciasEliminadasRecientes.length +
     materialesVencidos.length + materialesProximos.length + pedidosPorAprobar.length + personalSinObra5Dias.length +
@@ -10842,6 +10853,20 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                 <div className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 size={16} /> Todo en orden, sin pendientes críticos.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                  {expedientesAtrasados.length > 0 && (
+                    <AlertCard tone="rose" icon={FileText} title={`${expedientesAtrasados.length} expediente(s) del Estado atrasado(s): el paso en que están lleva más días de lo estimado.`}>
+                      <ul className="space-y-1.5 text-xs">
+                        {expedientesAtrasados.map(({ exp, obra, paso }) => (
+                          <li key={exp.id}>
+                            <button onClick={() => { setTab("obras"); abrirObra(obra); }} className="text-left hover:underline">
+                              <span className="font-semibold">{obra.nombre}</span> · Expte. {textoExpediente(exp)}
+                            </button>
+                            <div className="opacity-90">Paso {paso.n}° {paso.oficina} ({paso.motivo}): {paso.transcurridos} días háb., estimado {paso.dias}</div>
+                          </li>
+                        ))}
+                      </ul>
+                    </AlertCard>
+                  )}
                   {ocPendientesAprobacion.length > 0 && (
                     <AlertCard tone="rose" icon={AlertTriangle} title={`${ocPendientesAprobacion.length} orden(es) de compra esperando aprobación de Gerencia.`}>
                       <ul className="space-y-0.5 text-xs">
