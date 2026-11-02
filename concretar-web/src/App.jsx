@@ -1111,7 +1111,17 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="font-mono text-lg font-bold text-slate-900">{expediente.tipo} {textoExpediente(expediente)}</div>
-          <div className="text-xs text-slate-500">Presupuesto aprobado el {fmtFecha(expediente.fechaInicio)} · Paso {Math.min(hechos + 1, 20)} de 20{!pagado && fechaPago ? ` · Pago estimado: ${fmtFecha(fechaPago)}` : ""}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+            <span>Presupuesto aprobado el</span>
+            <span className="w-36" title="Tocá para cambiar la fecha">
+              <FechaInput
+                value={expediente.fechaInicio}
+                onChange={(e) => { const v = e.target.value; if (v && v !== expediente.fechaInicio) onGuardar({ fechaInicio: v }); }}
+                className="w-full rounded border border-stone-300 bg-white px-1.5 py-0.5 text-xs"
+              />
+            </span>
+            <span>· Paso {Math.min(hechos + 1, 20)} de 20{!pagado && fechaPago ? ` · Pago estimado: ${fmtFecha(fechaPago)}` : ""}</span>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={onConsultar} disabled={consultando} className={btnGhost}>
@@ -1167,7 +1177,7 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
               /> días háb.
             </span>
             <span className="w-44 text-right text-xs">
-              {p.estado === "hecho" && <FechaInput value={p.fecha} onChange={(v) => v && marcarPaso(p.n, v)} className="w-32 rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-xs" />}
+              {p.estado === "hecho" && <FechaInput value={p.fecha} onChange={(e) => { const v = e.target.value; if (v && v !== p.fecha) marcarPaso(p.n, v); }} className="w-32 rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-xs" />}
               {p.estado === "actual" && <span className="font-semibold text-amber-700">En curso · {p.transcurridos} de {p.dias} días hábiles</span>}
               {p.estado === "atrasado" && <span className="font-semibold text-rose-700">Atrasado: {p.transcurridos} días hábiles (estimado {p.dias})</span>}
               {p.estado === "pendiente" && <span className="text-slate-400">Estimado: {fmtFecha(p.fecha)}</span>}
