@@ -306,3 +306,33 @@ export async function leerFactura(dataUrl, tipoArchivo) {
     return { error: err?.message || "No se pudo leer el archivo", percepciones: [] };
   }
 }
+
+// Dibuja cada página de un PDF como imagen JPG (para pegarlas en otro PDF). Se usa en vez
+// de copiar las páginas tal cual porque muchas facturas electrónicas vienen "protegidas":
+// al copiarlas quedan en blanco, pero pdf.js las abre y las dibuja bien.
+export async function paginasPdfComoImagenes(bytes, anchoPx = 1240) {
+  const pdfjs = await cargarPdfjs();
+  // Se le pasa una copia: pdf.js se queda con el buffer que recibe.
+  const pdf = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+  const paginas = [];
+  try {
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const pagina = await pdf.getPage(n);
+      const base = pagina.getViewport({ scale: 1 });
+      const viewport = pagina.getViewport({ scale: anchoPx / base.width });
+      const lienzo = document.createElement("canvas");
+      lienzo.width = Math.round(viewport.width);
+      lienzo.height = Math.round(viewport.height);
+      const ctx = lienzo.getContext("2d");
+      ctx.fillStyle = "#fff"; // sin fondo blanco, lo transparente sale negro en el JPG
+      ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+      await pagina.render({ canvasContext: ctx, viewport }).promise;
+      const jpg = lienzo.toDataURL("image/jpeg", 0.85);
+      paginas.push({ bytes: dataUrlABytes(jpg), ancho: base.width, alto: base.height });
+      pagina.cleanup();
+    }
+  } finally {
+    await pdf.destroy();
+  }
+  return paginas;
+}

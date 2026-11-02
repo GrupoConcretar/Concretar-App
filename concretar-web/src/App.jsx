@@ -11,7 +11,7 @@ import {
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
   Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck, ScanLine
 } from "lucide-react";
-import { leerFactura } from "./lectorFacturas.js";
+import { leerFactura, paginasPdfComoImagenes } from "./lectorFacturas.js";
 
 // Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
 const BRAND = {
@@ -6737,9 +6737,20 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       try {
         const { tipo, bytes } = await bytesParaPdf(f.archivo);
         if (tipo === "pdf") {
-          const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
-          const paginas = await merged.copyPages(src, src.getPageIndices());
-          paginas.forEach((pagina) => merged.addPage(pagina));
+          // Cada página se pega como imagen (dibujada con pdf.js): las facturas "protegidas"
+          // copiadas tal cual quedaban en blanco. Si no se puede dibujar, se copia como antes.
+          let paginasImagen = null;
+          try { paginasImagen = await paginasPdfComoImagenes(bytes); } catch (err) { console.error(err); }
+          if (paginasImagen) {
+            for (const pg of paginasImagen) {
+              const imagen = await merged.embedJpg(pg.bytes);
+              merged.addPage([pg.ancho, pg.alto]).drawImage(imagen, { x: 0, y: 0, width: pg.ancho, height: pg.alto });
+            }
+          } else {
+            const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+            const paginas = await merged.copyPages(src, src.getPageIndices());
+            paginas.forEach((pagina) => merged.addPage(pagina));
+          }
         } else {
           const imagen = tipo === "png" ? await merged.embedPng(bytes) : await merged.embedJpg(bytes);
           const [anchoPagina, altoPagina] = [595.28, 841.89]; // A4 en puntos
