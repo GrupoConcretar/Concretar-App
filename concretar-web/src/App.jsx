@@ -6540,7 +6540,36 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     ...facturasVarias.map((f) => f.mes).filter(Boolean),
     ...ingresos.filter((i) => i.estado !== "Pendiente").map(mesCobroIngreso).filter(Boolean),
   ])].sort((a, b) => b.localeCompare(a));
+  const [generandoPdfContador, setGenerandoPdfContador] = useState(false);
   async function generarPdfContadores(mesElegido) {
+    setGenerandoPdfContador(true);
+    try {
+      await armarPdfContadores(mesElegido);
+    } finally {
+      setGenerandoPdfContador(false);
+    }
+  }
+  // Pasa un archivo guardado (PDF o foto) a bytes que pdf-lib pueda usar. El formato se
+  // reconoce por el contenido (no por el nombre): una foto que no sea JPG/PNG (ej. WEBP)
+  // se convierte a JPG antes de pegarla.
+  async function bytesParaPdf(archivo) {
+    const dataUrl = await resolverArchivo(archivo);
+    const bytes = new Uint8Array(await (await fetch(dataUrl)).arrayBuffer());
+    const empieza = (...b) => b.every((v, i) => bytes[i] === v);
+    if (empieza(0x25, 0x50, 0x44, 0x46)) return { tipo: "pdf", bytes };
+    if (empieza(0x89, 0x50, 0x4e, 0x47)) return { tipo: "png", bytes };
+    if (empieza(0xff, 0xd8)) return { tipo: "jpg", bytes };
+    const img = new Image();
+    img.src = dataUrl;
+    await img.decode();
+    const lienzo = document.createElement("canvas");
+    lienzo.width = img.naturalWidth;
+    lienzo.height = img.naturalHeight;
+    lienzo.getContext("2d").drawImage(img, 0, 0);
+    const jpg = lienzo.toDataURL("image/jpeg", 0.9);
+    return { tipo: "jpg", bytes: new Uint8Array(await (await fetch(jpg)).arrayBuffer()) };
+  }
+  async function armarPdfContadores(mesElegido) {
     const mes = mesElegido || mesReporteContador;
     const gastosDelMes = comprasFacturas
       .filter((c) => c.fecha?.slice(0, 7) === mes && !obraIdsPapelera.has(c.obraId))
@@ -6587,16 +6616,16 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       doc.text("Gastos y Facturas", 14, y);
       autoTable(doc, {
         startY: y + 4,
-        head: [["Fecha", "Proveedor", "Categoría", "Obra", "Forma de pago", "Monto", "Estado"]],
+        head: [["Fecha", "Proveedor", "Categoría", "Obra", "Forma de pago", "Monto", "Estado", "Factura"]],
         body: gastosDelMes.map((c) => {
           const obra = obras.find((o) => o.id === c.obraId);
           return [
             fmtFecha(c.fecha), c.proveedor, c.categoria, obra?.nombre || "General",
             (c.formaPago || "—") + (c.medioBancario ? ` (${c.medioBancario})` : ""),
-            fmtARS(c.monto), c.estado,
+            fmtARS(c.monto), c.estado, c.archivo ? "Adjunta" : "—",
           ];
         }),
-        foot: [["", "", "", "", "TOTAL", fmtARS(totalGastos), ""]],
+        foot: [["", "", "", "", "TOTAL", fmtARS(totalGastos), "", ""]],
         headStyles: { fillColor: [2, 29, 52] },
         footStyles: { fillColor: [245, 245, 244], textColor: [20, 20, 20], fontStyle: "bold" },
         styles: { fontSize: 8 },
@@ -6667,7 +6696,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     // Los documentos se adjuntan al final en secciones separadas (cada una con una hoja
     // de título que lista lo que contiene), copiando sus páginas si son PDF o como una
     // página con la imagen si son foto.
+    const etiquetaGasto = (c) => `${fmtFecha(c.fecha)} - ${c.proveedor || "Gasto"} - ${fmtARS(c.monto)}`;
     const secciones = [
+      { titulo: "Facturas de gastos (proveedores)", items: gastosDelMes.filter((c) => c.archivo).map((c) => ({ ...c, etiqueta: etiquetaGasto(c) })) },
+      { titulo: "Comprobantes de cobros de Ricardo y Pablo", items: cobrosDelMes.filter((c) => c.archivo).map((c) => ({ ...c, etiqueta: `${fmtFecha(c.fecha)} - ${c.socio} - ${fmtARS(c.monto)}` })) },
       { titulo: "Facturas de venta", items: facturasVentaDelMes },
       { titulo: "Órdenes de pago de clientes", items: ordenesPagoDelMes },
       { titulo: "Certificados de retención", items: retencionesDocsDelMes },
@@ -6698,28 +6730,29 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       archivosAdjuntos.push({ separador: sec });
       sec.items.forEach((it) => archivosAdjuntos.push(it));
     }
+    const noSePudieron = [];
     for (const f of archivosAdjuntos) {
       if (f.separador) { agregarSeparador(f.separador.titulo, f.separador.items); continue; }
       if (!f.archivo) continue;
       try {
-        const bytes = await (await fetch(await resolverArchivo(f.archivo))).arrayBuffer();
-        const esPdf = (f.tipoArchivo || "").includes("pdf") || (f.nombreArchivo || "").toLowerCase().endsWith(".pdf");
-        if (esPdf) {
-          const src = await PDFDocument.load(bytes);
+        const { tipo, bytes } = await bytesParaPdf(f.archivo);
+        if (tipo === "pdf") {
+          const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
           const paginas = await merged.copyPages(src, src.getPageIndices());
           paginas.forEach((pagina) => merged.addPage(pagina));
         } else {
-          const esPng = (f.tipoArchivo || "").includes("png");
-          const imagen = esPng ? await merged.embedPng(bytes) : await merged.embedJpg(bytes);
+          const imagen = tipo === "png" ? await merged.embedPng(bytes) : await merged.embedJpg(bytes);
           const [anchoPagina, altoPagina] = [595.28, 841.89]; // A4 en puntos
           const pagina = merged.addPage([anchoPagina, altoPagina]);
           const escala = Math.min(anchoPagina / imagen.width, altoPagina / imagen.height, 1) * 0.92;
           const w = imagen.width * escala, h = imagen.height * escala;
           pagina.drawImage(imagen, { x: (anchoPagina - w) / 2, y: (altoPagina - h) / 2, width: w, height: h });
         }
-      } catch {
+      } catch (err) {
         // Un archivo dañado o en un formato no soportado no debe frenar el
-        // resto del PDF — se omite y sigue con las demás facturas.
+        // resto del PDF — se omite, sigue con los demás y al final se avisa cuál fue.
+        console.error(err);
+        noSePudieron.push(f.etiqueta || f.nombreArchivo || "archivo");
       }
     }
     const finalBytes = await merged.save();
@@ -6729,6 +6762,9 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     a.download = `Comprobantes_${mes}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
+    if (noSePudieron.length > 0) {
+      alert(`El PDF se descargó, pero ${noSePudieron.length === 1 ? "este archivo no se pudo agregar" : `estos ${noSePudieron.length} archivos no se pudieron agregar`} (están dañados o en un formato que no se puede leer):\n\n${noSePudieron.join("\n")}\n\nAbrilos desde el gasto y volvé a subirlos.`);
+    }
   }
   const [showIngresoForm, setShowIngresoForm] = useState(false);
   const [ingresoCuenta, setIngresoCuenta] = useState(CUENTAS[0]);
@@ -15233,7 +15269,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     onClick={() => setMostrarMenuMesContador((v) => !v)}
                     className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
                   >
-                    <FileDown size={16} /> PDF para el contador ({nombreMesCuentas(mesReporteContador)}) <ChevronDown size={14} />
+                    {generandoPdfContador ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />} {generandoPdfContador ? "Armando el PDF…" : `PDF para el contador (${nombreMesCuentas(mesReporteContador)})`} <ChevronDown size={14} />
                   </button>
                   {mostrarMenuMesContador && (
                     <>
