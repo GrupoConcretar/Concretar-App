@@ -151,7 +151,7 @@ export function pasosSegunMovimientos(movimientos) {
   return { hechos, actual, desde: llegadas[actual] };
 }
 
-// Estado de cada paso: hecho (con su fecha), el actual (días hábiles que lleva y si está
+// Estado de cada paso: hecho (con su fecha y si salió a tiempo o se demoró), el actual (días hábiles que lleva y si está
 // atrasado) y los que faltan, con la fecha estimada en que terminarían.
 export function calcularPasosExpediente(exp, hoy, feriados) {
   const diasDe = (paso) => Number(exp.dias?.[paso.n] ?? paso.dias);
@@ -161,8 +161,10 @@ export function calcularPasosExpediente(exp, hoy, feriados) {
     const hecho = exp.pasos?.[paso.n] || null;
     const dias = diasDe(paso);
     if (hecho) {
+      // Lo que tardó de verdad: desde que terminó el paso anterior hasta que terminó este.
+      const tardo = diasHabilesEntre(desde, hecho, feriados);
       desde = hecho;
-      return { ...paso, dias, estado: "hecho", fecha: hecho };
+      return { ...paso, dias, estado: "hecho", fecha: hecho, tardo, aTiempo: tardo <= dias };
     }
     if (!actualVisto) {
       actualVisto = true;

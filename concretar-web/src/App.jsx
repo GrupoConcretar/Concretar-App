@@ -1100,8 +1100,10 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
     if (fecha) nuevos[n] = fecha; else delete nuevos[n];
     onGuardar({ pasos: nuevos });
   };
+  const demorados = pasos.filter((p) => p.estado === "hecho" && !p.aTiempo).length;
   const estiloEstado = {
-    hecho: "border-emerald-200 bg-emerald-50/60",
+    hecho: "border-emerald-300 bg-emerald-50",
+    demorado: "border-rose-300 bg-rose-50",
     actual: "border-amber-300 bg-amber-50",
     atrasado: "border-rose-300 bg-rose-50",
     pendiente: "border-stone-200 bg-white",
@@ -1133,6 +1135,12 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
       <div className="h-2 overflow-hidden rounded-full bg-stone-200">
         <div className="h-full bg-emerald-500" style={{ width: `${(hechos / 20) * 100}%` }} />
       </div>
+      {hechos > 0 && (
+        <div className="flex flex-wrap gap-3 text-xs">
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /> {hechos - demorados} a tiempo</span>
+          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-rose-500" /> {demorados} demorado{demorados === 1 ? "" : "s"} (tardaron más que los días estimados)</span>
+        </div>
+      )}
 
       <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm">
         {ultimo ? (
@@ -1162,7 +1170,7 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
 
       <div className="space-y-1.5">
         {pasos.map((p) => (
-          <div key={p.n} className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-sm ${estiloEstado[p.estado]}`}>
+          <div key={p.n} className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border px-3 py-2 text-sm ${estiloEstado[p.estado === "hecho" && !p.aTiempo ? "demorado" : p.estado]}`}>
             <input type="checkbox" checked={p.estado === "hecho"} onChange={(e) => marcarPaso(p.n, e.target.checked ? hoy : null)} className="h-4 w-4 accent-emerald-600" />
             <span className="w-7 font-mono text-xs font-bold text-slate-500">{p.n}°</span>
             <span className="min-w-0 flex-1">
@@ -1177,6 +1185,11 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
               /> días háb.
             </span>
             <span className="w-44 text-right text-xs">
+              {p.estado === "hecho" && (
+                <span className={`mb-0.5 block font-semibold ${p.aTiempo ? "text-emerald-700" : "text-rose-700"}`}>
+                  {p.aTiempo ? "A tiempo" : "Se demoró"}: {p.tardo} {p.tardo === 1 ? "día háb." : "días háb."}
+                </span>
+              )}
               {p.estado === "hecho" && <FechaInput value={p.fecha} onChange={(e) => { const v = e.target.value; if (v && v !== p.fecha) marcarPaso(p.n, v); }} className="w-32 rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-xs" />}
               {p.estado === "actual" && <span className="font-semibold text-amber-700">En curso · {p.transcurridos} de {p.dias} días hábiles</span>}
               {p.estado === "atrasado" && <span className="font-semibold text-rose-700">Atrasado: {p.transcurridos} días hábiles (estimado {p.dias})</span>}
