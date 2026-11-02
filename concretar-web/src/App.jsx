@@ -12,7 +12,10 @@ import {
   Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck, ScanLine
 } from "lucide-react";
 import { leerFactura, paginasPdfComoImagenes } from "./lectorFacturas.js";
-import { URL_CONSULTA_EXPEDIENTES, TIPOS_EXPEDIENTE, parsearNumeroExpediente, textoExpediente, consultarExpediente } from "./expedientesSanJuan.js";
+import {
+  URL_CONSULTA_EXPEDIENTES, TIPOS_EXPEDIENTE, FERIADOS_NACIONALES, parsearNumeroExpediente, textoExpediente, consultarExpediente,
+  pasosSegunMovimientos, calcularPasosExpediente, diasHabilesEntre,
+} from "./expedientesSanJuan.js";
 
 // Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
 const BRAND = {
@@ -1051,71 +1054,9 @@ function CategoriaHerrIcon({ categoria, size = 13 }) {
   );
 }
 
-// Circuito administrativo de un expediente de obra contratada por DMyOM (una vez aprobado
-// el presupuesto), según la planilla de la oficina. "dias" es lo que se estima que tarda
-// cada paso (se puede cambiar en cada expediente) y "claves" sirven para reconocer en qué
-// paso está a partir de la oficina que figura en la página del Gobierno.
-const PASOS_EXPEDIENTE = [
-  { n: 1, oficina: "Administración OM", motivo: "Agregar documentación al expediente", dias: 3, claves: ["administracion", "obras menores"] },
-  { n: 2, oficina: "Contable de obra", motivo: "Imputación contable", dias: 3, claves: ["contable", "contadur", "contabil"] },
-  { n: 3, oficina: "Secret. Adm. Financiera (SAF)", motivo: "V°B° en imputación contable", dias: 3, claves: ["financier", "saf"] },
-  { n: 4, oficina: "Despacho", motivo: "Confección de contrato", dias: 5, claves: ["despacho"] },
-  { n: 5, oficina: "Administración OM", motivo: "Firma de contrato y posterior aforado", dias: 5, claves: ["administracion", "obras menores"] },
-  { n: 6, oficina: "Despacho", motivo: "Proyecto de resolución", dias: 5, claves: ["despacho"] },
-  { n: 7, oficina: "Asesoría Letrada", motivo: "Dictamen", dias: 10, claves: ["asesor", "letrad", "juridic", "legal"] },
-  { n: 8, oficina: "Despacho", motivo: "Resolución", dias: 5, claves: ["despacho"] },
-  { n: 9, oficina: "Administración OM", motivo: "Firma de resolución", dias: 3, claves: ["administracion", "obras menores"] },
-  { n: 10, oficina: "Delegación Fiscal", motivo: "V°B° de auditor técnico y delegados", dias: 7, claves: ["delegacion fiscal", "fiscal", "tribunal de cuentas"] },
-  { n: 11, oficina: "Administración OM", motivo: "Notificar resolución a la empresa", dias: 3, claves: ["administracion", "obras menores"] },
-  { n: 12, oficina: "DMyOM", motivo: "A la espera de certificación", dias: 30, claves: ["mantenimiento", "obras menores", "dmyom"] },
-  { n: 13, oficina: "DMyOM", motivo: "Con certificados aprobados", dias: 5, claves: ["mantenimiento", "obras menores", "dmyom"] },
-  { n: 14, oficina: "Contable de obra", motivo: "Compromiso", dias: 3, claves: ["contable", "contadur", "contabil"] },
-  { n: 15, oficina: "Delegación Fiscal", motivo: "Aprobar compromiso", dias: 5, claves: ["delegacion fiscal", "fiscal", "tribunal de cuentas"] },
-  { n: 16, oficina: "Contable de obra", motivo: "A la espera de factura", dias: 3, claves: ["contable", "contadur", "contabil"] },
-  { n: 17, oficina: "Secret. Adm. Financiera (SAF)", motivo: "Aprobar ordenado en curso", dias: 5, claves: ["financier", "saf"] },
-  { n: 18, oficina: "Administración OM", motivo: "Firma de ordenado aprobado", dias: 3, claves: ["administracion", "obras menores"] },
-  { n: 19, oficina: "Habilitación", motivo: "Para pago", dias: 7, claves: ["habilitacion", "tesoreria"] },
-  { n: 20, oficina: "Pagado", motivo: "Cobrado por la empresa", dias: 0, claves: [] },
-];
-const sinAcentos = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-const sumarDiasISO = (iso, dias) => {
-  const d = fechaLocal(iso);
-  d.setDate(d.getDate() + dias);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
-const diasEntre = (desdeIso, hastaIso) => Math.round((fechaLocal(hastaIso) - fechaLocal(desdeIso)) / 86400000);
-
-// Arma el estado de cada paso: hecho (con su fecha), el actual (desde cuándo y si está
-// atrasado) y los que faltan, con la fecha estimada en que deberían terminar.
-function calcularPasosExpediente(exp, hoy) {
-  const diasDe = (paso) => Number(exp.dias?.[paso.n] ?? paso.dias);
-  let desde = exp.fechaInicio || hoy;
-  let actualVisto = false;
-  return PASOS_EXPEDIENTE.map((paso) => {
-    const hecho = exp.pasos?.[paso.n] || null;
-    const dias = diasDe(paso);
-    if (hecho) {
-      desde = hecho;
-      return { ...paso, dias, estado: "hecho", fecha: hecho };
-    }
-    if (!actualVisto) {
-      actualVisto = true;
-      const vence = sumarDiasISO(desde, dias);
-      const transcurridos = Math.max(0, diasEntre(desde, hoy));
-      desde = vence < hoy ? hoy : vence;
-      return { ...paso, dias, estado: transcurridos > dias ? "atrasado" : "actual", desdeFecha: sumarDiasISO(vence, -dias), transcurridos, fecha: vence };
-    }
-    desde = sumarDiasISO(desde, dias);
-    return { ...paso, dias, estado: "pendiente", fecha: desde };
-  });
-}
-
-// Primer paso todavía no hecho cuya oficina coincide con la del último movimiento.
-function pasoSegunMovimiento(pasos, movimiento) {
-  if (!movimiento) return null;
-  const texto = sinAcentos(`${movimiento.organismo} ${movimiento.oficina}`);
-  return pasos.find((p) => p.estado !== "hecho" && p.claves.some((c) => texto.includes(c))) || null;
-}
+// Días que no trabaja la administración pública: feriados nacionales + los cargados en
+// Calendario (ahí se agregan los provinciales).
+const feriadosExpedientes = () => new Set([...FERIADOS_NACIONALES, ...feriadosCalendario.fechas]);
 
 function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onConsultar, onQuitar }) {
   const [numeroTexto, setNumeroTexto] = useState("");
@@ -1146,30 +1087,17 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
     );
   }
 
-  const pasos = calcularPasosExpediente(expediente, hoy);
+  const feriados = feriadosExpedientes();
+  const pasos = calcularPasosExpediente(expediente, hoy, feriados);
   const hechos = pasos.filter((p) => p.estado === "hecho").length;
   const actual = pasos.find((p) => p.estado !== "hecho");
   const pagado = !actual || (actual.n === 20 && expediente.pasos?.[20]);
   const fechaPago = pasos.find((p) => p.n === 19)?.fecha;
   const movimientos = expediente.movimientos || [];
   const ultimo = movimientos[0];
-  const sugerido = pasoSegunMovimiento(pasos, ultimo);
   const marcarPaso = (n, fecha) => {
     const nuevos = { ...(expediente.pasos || {}) };
     if (fecha) nuevos[n] = fecha; else delete nuevos[n];
-    onGuardar({ pasos: nuevos });
-  };
-  // Marca como hechos todos los pasos anteriores al que indica la página del Gobierno.
-  // Un paso termina cuando el expediente llega a la oficina del paso siguiente: si esa
-  // llegada figura en los movimientos se usa su fecha, si no la del último movimiento.
-  const avanzarHasta = (paso) => {
-    const nuevos = { ...(expediente.pasos || {}) };
-    const fechaUltimo = ultimo?.fecha?.slice(0, 10) || hoy;
-    pasos.filter((p) => p.n < paso.n && p.estado !== "hecho").forEach((p) => {
-      const siguiente = PASOS_EXPEDIENTE[p.n];
-      const llegada = movimientos.find((m) => siguiente.claves.some((c) => sinAcentos(`${m.organismo} ${m.oficina}`).includes(c)));
-      nuevos[p.n] = llegada?.fecha?.slice(0, 10) || fechaUltimo;
-    });
     onGuardar({ pasos: nuevos });
   };
   const estiloEstado = {
@@ -1201,13 +1129,8 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
           <>
             <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Según la página del Gobierno, hoy está en</div>
             <div className="font-semibold text-slate-900">{ultimo.oficina || ultimo.organismo}</div>
-            <div className="text-xs text-slate-600">{ultimo.organismo}{ultimo.fecha ? ` · llegó el ${fmtFecha(ultimo.fecha.slice(0, 10))} (hace ${Math.max(0, diasEntre(ultimo.fecha.slice(0, 10), hoy))} días)` : ""}</div>
-            {sugerido && actual && sugerido.n > actual.n && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-sky-900">
-                <span>Coincide con el paso {sugerido.n}° ({sugerido.oficina}: {sugerido.motivo}).</span>
-                <button type="button" onClick={() => avanzarHasta(sugerido)} className="rounded border border-sky-300 bg-white px-2 py-0.5 font-semibold hover:bg-sky-100">Marcar hechos los pasos anteriores</button>
-              </div>
-            )}
+            <div className="text-xs text-slate-600">{ultimo.organismo}{ultimo.fecha ? ` · llegó el ${fmtFecha(ultimo.fecha.slice(0, 10))} (hace ${diasHabilesEntre(ultimo.fecha.slice(0, 10), hoy, feriados)} días hábiles)` : ""}</div>
+            <div className="mt-1 text-[11px] text-sky-900">Los pasos se marcan solos según por qué oficinas fue pasando; si alguno no corresponde, corregilo a mano.</div>
             {movimientos.length > 1 && (
               <button type="button" onClick={() => setVerMovimientos((v) => !v)} className="mt-2 text-xs font-semibold text-sky-800 underline decoration-dotted">{verMovimientos ? "Ocultar" : "Ver"} los últimos {movimientos.length} movimientos</button>
             )}
@@ -1236,17 +1159,17 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
               <span className="font-semibold text-slate-800">{p.oficina}</span>
               <span className="text-slate-500"> — {p.motivo}</span>
             </span>
-            <span className="flex items-center gap-1 text-xs text-slate-500" title="Días estimados para este paso">
+            <span className="flex items-center gap-1 text-xs text-slate-500" title="Días hábiles estimados para este paso (sin fines de semana ni feriados)">
               <input
                 type="number" min="0" defaultValue={p.dias}
                 onBlur={(e) => { const v = Number(e.target.value); if (v !== p.dias) onGuardar({ dias: { ...(expediente.dias || {}), [p.n]: v } }); }}
                 className="w-12 rounded border border-stone-300 px-1 py-0.5 text-right text-xs"
-              /> días
+              /> días háb.
             </span>
             <span className="w-44 text-right text-xs">
               {p.estado === "hecho" && <FechaInput value={p.fecha} onChange={(v) => v && marcarPaso(p.n, v)} className="w-32 rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-xs" />}
-              {p.estado === "actual" && <span className="font-semibold text-amber-700">En curso · {p.transcurridos} de {p.dias} días</span>}
-              {p.estado === "atrasado" && <span className="font-semibold text-rose-700">Atrasado: {p.transcurridos} días (estimado {p.dias})</span>}
+              {p.estado === "actual" && <span className="font-semibold text-amber-700">En curso · {p.transcurridos} de {p.dias} días hábiles</span>}
+              {p.estado === "atrasado" && <span className="font-semibold text-rose-700">Atrasado: {p.transcurridos} días hábiles (estimado {p.dias})</span>}
               {p.estado === "pendiente" && <span className="text-slate-400">Estimado: {fmtFecha(p.fecha)}</span>}
             </span>
           </div>
@@ -6386,8 +6309,12 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   async function consultarDondeEsta(exp, avisarError = true) {
     setConsultandoExpedienteId(exp.id);
     try {
-      const movimientos = await consultarExpediente(exp, 10);
-      await guardarExpediente(exp, { movimientos, consultadoEn: new Date().toISOString() });
+      const movimientos = await consultarExpediente(exp, 60);
+      // Los pasos por los que ya pasó según la página se marcan solos (no se borra
+      // ninguno marcado a mano).
+      const { hechos } = pasosSegunMovimientos(movimientos);
+      const pasos = { ...hechos, ...(exp.pasos || {}) };
+      await guardarExpediente(exp, { movimientos, pasos, consultadoEn: new Date().toISOString() });
     } catch (err) {
       if (avisarError) alert(`No se pudo consultar el expediente en la página del Gobierno (${err.message}). Probá de nuevo más tarde o abrí la página directamente.`);
     } finally {
@@ -11505,7 +11432,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                         {(() => {
                           const exp = expedienteDeObra(o.id);
                           if (!exp) return null;
-                          const pasosExp = calcularPasosExpediente(exp, hoyISO());
+                          const pasosExp = calcularPasosExpediente(exp, hoyISO(), feriadosExpedientes());
                           const actualExp = pasosExp.find((p) => p.estado !== "hecho");
                           return (
                             <div className="flex justify-between gap-2 text-sm">
