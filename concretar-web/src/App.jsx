@@ -6085,6 +6085,12 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const echeqsPorConfirmarDebito = comprasFacturas
     .filter((c) => (c.medioBancario === "eCheq" || c.formaPago === "eCheq") && c.estado === "Pendiente" && !obraIdsPapelera.has(c.obraId) && c.fechaPagoEcheq && diasHasta(c.fechaPagoEcheq) <= 0)
     .sort((a, b) => fechaLocal(a.fechaPagoEcheq) - fechaLocal(b.fechaPagoEcheq));
+  // eCheqs que libramos y se pueden debitar en los próximos 4 días: aviso previo para
+  // tener la plata en el Banco (el día de la fecha pasan a echeqsPorConfirmarDebito).
+  const DIAS_AVISO_ECHEQ = 4;
+  const echeqsProximosADebitar = comprasFacturas
+    .filter((c) => (c.medioBancario === "eCheq" || c.formaPago === "eCheq") && c.estado === "Pendiente" && !obraIdsPapelera.has(c.obraId) && c.fechaPagoEcheq && diasHasta(c.fechaPagoEcheq) >= 1 && diasHasta(c.fechaPagoEcheq) <= DIAS_AVISO_ECHEQ)
+    .sort((a, b) => fechaLocal(a.fechaPagoEcheq) - fechaLocal(b.fechaPagoEcheq));
   // Lo que la empresa le debe a un socio por algo que pagó con su tarjeta de crédito:
   // avisa desde 5 días antes de la fecha de pago de la tarjeta y sigue avisando si ya
   // venció, hasta que se le devuelva todo.
@@ -6125,7 +6131,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length + ocsARevisar.length +
     asistenciasEditadas.length + asistenciasEliminadasRecientes.length +
     materialesVencidos.length + materialesProximos.length + pedidosPorAprobar.length + personalSinObra5Dias.length +
-    gastosRecurrentesProximos.length + deudasTarjetaSocioPorVencer.length + echeqsPorConfirmarDebito.length;
+    gastosRecurrentesProximos.length + deudasTarjetaSocioPorVencer.length + echeqsPorConfirmarDebito.length + echeqsProximosADebitar.length;
 
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
@@ -11039,6 +11045,43 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                       </ul>
                     </AlertCard>
                   )}
+                  {echeqsProximosADebitar.length > 0 && (() => {
+                    // Lo que hay en el Banco alcanza para todos los cheques que vienen (incluidos
+                    // los que ya tienen la fecha cumplida y todavía no se debitaron)?
+                    const aDebitar = [...echeqsPorConfirmarDebito, ...echeqsProximosADebitar].reduce((s, c) => s + (c.monto || 0), 0);
+                    const banco = saldoCuenta("Banco");
+                    const falta = aDebitar - banco;
+                    return (
+                      <AlertCard
+                        tone={falta > 0 ? "rose" : "amber"}
+                        icon={Landmark}
+                        title={`${echeqsProximosADebitar.length} cheque(s) que libramos se pueden debitar en los próximos ${DIAS_AVISO_ECHEQ} días.`}
+                      >
+                        <ul className="space-y-1 text-xs">
+                          {echeqsProximosADebitar.map((c) => {
+                            const dias = diasHasta(c.fechaPagoEcheq);
+                            return (
+                              <li key={c.id} className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="truncate">{c.proveedor} — {fmtARS(c.monto)}</span>
+                                <span className="font-semibold">{fmtFecha(c.fechaPagoEcheq)} · {dias === 1 ? "mañana" : `en ${dias} días`}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                        <div className="text-xs">
+                          {falta > 0
+                            ? <span className="font-semibold">En el Banco hay {fmtARS(banco)}: faltan {fmtARS(falta)} para cubrir {fmtARS(aDebitar)} en cheques.</span>
+                            : <span>En el Banco hay {fmtARS(banco)}: alcanza para los {fmtARS(aDebitar)} en cheques.</span>}
+                        </div>
+                        <button
+                          onClick={() => { setTab("cuentas"); setShowProximos(false); setShowPrestamos(false); setShowIvaGanancias(false); setShowCheques(true); }}
+                          className="mt-1.5 rounded-md border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-white"
+                        >
+                          Ir a Cheques
+                        </button>
+                      </AlertCard>
+                    );
+                  })()}
                   {echeqsPorConfirmarDebito.length > 0 && (
                     <AlertCard
                       tone="amber"
