@@ -3006,6 +3006,15 @@ function calcularEstadoPrestamo(p, pagos, hastaOverride) {
   return { saldoCapital, interesAcumulado, totalADevolver: saldoCapital + interesAcumulado, totalPagado, pagos: pagosDelPrestamo, fechaCorte, dias: diasTranscurridosDesde(fechaCorte, hasta), diasTotales: diasTranscurridosDesde(p.fecha, hasta) };
 }
 
+// Lo que se va a devolver de un préstamo: el interés se calcula hasta la fecha estimada
+// de devolución (es el costo real que va a tener), o hasta hoy si esa fecha ya pasó o
+// no está cargada. Un préstamo ya pagado queda con lo que se calculó al cancelarlo.
+function fechaCalculoPrestamo(p) {
+  if (p.estado === "Pagado" || !p.fechaEstimadaDevolucion) return undefined;
+  return p.fechaEstimadaDevolucion > hoyISO() ? p.fechaEstimadaDevolucion : hoyISO();
+}
+const deudaPrestamo = (p, pagos) => calcularEstadoPrestamo(p, pagos, fechaCalculoPrestamo(p));
+
 // Total adeudado por prestamista (Cuentas → Préstamos): agrupa todos los
 // préstamos de un mismo acreedor para saber cuánto se le debe en total,
 // sumando capital, interés acumulado y el total a devolver de cada uno.
@@ -3020,7 +3029,7 @@ function TablaTotalesPrestamista({ items }) {
             <th className="px-2 py-1.5 text-right">Préstamos</th>
             <th className="px-2 py-1.5 text-right">Capital original</th>
             <th className="px-2 py-1.5 text-right">Saldo capital</th>
-            <th className="px-2 py-1.5 text-right">Interés acumulado</th>
+            <th className="px-2 py-1.5 text-right">Interés a la fecha est.</th>
             <th className="px-2 py-1.5 text-right">Total a devolver</th>
           </tr>
         </thead>
@@ -3036,6 +3045,16 @@ function TablaTotalesPrestamista({ items }) {
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-stone-300 bg-stone-50 font-bold">
+            <td className="px-2 py-1.5 text-slate-900">Total</td>
+            <td className="px-2 py-1.5 text-right font-mono text-slate-700">{items.reduce((s, t) => s + t.cantidad, 0)}</td>
+            <td className="px-2 py-1.5 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(items.reduce((s, t) => s + t.capitalOriginal, 0))}</td>
+            <td className="px-2 py-1.5 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(items.reduce((s, t) => s + t.saldoCapital, 0))}</td>
+            <td className="px-2 py-1.5 text-right font-mono text-amber-700 whitespace-nowrap">{fmtARS(items.reduce((s, t) => s + t.interesAcumulado, 0))}</td>
+            <td className="px-2 py-1.5 text-right font-mono text-rose-600 whitespace-nowrap">{fmtARS(items.reduce((s, t) => s + t.totalADevolver, 0))}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
@@ -3045,8 +3064,8 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
   if (items.length === 0) {
     return <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-4 text-center text-xs text-slate-400">Todavía no hay préstamos vigentes.</div>;
   }
-  const totalInteresAcumulado = items.reduce((s, p) => s + calcularEstadoPrestamo(p, pagos).interesAcumulado, 0);
-  const totalADevolverSum = items.reduce((s, p) => s + calcularEstadoPrestamo(p, pagos).totalADevolver, 0);
+  const totalInteresAcumulado = items.reduce((s, p) => s + deudaPrestamo(p, pagos).interesAcumulado, 0);
+  const totalADevolverSum = items.reduce((s, p) => s + deudaPrestamo(p, pagos).totalADevolver, 0);
   return (
     <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
       <table className="w-full text-left text-xs">
@@ -3057,21 +3076,21 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
             <th className="px-2 py-1.5 text-right">Pagado</th>
             <th className="px-2 py-1.5 text-right">Saldo capital</th>
             <th className="px-2 py-1.5 text-right">Tasa anual</th>
-            <th className="px-2 py-1.5 text-right">Días</th>
-            <th className="px-2 py-1.5 text-right">Interés acum.</th>
-            <th className="px-2 py-1.5 text-right">Total a devolver</th>
             <th className="px-2 py-1.5">Fecha est.</th>
-            <th className="px-2 py-1.5 text-right">A devolver en fecha est.</th>
+            <th className="px-2 py-1.5 text-right" title="Días desde que se pidió hasta la fecha estimada de devolución">Días hasta devolver</th>
+            <th className="px-2 py-1.5 text-right">Interés</th>
+            <th className="px-2 py-1.5 text-right">Total a devolver</th>
             <th className="px-2 py-1.5">Estado</th>
             <th className="px-2 py-1.5"></th>
           </tr>
         </thead>
         <tbody>
           {items.map((p) => {
-            const estado = calcularEstadoPrestamo(p, pagos);
-            const proyeccion = (p.estado !== "Pagado" && p.fechaEstimadaDevolucion)
-              ? calcularEstadoPrestamo(p, pagos, p.fechaEstimadaDevolucion).totalADevolver
-              : null;
+            // Se muestra lo que se va a devolver en la fecha estimada (el costo real);
+            // debajo, chiquito, cuánto sería si se devolviera hoy.
+            const estado = deudaPrestamo(p, pagos);
+            const aHoy = calcularEstadoPrestamo(p, pagos);
+            const fechaVencida = p.fechaEstimadaDevolucion && p.fechaEstimadaDevolucion < hoyISO();
             return (
               <tr key={p.id} className="border-t border-stone-100">
                 <td className="px-2 py-1 font-medium text-slate-900 whitespace-nowrap">
@@ -3082,14 +3101,20 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
                 <td className="px-2 py-1 text-right font-mono text-emerald-700 whitespace-nowrap">{estado.totalPagado > 0 ? fmtARS(estado.totalPagado) : "—"}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{fmtARS(estado.saldoCapital)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">{p.tasaAnualPct}%</td>
+                <td className={`px-2 py-1 whitespace-nowrap ${fechaVencida ? "font-semibold text-rose-600" : "text-slate-600"}`}>
+                  {p.fechaEstimadaDevolucion ? fmtFecha(p.fechaEstimadaDevolucion) : "Sin fecha"}
+                  {fechaVencida && <div className="text-[10px] font-normal">ya pasó: se calcula a hoy</div>}
+                  {!p.fechaEstimadaDevolucion && <div className="text-[10px] text-slate-400">se calcula a hoy</div>}
+                </td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700 whitespace-nowrap">
                   {estado.diasTotales}
                   {estado.pagos.length > 0 && <div className="font-sans text-[10px] text-slate-400">{estado.dias} desde el último pago</div>}
                 </td>
                 <td className="px-2 py-1 text-right font-mono text-amber-700 whitespace-nowrap">{fmtARS(estado.interesAcumulado)}</td>
-                <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600 whitespace-nowrap">{fmtARS(estado.totalADevolver)}</td>
-                <td className="px-2 py-1 text-slate-600 whitespace-nowrap">{fmtFecha(p.fechaEstimadaDevolucion)}</td>
-                <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800 whitespace-nowrap">{proyeccion !== null ? fmtARS(proyeccion) : "—"}</td>
+                <td className="px-2 py-1 text-right font-mono font-semibold text-rose-600 whitespace-nowrap">
+                  {fmtARS(estado.totalADevolver)}
+                  {Math.abs(aHoy.totalADevolver - estado.totalADevolver) >= 1 && <div className="font-sans text-[10px] font-normal text-slate-400">hoy: {fmtARS(aHoy.totalADevolver)}</div>}
+                </td>
                 <td className="px-2 py-1"><Badge estado={p.estado} /></td>
                 <td className="px-2 py-1">
                   <div className="flex flex-nowrap items-center justify-end gap-1">
@@ -3108,10 +3133,10 @@ function TablaPrestamos({ items, pagos, onEditar, onRegistrarPago, onEliminar })
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-stone-300 bg-stone-50">
-            <td className="px-2 py-1.5 font-bold text-slate-900" colSpan={6}>Total</td>
+            <td className="px-2 py-1.5 font-bold text-slate-900" colSpan={7}>Total</td>
             <td className="px-2 py-1.5 text-right font-mono font-bold text-amber-700 whitespace-nowrap">{fmtARS(totalInteresAcumulado)}</td>
             <td className="px-2 py-1.5 text-right font-mono font-bold text-rose-600 whitespace-nowrap">{fmtARS(totalADevolverSum)}</td>
-            <td className="px-2 py-1.5" colSpan={4}></td>
+            <td className="px-2 py-1.5" colSpan={2}></td>
           </tr>
         </tfoot>
       </table>
@@ -6768,23 +6793,29 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     }
   }
   // Pasa un archivo guardado (PDF o foto) a bytes que pdf-lib pueda usar. El formato se
-  // reconoce por el contenido (no por el nombre): una foto que no sea JPG/PNG (ej. WEBP)
-  // se convierte a JPG antes de pegarla.
+  // reconoce por el contenido (no por el nombre). Para que el PDF no pese de más, las
+  // fotos (que vienen del celular a resolución completa, 1,5 a 3 MB cada una) se achican
+  // a 1600 px del lado más largo y se comprimen como JPG: se siguen leyendo bien impresas.
+  const LADO_MAX_FOTO_PDF = 1600;
   async function bytesParaPdf(archivo) {
     const dataUrl = await resolverArchivo(archivo);
     const bytes = new Uint8Array(await (await fetch(dataUrl)).arrayBuffer());
     const empieza = (...b) => b.every((v, i) => bytes[i] === v);
     if (empieza(0x25, 0x50, 0x44, 0x46)) return { tipo: "pdf", bytes };
-    if (empieza(0x89, 0x50, 0x4e, 0x47)) return { tipo: "png", bytes };
-    if (empieza(0xff, 0xd8)) return { tipo: "jpg", bytes };
     const img = new Image();
     img.src = dataUrl;
     await img.decode();
+    const escala = Math.min(1, LADO_MAX_FOTO_PDF / Math.max(img.naturalWidth, img.naturalHeight));
+    const esJpgChico = empieza(0xff, 0xd8) && escala === 1 && bytes.length < 350 * 1024;
+    if (esJpgChico) return { tipo: "jpg", bytes };
     const lienzo = document.createElement("canvas");
-    lienzo.width = img.naturalWidth;
-    lienzo.height = img.naturalHeight;
-    lienzo.getContext("2d").drawImage(img, 0, 0);
-    const jpg = lienzo.toDataURL("image/jpeg", 0.9);
+    lienzo.width = Math.round(img.naturalWidth * escala);
+    lienzo.height = Math.round(img.naturalHeight * escala);
+    const ctx = lienzo.getContext("2d");
+    ctx.fillStyle = "#fff"; // lo transparente de un PNG sale negro en un JPG
+    ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+    ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
+    const jpg = lienzo.toDataURL("image/jpeg", 0.72);
     return { tipo: "jpg", bytes: new Uint8Array(await (await fetch(jpg)).arrayBuffer()) };
   }
   async function armarPdfContadores(mesElegido) {
@@ -6955,10 +6986,15 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       try {
         const { tipo, bytes } = await bytesParaPdf(f.archivo);
         if (tipo === "pdf") {
-          // Cada página se pega como imagen (dibujada con pdf.js): las facturas "protegidas"
-          // copiadas tal cual quedaban en blanco. Si no se puede dibujar, se copia como antes.
+          // Los PDF comunes se copian tal cual (pesan muy poco). Las facturas "protegidas"
+          // copiadas así quedan en blanco: esas se dibujan con pdf.js y se pegan como
+          // imagen. Si no se pueden dibujar, se copian igual.
+          const texto = new TextDecoder("latin1").decode(bytes);
+          const protegido = texto.includes("/Encrypt");
           let paginasImagen = null;
-          try { paginasImagen = await paginasPdfComoImagenes(bytes); } catch (err) { console.error(err); }
+          if (protegido) {
+            try { paginasImagen = await paginasPdfComoImagenes(bytes, 1100, 0.72); } catch (err) { console.error(err); }
+          }
           if (paginasImagen) {
             for (const pg of paginasImagen) {
               const imagen = await merged.embedJpg(pg.bytes);
@@ -7979,20 +8015,28 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     setPagandoPrestamoId(null);
   }
   // Total adeudado por prestamista: agrupa todos los préstamos (activos y
-  // pagados) de un mismo acreedor. Los pagados suman naturalmente $0 de saldo
-  // e interés (ya están cancelados), así que no hace falta filtrarlos aparte.
+  // pagados) de un mismo acreedor. Los ya devueltos cuentan en la cantidad y el
+  // capital original, pero no deben nada (algunos se marcaron devueltos sin cargar
+  // los pagos, y si no se los forzara a $0 seguirían sumando su capital).
   const totalesPorPrestamista = Object.values(
     prestamos.reduce((acc, p) => {
-      const estado = calcularEstadoPrestamo(p, prestamosPagos);
+      const pagado = p.estado === "Pagado";
+      const estado = pagado ? null : deudaPrestamo(p, prestamosPagos);
       const g = (acc[p.acreedor] ??= { acreedor: p.acreedor, cantidad: 0, capitalOriginal: 0, saldoCapital: 0, interesAcumulado: 0, totalADevolver: 0 });
       g.cantidad += 1;
       g.capitalOriginal += p.capital || 0;
-      g.saldoCapital += estado.saldoCapital;
-      g.interesAcumulado += estado.interesAcumulado;
-      g.totalADevolver += estado.totalADevolver;
+      g.saldoCapital += estado?.saldoCapital || 0;
+      g.interesAcumulado += estado?.interesAcumulado || 0;
+      g.totalADevolver += estado?.totalADevolver || 0;
       return acc;
     }, {})
   ).sort((a, b) => b.totalADevolver - a.totalADevolver);
+  // Total que se debe de préstamos (los que no están pagados), a las fechas estimadas.
+  const prestamosVigentes = prestamos.filter((p) => p.estado !== "Pagado");
+  const deudaPrestamosTotal = prestamosVigentes.reduce((acc, p) => {
+    const e = deudaPrestamo(p, prestamosPagos);
+    return { capital: acc.capital + e.saldoCapital, interes: acc.interes + e.interesAcumulado, total: acc.total + e.totalADevolver };
+  }, { capital: 0, interes: 0, total: 0 });
 
   // ---------- Cobros Ricardo y Pablo (retiros de los socios) ----------
   const SOCIOS = ["Ricardo", "Pablo"];
@@ -16373,6 +16417,14 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                 </form>
               </Panel>
             )}
+
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Total que se debe de préstamos</div>
+              <div className="font-mono text-2xl font-bold text-rose-700">{fmtARS(deudaPrestamosTotal.total)}</div>
+              <div className="mt-1 text-xs text-slate-600">
+                {prestamosVigentes.length} préstamo{prestamosVigentes.length === 1 ? "" : "s"} sin cancelar · capital {fmtARS(deudaPrestamosTotal.capital)} + interés {fmtARS(deudaPrestamosTotal.interes)}, calculado a la fecha estimada de devolución de cada uno.
+              </div>
+            </div>
 
             <div>
               <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Total por prestamista</h3>
