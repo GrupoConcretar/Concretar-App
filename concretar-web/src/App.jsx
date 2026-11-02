@@ -1,9 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { createClient } from "@supabase/supabase-js";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import * as XLSX from "xlsx";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
@@ -12,6 +8,27 @@ import {
   Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck, ScanLine
 } from "lucide-react";
 import { leerFactura, paginasPdfComoImagenes } from "./lectorFacturas.js";
+
+// Librerías pesadas que solo se usan al tocar un botón (armar PDFs, leer Excel, unir
+// PDFs): no vienen con la app, se bajan aparte unos segundos después de que abrió
+// (precargarLibrerias) o, si todavía no estaban, en el momento de usarlas.
+let jsPDF = null;
+let autoTable = null;
+let XLSX = null;
+async function cargarJsPDF() {
+  if (!jsPDF) {
+    const [j, a] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+    jsPDF = j.default;
+    autoTable = a.default;
+  }
+}
+async function cargarXLSX() {
+  if (!XLSX) XLSX = await import("xlsx");
+}
+const cargarPdfLib = () => import("pdf-lib");
+function precargarLibrerias() {
+  Promise.all([cargarJsPDF(), cargarXLSX(), cargarPdfLib()]).catch(() => { /* se reintenta al usarlas */ });
+}
 import {
   URL_CONSULTA_EXPEDIENTES, TIPOS_EXPEDIENTE, FERIADOS_NACIONALES, parsearNumeroExpediente, textoExpediente, consultarExpediente,
   pasosSegunMovimientos, calcularPasosExpediente, diasHabilesEntre, RECESO_OBRAS_MENORES, enRecesoObrasMenores,
@@ -61,14 +78,6 @@ function nombreMesDeClave(clave) {
   const [y, m] = clave.split("-").map(Number);
   const nombre = new Date(y, m - 1, 1).toLocaleDateString("es-AR", { month: "long", year: "numeric" });
   return nombre.charAt(0).toUpperCase() + nombre.slice(1);
-}
-// Desplaza una clave "YYYY-MM" n meses hacia adelante — se usa para proyectar el pago
-// de un impuesto que se abona con meses de atraso (ej: IVA/Ingresos Brutos a 3 meses
-// vencidos) en el mes en que realmente sale la plata, no en el mes en que se devengó.
-function sumarMesesAClave(clave, n) {
-  const [anio, mes] = clave.split("-").map(Number);
-  const fecha = new Date(anio, mes - 1 + n, 1);
-  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-01`;
 }
 // Orden por lo último cargado (no por la fecha que se le puso al registro):
 // así los listados de gastos/ingresos/movimientos siempre muestran arriba lo
@@ -300,8 +309,6 @@ const ESTADOS_OBRA = ["En curso", "Pendiente de cobro", "Pausada", "Finalizada"]
 const ESTADOS_ITEM_COMBO = ["Entregado", "Roto", "Perdido", "Devuelto"];
 const TIPOS_CAJA = ["Electricista", "Civil", "Pintor", "Metalúrgico"];
 const DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-const ESTADOS_OC = ["Requiere aprobación", "Aprobada", "Enviada", "Recibida parcialmente", "Recibida", "Cerrada", "Rechazada", "Anulada"];
-const ESTADOS_PEDIDO_MATERIAL = ["Solicitado", "Aprobado", "Rechazado", "Facturado", "Recibido"];
 const CATEGORIAS_GASTO = ["Materiales", "Equipos y Herramientas", "Epps", "Consumibles", "Combustible", "Mano de obra", "Varios"];
 const CATEGORIAS_PEDIDO = ["Materiales", "Herramientas", "Equipos", "Epps", "Consumibles", "Otros"];
 // La pestaña "Pedidos de Obra" arma el pedido en pasos (rubros). Cada uno filtra
@@ -2403,13 +2410,6 @@ function estadoEtapa(etapa, hoy) {
 const ETAPA_COLOR_BARRA = { Finalizada: "#10b981", "En curso": "#f59e0b", Atrasada: "#f43f5e", Pendiente: "#d6d3d1" };
 const ETAPA_COLOR_TRACK = { Finalizada: "#d1fae5", "En curso": "#fef3c7", Atrasada: "#fecdd3", Pendiente: "#f5f5f4" };
 const MESES_CORTO = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-function lunesOAntes(d) {
-  const dia = d.getDay();
-  const r = new Date(d);
-  r.setDate(r.getDate() - (dia === 0 ? 6 : dia - 1));
-  r.setHours(0, 0, 0, 0);
-  return r;
-}
 function domingoODespues(d) {
   const dia = d.getDay();
   const r = new Date(d);
@@ -2824,6 +2824,7 @@ function PlanificacionObras({ obras, etapas, agregandoEtapaObraId, setAgregandoE
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
+        await cargarXLSX();
         const data = new Uint8Array(evt.target.result);
         const wb = XLSX.read(data, { type: "array", cellStyles: true });
         const tareas = parseEtapasDesdeExcelGantt(wb);
@@ -5743,7 +5744,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     return f === "JPG" ? "JPEG" : f;
   }
 
-  function generarPdfSeguro(personas) {
+  async function generarPdfSeguro(personas) {
+    await cargarJsPDF();
     if (!personas || personas.length === 0) return;
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const pageWidth = 210;
@@ -5827,7 +5829,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     doc.save(`altas_seguro_${hoyISO()}.pdf`);
   }
 
-  function generarPdfTalles(personas) {
+  async function generarPdfTalles(personas) {
+    await cargarJsPDF();
     if (!personas || personas.length === 0) return;
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     doc.setFontSize(14);
@@ -6169,8 +6172,9 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     if (!file) return;
     setArchivoObraNombre(file.name);
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        await cargarXLSX();
         const data = new Uint8Array(evt.target.result);
         const wb = XLSX.read(data, { type: "array", cellDates: true });
         const { resumen, items } = parsePresupuestoGeneral(wb);
@@ -6390,6 +6394,13 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       setConsultandoExpedienteId(null);
     }
   }
+  // Las librerías de PDF/Excel se bajan en segundo plano, cuando la app ya está abierta.
+  useEffect(() => {
+    if (dbLoading) return;
+    const t = setTimeout(precargarLibrerias, 3000);
+    return () => clearTimeout(t);
+  }, [dbLoading]);
+
   // Al abrir la app, los expedientes de obras activas que no se consultaron en las
   // últimas 6 horas se actualizan solos (de a uno, sin avisar si falla).
   const expedientesRevisadosRef = useRef(false);
@@ -6825,6 +6836,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     return { tipo: "jpg", bytes: new Uint8Array(await (await fetch(jpg)).arrayBuffer()) };
   }
   async function armarPdfContadores(mesElegido) {
+    await cargarJsPDF();
+    const { PDFDocument, StandardFonts, rgb } = await cargarPdfLib();
     const mes = mesElegido || mesReporteContador;
     const gastosDelMes = comprasFacturas
       .filter((c) => c.fecha?.slice(0, 7) === mes && !obraIdsPapelera.has(c.obraId))
@@ -7668,10 +7681,6 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const [quincenaFormal, setQuincenaFormal] = useState(quincenaDeFecha(hoyISO()));
   const [showFactoresLiquidacion, setShowFactoresLiquidacion] = useState(false);
 
-  function esFeriado(fechaStr) {
-    return feriados.some((f) => f.fecha === fechaStr);
-  }
-
   const rangoFormalActual = rangoQuincena(mesFormal, quincenaFormal);
   const asistenciaDelMesFormal = asistencia.filter(
     (a) => a.obraId === Number(obraFormalId) && a.fecha >= rangoFormalActual.desde && a.fecha <= rangoFormalActual.hasta
@@ -7764,7 +7773,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     }
   }
 
-  function generarPdfHorasReales() {
+  async function generarPdfHorasReales() {
+    await cargarJsPDF();
     const obra = obras.find((o) => o.id === Number(obraFormalId));
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     doc.setFillColor(2, 29, 52);
@@ -7797,7 +7807,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     doc.save(`Horas_${(obra?.nombre || "obra").replace(/\s+/g, "_")}_${mesFormal}_Q${quincenaFormal}.pdf`);
   }
 
-  function generarPdfLiquidacionFormal() {
+  async function generarPdfLiquidacionFormal() {
+    await cargarJsPDF();
     const obra = obras.find((o) => o.id === Number(obraFormalId));
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     doc.setFillColor(2, 29, 52);
@@ -10010,7 +10021,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     const { valor: totalMateriales, fila: filaSubtotalMateriales } = numeroDespuesDe(rows, "SUBTOTAL MATERIALES", filaHeaderMateriales);
 
     // Sección opcional "Herramientas" — no todos los presupuestos la tienen. Si no aparece, se sigue de largo sin error.
-    const [filaSubtotalHerr, colSubtotalHerr] = buscarFilaYCol(rows, "SUBTOTAL HERRAMIENTAS", filaSubtotalMateriales);
+    const [filaSubtotalHerr] = buscarFilaYCol(rows, "SUBTOTAL HERRAMIENTAS", filaSubtotalMateriales);
     let itemsHerramientas = [];
     let totalHerramientas = 0;
     if (filaSubtotalHerr >= 0) {
@@ -10183,31 +10194,6 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     setEnviandoPedido(false);
   }
 
-  async function recibirPedidoMaterial(pedido) {
-    await updateRecord("pedidos_materiales", pedido.id, { estado: "Recibido" }, setPedidosMateriales);
-    await addRecord("compras_facturas", {
-      fecha: hoyISO(),
-      obraId: pedido.obraId,
-      ordenCompraId: null,
-      proveedor: pedido.proveedor || "Sin especificar",
-      categoria: "Materiales",
-      monto: pedido.total,
-      comprobante: "",
-      estado: "Pendiente",
-      cuenta: "Banco",
-    }, setComprasFacturas);
-    // Actualiza el "último proveedor" de cada material del catálogo, para que la próxima sugerencia de consolidación sea más precisa.
-    if (pedido.proveedor) {
-      for (const it of pedido.items) {
-        const existente = catalogoMateriales.find((m) => m.nombre.toLowerCase() === it.material.toLowerCase() && m.categoria === it.categoria);
-        if (existente) await updateRecord("catalogo_materiales", existente.id, { ultimoProveedor: pedido.proveedor }, setCatalogoMateriales);
-      }
-    }
-  }
-  async function marcarPedidoRecibido(pedido) {
-    if (!window.confirm(`¿Marcar este pedido como recibido en obra? Esto suma ${fmtARS(pedido.total)} a la curva de inversión real de la obra.`)) return;
-    await recibirPedidoMaterial(pedido);
-  }
   const puedeAprobarPedidos = currentRole === "Gerente";
   async function aprobarPedidoMaterial(pedido) {
     await updateRecord("pedidos_materiales", pedido.id, { estado: "Aprobado", aprobadoPor: currentRole, fechaAprobacion: hoyISO() }, setPedidosMateriales);
@@ -10260,7 +10246,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   }
 
   // ---------- Orden de Compra en PDF ----------
-  function generarOrdenCompraPDF(pedido) {
+  async function generarOrdenCompraPDF(pedido) {
+    await cargarJsPDF();
     const obra = obras.find((o) => o.id === pedido.obraId);
     const prov = proveedores.find((p) => p.razonSocial === pedido.proveedor);
     const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -10524,7 +10511,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
 
   // ---------- Orden de compra en PDF y envío al proveedor ----------
   const proveedorDeOC = (oc) => proveedores.find((p) => normalizarTexto(nombreComercial(p)) === normalizarTexto(oc.proveedor || "") || normalizarTexto(p.razonSocial || "") === normalizarTexto(oc.proveedor || ""));
-  function pdfOrdenCompra(oc) {
+  async function pdfOrdenCompra(oc) {
+    await cargarJsPDF();
     const obra = obras.find((o) => o.id === oc.obraId);
     const prov = proveedorDeOC(oc);
     const tot = totalesOC(oc);
@@ -10604,8 +10592,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     return doc;
   }
   const nombreArchivoOC = (oc) => `${numeroOC(oc).replace(" ", "_")}_${(oc.proveedor || "proveedor").replace(/[^\w-]+/g, "_")}.pdf`;
-  function descargarPdfOC(oc) {
-    pdfOrdenCompra(oc).save(nombreArchivoOC(oc));
+  async function descargarPdfOC(oc) {
+    (await pdfOrdenCompra(oc)).save(nombreArchivoOC(oc));
   }
   // Por WhatsApp o mail: en el celu abre el menú de compartir con el PDF adjunto; en la
   // compu se descarga el PDF y se abre WhatsApp Web / el mail con el mensaje listo
@@ -10614,7 +10602,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     const prov = proveedorDeOC(oc);
     const obra = obras.find((o) => o.id === oc.obraId);
     const nombre = nombreArchivoOC(oc);
-    const doc = pdfOrdenCompra(oc);
+    const doc = await pdfOrdenCompra(oc);
     const asunto = `${numeroOC(oc)} — ${DATOS_EMPRESA.razonSocial}`;
     const mensaje = `Hola${prov?.contacto ? ` ${prov.contacto}` : ""}, te enviamos la ${numeroOC(oc)} de ${DATOS_EMPRESA.razonSocial} para la obra ${obra?.nombre || ""}, por un total de ${fmtARS(totalesOC(oc).total)}. Por favor confirmanos que la recibiste y la fecha de entrega, e indicá el N° de orden en el remito y la factura. Gracias.`;
     let compartido = false;
