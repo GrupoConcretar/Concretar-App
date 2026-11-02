@@ -14,7 +14,7 @@ import {
 import { leerFactura, paginasPdfComoImagenes } from "./lectorFacturas.js";
 import {
   URL_CONSULTA_EXPEDIENTES, TIPOS_EXPEDIENTE, FERIADOS_NACIONALES, parsearNumeroExpediente, textoExpediente, consultarExpediente,
-  pasosSegunMovimientos, calcularPasosExpediente, diasHabilesEntre,
+  pasosSegunMovimientos, calcularPasosExpediente, diasHabilesEntre, RECESO_OBRAS_MENORES, enRecesoObrasMenores,
 } from "./expedientesSanJuan.js";
 
 // Paleta oficial del Manual de Marca (Grupo Concretar S.A.S)
@@ -1134,6 +1134,9 @@ function ExpedienteObra({ expediente, hoy, consultando, onCrear, onGuardar, onCo
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-stone-200">
         <div className="h-full bg-emerald-500" style={{ width: `${(hechos / 20) * 100}%` }} />
+      </div>
+      <div className={`rounded-md px-3 py-1.5 text-xs ${enRecesoObrasMenores(hoy) ? "bg-amber-100 font-semibold text-amber-900" : "text-slate-500"}`}>
+        {enRecesoObrasMenores(hoy) ? "Obras Menores está en receso: " : "Receso de Obras Menores: "}no trabaja {RECESO_OBRAS_MENORES.texto}. Esos días no se cuentan en los plazos ni en el pago estimado.
       </div>
       {hechos > 0 && (
         <div className="flex flex-wrap gap-3 text-xs">

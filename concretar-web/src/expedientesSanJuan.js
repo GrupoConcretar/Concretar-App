@@ -102,9 +102,16 @@ export const FERIADOS_NACIONALES = [
 // Fechas "AAAA-MM-DD" manejadas en UTC, así no las corre el huso horario.
 const aFecha = (iso) => new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
 const aIso = (d) => d.toISOString().slice(0, 10);
+// Receso de Obras Menores: todos los años no trabaja del 15 de diciembre al 31 de enero
+// (vuelve el 1 de febrero), así que en ese período los expedientes no avanzan.
+export const RECESO_OBRAS_MENORES = { desde: "12-15", hasta: "01-31", texto: "del 15 de diciembre al 1 de febrero" };
+export const enRecesoObrasMenores = (iso) => {
+  const mesDia = String(iso).slice(5, 10);
+  return mesDia >= RECESO_OBRAS_MENORES.desde || mesDia <= RECESO_OBRAS_MENORES.hasta;
+};
 export function esDiaHabil(iso, feriados) {
   const dia = aFecha(iso).getUTCDay();
-  return dia !== 0 && dia !== 6 && !feriados.has(String(iso).slice(0, 10));
+  return dia !== 0 && dia !== 6 && !feriados.has(String(iso).slice(0, 10)) && !enRecesoObrasMenores(iso);
 }
 // El día hábil número "n" contando desde el día siguiente a "iso".
 export function sumarDiasHabiles(iso, n, feriados) {
