@@ -5,7 +5,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck, ScanLine
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck, ScanLine, BatteryCharging
 } from "lucide-react";
 import { leerFactura, paginasPdfComoImagenes } from "./lectorFacturas.js";
 
@@ -324,14 +324,13 @@ const CATEGORIAS_POR_VISTA = {
 // Cuando el capataz agrega un ítem a mano no elige categoría — se infiere de la pestaña
 // en la que está parado (Materiales / Equipos y Herramientas / Epps / Consumibles).
 const CATEGORIA_DE_VISTA = { materiales: "Materiales", equipos: "Equipos", epps: "Epps", consumibles: "Consumibles" };
-const CATEGORIAS_HERRAMIENTA = ["Herramienta Eléctrica", "Herramienta Manual", "Equipo Eléctrico", "Equipo a Combustión"];
+const CATEGORIAS_HERRAMIENTA = ["Manual", "Batería", "Combustión"];
 const SI_NO = ["No", "Sí"];
 // Letra usada en el N° de serie automático (Tipo-Marca+N°). Cambiá acá si preferís otras letras.
 const LETRA_TIPO_HERRAMIENTA = {
-  "Herramienta Eléctrica": "E",
-  "Herramienta Manual": "M",
-  "Equipo Eléctrico": "Q",
-  "Equipo a Combustión": "C",
+  Manual: "M",
+  "Batería": "B",
+  "Combustión": "C",
 };
 const CATEGORIAS_PERSONAL = ["Oficial Especializado", "Oficial", "Medio Oficial", "Ayudante", "Gerente", "HyS", "Recursos Humanos", "Capataz", "Logística"];
 // Categorías de convenio UOCRA (CCT 76/75) — el resto de CATEGORIAS_PERSONAL es
@@ -533,10 +532,9 @@ const ICONO_ESPECIALIDAD = {
   Hierrero: Flame,
 };
 const ICONO_CATEGORIA_HERR = {
-  "Herramienta Eléctrica": Zap,
-  "Herramienta Manual": Hammer,
-  "Equipo Eléctrico": Wrench,
-  "Equipo a Combustión": Flame,
+  Manual: Hammer,
+  "Batería": BatteryCharging,
+  "Combustión": Flame,
 };
 const ESTADOS_ASISTENCIA = ["Presente", "Ausente", "Tardanza"];
 const DESVIO_ALERTA_PCT = 10;
@@ -4935,10 +4933,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     { id: 5, fecha: "2026-08-05", obraId: 2, nombre: "Pepito Chespirito", horas: 0, cargadoPor: "Capataz", estado: "Ausente" },
   ];
   const DEMO_HERRAMIENTAS = [
-    { id: 1, nombre: "Amoladora angular", numeroSerie: "E-MAK01", marca: "Makita", categoria: "Herramienta Eléctrica", ubicacion: "Oficina", estado: "Disponible", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "2 discos de corte de repuesto", observaciones: "", fechaUltimoCambioEstado: null },
-    { id: 2, nombre: "Andamio tubular (juego x6)", numeroSerie: "M-GEN01", marca: "", categoria: "Herramienta Manual", ubicacion: "Edificio Belgrano 450", estado: "En Obra", maletin: "No", accesorios: "No", detalleAccesorios: "", observaciones: "Faltan 2 crucetas, revisar al devolver", fechaUltimoCambioEstado: null },
-    { id: 3, nombre: "Rotomartillo SDS", numeroSerie: "E-BOS01", marca: "Bosch", categoria: "Herramienta Eléctrica", ubicacion: "Casa Quinta Yerba Buena", estado: "Mal Estado", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "3 puntas SDS, 1 cincel", observaciones: "Pierde potencia, revisar antes de que se rompa del todo", fechaUltimoCambioEstado: null },
-    { id: 4, nombre: "Nivel láser", numeroSerie: "Q-STA01", marca: "Stanley", categoria: "Equipo Eléctrico", ubicacion: "Electromecánica Ríos", estado: "En Reparación", maletin: "Sí", accesorios: "No", detalleAccesorios: "", observaciones: "No enciende, revisar batería", fechaUltimoCambioEstado: "2026-08-18T15:00:00.000Z" },
+    { id: 1, nombre: "Amoladora angular", numeroSerie: "B-MAK01", marca: "Makita", categoria: "Batería", ubicacion: "Oficina", estado: "Disponible", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "2 discos de corte de repuesto", observaciones: "", fechaUltimoCambioEstado: null },
+    { id: 2, nombre: "Andamio tubular (juego x6)", numeroSerie: "M-GEN01", marca: "", categoria: "Manual", ubicacion: "Edificio Belgrano 450", estado: "En Obra", maletin: "No", accesorios: "No", detalleAccesorios: "", observaciones: "Faltan 2 crucetas, revisar al devolver", fechaUltimoCambioEstado: null },
+    { id: 3, nombre: "Rotomartillo SDS", numeroSerie: "B-BOS01", marca: "Bosch", categoria: "Batería", ubicacion: "Casa Quinta Yerba Buena", estado: "Mal Estado", maletin: "Sí", accesorios: "Sí", detalleAccesorios: "3 puntas SDS, 1 cincel", observaciones: "Pierde potencia, revisar antes de que se rompa del todo", fechaUltimoCambioEstado: null },
+    { id: 4, nombre: "Nivel láser", numeroSerie: "B-STA01", marca: "Stanley", categoria: "Batería", ubicacion: "Electromecánica Ríos", estado: "En Reparación", maletin: "Sí", accesorios: "No", detalleAccesorios: "", observaciones: "No enciende, revisar batería", fechaUltimoCambioEstado: "2026-08-18T15:00:00.000Z" },
   ];
   const DEMO_COMBOS = [
     {
@@ -4968,15 +4966,15 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     },
   ];
   const DEMO_CATALOGO_NOMBRES = [
-    { id: 1, categoria: "Herramienta Eléctrica", nombre: "Amoladora angular" },
-    { id: 2, categoria: "Herramienta Eléctrica", nombre: "Rotomartillo SDS" },
-    { id: 3, categoria: "Herramienta Eléctrica", nombre: "Taladro percutor" },
-    { id: 4, categoria: "Herramienta Manual", nombre: "Andamio tubular (juego x6)" },
-    { id: 5, categoria: "Herramienta Manual", nombre: "Carretilla" },
-    { id: 6, categoria: "Equipo Eléctrico", nombre: "Nivel láser" },
-    { id: 7, categoria: "Equipo Eléctrico", nombre: "Soldadora" },
-    { id: 8, categoria: "Equipo a Combustión", nombre: "Generador" },
-    { id: 9, categoria: "Equipo a Combustión", nombre: "Compactadora" },
+    { id: 1, categoria: "Batería", nombre: "Amoladora angular" },
+    { id: 2, categoria: "Batería", nombre: "Rotomartillo SDS" },
+    { id: 3, categoria: "Batería", nombre: "Taladro percutor" },
+    { id: 4, categoria: "Manual", nombre: "Andamio tubular (juego x6)" },
+    { id: 5, categoria: "Manual", nombre: "Carretilla" },
+    { id: 6, categoria: "Batería", nombre: "Nivel láser" },
+    { id: 7, categoria: "Batería", nombre: "Soldadora" },
+    { id: 8, categoria: "Combustión", nombre: "Generador" },
+    { id: 9, categoria: "Combustión", nombre: "Compactadora" },
   ];
   const DEMO_CATALOGO_MARCAS = [
     { id: 1, nombre: "Makita" },
@@ -9133,7 +9131,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
 
   const [filtroHerr, setFiltroHerr] = useState({ ubicacion: "Todas", estado: "Todos" });
 
-  // N° de serie automático: letra de tipo + 3 letras de marca + N° correlativo (ej: E-BOS01)
+  // N° de serie automático: letra de tipo + 3 letras de marca + N° correlativo (ej: B-BOS01)
   function generarNumeroSerie(categoria, marca) {
     const letraTipo = LETRA_TIPO_HERRAMIENTA[categoria] || "X";
     const letrasMarca = (marca || "GEN").replace(/[^a-zA-Zñ]/g, "").toUpperCase().padEnd(3, "X").slice(0, 3);
