@@ -567,6 +567,70 @@ const TARJETAS_SOCIOS = { "Tarjeta Ricardo": "Ricardo", "Tarjeta Pablo": "Pablo"
 // $1): son diferencias de redondeo entre lo que se cargó y el resumen del proveedor.
 const TOLERANCIA_REDONDEO_DEUDA = 1;
 const esTarjetaSocio = (cuenta) => Object.prototype.hasOwnProperty.call(TARJETAS_SOCIOS, cuenta || "");
+// Compras con la tarjeta de un socio en cuotas: el resumen de la tarjeta se paga más o
+// menos el 5 de cada mes, así que la primera cuota se propone para el 5 del mes
+// siguiente a la compra y las demás caen el mismo día de los meses que siguen.
+const DIA_PAGO_TARJETA = 5;
+const OPCIONES_CUOTAS_TARJETA = Array.from({ length: 24 }, (_, i) => i + 1);
+function isoDeFechaLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+// Suma n meses a una fecha "YYYY-MM-DD" sin pasarse de mes (el 31 cae en el último día).
+function sumarMesesISO(fechaISO, n) {
+  const [y, m, d] = fechaISO.slice(0, 10).split("-").map(Number);
+  const ultimoDia = new Date(y, m - 1 + n + 1, 0).getDate();
+  return isoDeFechaLocal(new Date(y, m - 1 + n, Math.min(d, ultimoDia)));
+}
+function primeraCuotaSugerida(fechaCompra) {
+  const base = fechaLocal(fechaCompra) || new Date();
+  return isoDeFechaLocal(new Date(base.getFullYear(), base.getMonth() + 1, DIA_PAGO_TARJETA));
+}
+// Reparte el total en cuotas iguales (en centavos); la última absorbe el redondeo.
+function montosCuotas(total, cuotas) {
+  const n = Math.max(1, Number(cuotas) || 1);
+  const centavos = Math.round((Number(total) || 0) * 100);
+  const base = Math.floor(centavos / n);
+  return Array.from({ length: n }, (_, i) => (i === n - 1 ? centavos - base * (n - 1) : base) / 100);
+}
+// Datos de la deuda de la empresa con un socio por algo pagado con su tarjeta: un
+// préstamo sin interés con cuenta "Tarjeta X" (que no es una cuenta de la empresa, así
+// que no suma ni resta en ningún saldo). Su "fecha estimada de devolución" es la de la
+// última cuota.
+function datosDeudaTarjeta({ tarjeta, fecha, monto, detalle, cuotas, primeraCuota }) {
+  const n = Math.max(1, Number(cuotas) || 1);
+  return {
+    fecha,
+    acreedor: `${TARJETAS_SOCIOS[tarjeta]} (tarjeta de crédito) — ${detalle}`,
+    capital: Number(monto) || 0,
+    tasaAnualPct: 0,
+    cuenta: tarjeta,
+    cuotas: n,
+    fechaPrimeraCuota: primeraCuota || null,
+    fechaEstimadaDevolucion: primeraCuota ? sumarMesesISO(primeraCuota, n - 1) : null,
+  };
+}
+// Cronograma de una deuda con tarjeta: cada cuota con su fecha, su monto y cuánto ya se
+// le devolvió al socio. Las devoluciones se aplican a las cuotas en orden (primero la
+// más vieja). Las cargadas antes de que existieran las cuotas son una sola cuota en su
+// fecha estimada de devolución.
+function cuotasDeudaTarjeta(p, pagos) {
+  const n = Math.max(1, Number(p.cuotas) || 1);
+  const primera = p.fechaPrimeraCuota || (n === 1 ? p.fechaEstimadaDevolucion : null) || null;
+  let devuelto = p.estado === "Pagado" ? Infinity : pagos.filter((pg) => pg.prestamoId === p.id).reduce((s, pg) => s + (pg.monto || 0), 0);
+  return montosCuotas(p.capital, n).map((monto, i) => {
+    const pagado = Math.min(monto, Math.max(0, devuelto));
+    devuelto -= monto;
+    const falta = monto - pagado > TOLERANCIA_REDONDEO_DEUDA ? monto - pagado : 0;
+    return { numero: i + 1, de: n, fecha: primera ? sumarMesesISO(primera, i) : null, monto, pagado: monto - falta, falta };
+  });
+}
+// "Una cuota de $X" / "6 cuotas de $X" (si la última sale distinta por el redondeo, se aclara).
+function textoCuotas(total, cuotas) {
+  const montos = montosCuotas(total, cuotas);
+  if (montos.length === 1) return `Un pago de ${fmtARS(montos[0])}`;
+  const ultima = montos[montos.length - 1];
+  return `${montos.length} cuotas de ${fmtARS(montos[0])}${Math.abs(ultima - montos[0]) >= 0.01 ? ` (la última de ${fmtARS(ultima)})` : ""}`;
+}
 // "Cuenta corriente" es su propia forma de pago (no es un medio del Banco: es una
 // deuda con el proveedor, todavía no se sabe por qué canal real se va a saldar).
 const FORMAS_PAGO = ["Banco", "Mercado Pago", "MP Pablo", "MP Ricardo", "Efectivo", "Cuenta corriente"];
@@ -3276,7 +3340,7 @@ function ModalEditarPrestamo({ prestamo, onClose, onGuardar }) {
 // Modal para registrar una devolución parcial de un préstamo. El pago cubre
 // primero el interés acumulado hasta esa fecha y lo que sobra amortiza
 // capital — de ahí en más el interés corre sobre el saldo que quede.
-function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
+function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar, atajos = [] }) {
   const [fecha, setFecha] = useState(hoyISO());
   const [monto, setMonto] = useState(0);
   // Si el préstamo nació de la tarjeta de un socio, esa "cuenta" no es de la empresa:
@@ -3323,13 +3387,20 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
             <Field label="Monto a devolver ($)">
               <MoneyInput key={montoResetKey} value={monto} onChange={setMonto} className={inputCls} />
             </Field>
-            <button
-              type="button"
-              onClick={() => { setMonto(totalAEstaFecha); setMontoResetKey((k) => k + 1); }}
-              className={`${btnGhost} mt-1.5`}
-            >
-              Cargar el total a esta fecha ({fmtARS(totalAEstaFecha)})
-            </button>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {atajos.map((a) => (
+                <button key={a.label} type="button" onClick={() => { setMonto(a.monto); setMontoResetKey((k) => k + 1); }} className={btnGhost}>
+                  {a.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => { setMonto(totalAEstaFecha); setMontoResetKey((k) => k + 1); }}
+                className={btnGhost}
+              >
+                Cargar el total a esta fecha ({fmtARS(totalAEstaFecha)})
+              </button>
+            </div>
           </div>
           <div className="rounded-md border border-dashed border-stone-300 bg-stone-50 p-3 text-xs text-slate-600 md:col-span-2">
             <div className="flex items-center justify-between"><span>Interés acumulado hasta esta fecha</span><span className="font-mono">{fmtARS(interesAlPagar)}</span></div>
@@ -3346,6 +3417,76 @@ function ModalPagoPrestamo({ prestamo, pagos, onClose, onGuardar }) {
   );
 }
 
+// Devolverle a los socios, de una vez, las cuotas de tarjeta de un mes (las vencidas que
+// falten también): un pago por cada compra, todos con la misma fecha y cuenta.
+function ModalDevolverCuotasTarjeta({ titulo, cuotas, onClose, onGuardar }) {
+  const [fecha, setFecha] = useState(hoyISO());
+  const [cuenta, setCuenta] = useState(CUENTAS[0]);
+  const [elegidas, setElegidas] = useState(() => new Set(cuotas.map((c) => c.id)));
+  const [guardando, setGuardando] = useState(false);
+  const seleccion = cuotas.filter((c) => elegidas.has(c.id));
+  const total = seleccion.reduce((s, c) => s + c.falta, 0);
+  const porSocio = Object.entries(seleccion.reduce((acc, c) => ({ ...acc, [c.deuda.socio]: (acc[c.deuda.socio] || 0) + c.falta }), {}));
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-lg font-bold text-slate-900">{titulo}</h3>
+          <button onClick={onClose} aria-label="Cerrar"><X size={18} /></button>
+        </div>
+        <form
+          className="space-y-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (seleccion.length === 0) { alert("Elegí al menos una cuota."); return; }
+            setGuardando(true);
+            await onGuardar(seleccion.map((c) => ({ deudaId: c.deuda.id, monto: c.falta })), fecha, cuenta);
+            setGuardando(false);
+          }}
+        >
+          <div className="max-h-72 space-y-1 overflow-y-auto rounded-md border border-stone-200 p-2">
+            {cuotas.map((c) => (
+              <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-stone-50">
+                <input
+                  type="checkbox"
+                  checked={elegidas.has(c.id)}
+                  onChange={(e) => setElegidas((prev) => { const n = new Set(prev); if (e.target.checked) n.add(c.id); else n.delete(c.id); return n; })}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium text-slate-800">{c.deuda.socio} · {c.deuda.proveedor}</span>
+                  <span className="block text-xs text-slate-500">{c.de > 1 ? `Cuota ${c.numero} de ${c.de}` : "Un pago"} · {fmtFecha(c.fecha)}{c.fecha && diasEntreHoy(c.fecha) < 0 ? " (vencida)" : ""}</span>
+                </span>
+                <span className="font-mono text-sm font-semibold text-rose-600">{fmtARS(c.falta)}</span>
+              </label>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Fecha de la devolución"><FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
+            <Field label="Cuenta de la que sale">
+              <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={inputCls}>
+                {CUENTAS.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div className="rounded-md border border-dashed border-stone-300 bg-stone-50 p-3 text-xs text-slate-600">
+            {porSocio.map(([socio, monto]) => (
+              <div key={socio} className="flex items-center justify-between"><span>A {socio}</span><span className="font-mono">{fmtARS(monto)}</span></div>
+            ))}
+            <div className="mt-1 flex items-center justify-between border-t border-stone-200 pt-1 font-semibold text-slate-800"><span>Sale de {cuenta}</span><span className="font-mono">{fmtARS(total)}</span></div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button disabled={guardando} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">{guardando ? "Guardando…" : "Registrar devolución"}</button>
+            <button type="button" onClick={onClose} className={btnGhost}>Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+function diasEntreHoy(fechaStr) {
+  return Math.round((fechaLocal(fechaStr) - fechaLocal(hoyISO())) / 86400000);
+}
+
 // Obras que se ofrecen para cargarles algo nuevo (gastos, ingresos, asistencia,
 // herramientas, tanteros...): ni las de la Papelera ni las Finalizadas. Si el registro
 // que se está editando ya era de una obra finalizada, esa se sigue mostrando para no
@@ -3357,7 +3498,7 @@ function obrasSeleccionables(obras, idActual = null) {
 // desde su propia tabla y desde el ledger de Movimientos en Cuentas. Sirve sobre
 // todo para agregar la factura (tipo A/B/C, o el archivo) cuando al cargarlo
 // todavía no se tenía.
-function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingresos, movimientosManual, obras, proveedores = [], facturasVarias = [], onVincularFacturaVaria, onClose, onGuardarCompra, onGuardarCobro, onGuardarIngreso, onGuardarManual, onEliminar }) {
+function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingresos, movimientosManual, obras, proveedores = [], facturasVarias = [], prestamos = [], onVincularFacturaVaria, onClose, onGuardarCompra, onGuardarCobro, onGuardarIngreso, onGuardarManual, onEliminar }) {
   const registroInicial =
     editando.origen === "compras_facturas" ? comprasFacturas.find((c) => c.id === editando.origenId)
     : editando.origen === "cobros_socios" ? cobrosSocios.find((c) => c.id === editando.origenId)
@@ -3379,7 +3520,13 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
       const fechaVencimientoCc = formaPago === "Cuenta corriente" && registroInicial.estado === "Pendiente"
         ? (registroInicial.fechaVencimientoCc || fechaMasDias(30))
         : registroInicial.fechaVencimientoCc;
-      return { ...registroInicial, formaPago, fechaVencimientoCc };
+      // Pagada con la tarjeta de un socio: las cuotas y la primera fecha salen de su deuda.
+      const deudaTarjeta = registroInicial.prestamoId ? prestamos.find((p) => p.id === registroInicial.prestamoId) : null;
+      return {
+        ...registroInicial, formaPago, fechaVencimientoCc,
+        cuotasTarjeta: deudaTarjeta?.cuotas || 1,
+        primeraCuotaTarjeta: deudaTarjeta?.fechaPrimeraCuota || deudaTarjeta?.fechaEstimadaDevolucion || "",
+      };
     }
     return registroInicial;
   });
@@ -3446,7 +3593,7 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
         nombreArchivo: form.nombreArchivo,
         tipoArchivo: form.tipoArchivo,
         percepciones: percepcionesDe(form).filter((x) => (Number(x.monto) || 0) > 0),
-      });
+      }, esTarjetaSocio(form.formaPago) ? { cuotas: form.cuotasTarjeta || 1, primeraCuota: form.primeraCuotaTarjeta || null } : null);
     } else if (editando.origen === "cobros_socios") {
       onGuardarCobro(editando.origenId, {
         socio: form.socio,
@@ -3575,14 +3722,31 @@ function ModalEditarMovimiento({ editando, comprasFacturas, cobrosSocios, ingres
                         const medioBancario = MEDIOS_BANCARIOS.includes(f.medioBancario) ? f.medioBancario : "Débito/Transferencia";
                         return { ...f, formaPago, cuenta: "Banco", medioBancario, estado: medioBancario === "eCheq" ? "Pendiente" : "Pagada", fechaVencimientoCc: null };
                       }
-                      return { ...f, formaPago, cuenta: formaPago, medioBancario: null, estado: "Pagada", fechaPagoEcheq: null, fechaVencimientoCc: null };
+                      const tarjeta = esTarjetaSocio(formaPago)
+                        ? { cuotasTarjeta: f.cuotasTarjeta || 1, primeraCuotaTarjeta: f.primeraCuotaTarjeta || primeraCuotaSugerida(f.fecha) }
+                        : {};
+                      return { ...f, ...tarjeta, formaPago, cuenta: formaPago, medioBancario: null, estado: "Pagada", fechaPagoEcheq: null, fechaVencimientoCc: null };
                     });
                   }}
                   className={inputCls}
                 >
                   {FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}
+                  <optgroup label="Tarjeta de crédito de un socio">
+                    {Object.entries(TARJETAS_SOCIOS).map(([t, socio]) => <option key={t} value={t}>Tarjeta de crédito de {socio}</option>)}
+                  </optgroup>
                 </select>
               </Field>
+              {esTarjetaSocio(form.formaPago) && (
+                <>
+                  <CamposCuotasTarjeta
+                    cuotas={form.cuotasTarjeta}
+                    onCuotas={(n) => setForm((f) => ({ ...f, cuotasTarjeta: n }))}
+                    primeraCuota={form.primeraCuotaTarjeta}
+                    onPrimeraCuota={(v) => setForm((f) => ({ ...f, primeraCuotaTarjeta: v }))}
+                  />
+                  <AvisoCuotasTarjeta socio={TARJETAS_SOCIOS[form.formaPago]} total={Number(form.monto) || 0} cuotas={form.cuotasTarjeta} primeraCuota={form.primeraCuotaTarjeta} className="md:col-span-2" />
+                </>
+              )}
               {form.formaPago === "Banco" && (
                 <Field label="Medio">
                   <select
@@ -4210,12 +4374,53 @@ function FormularioGastoRecurrente({ claveMes, onAgregar }) {
 // cuenta salió, sin elegir facturas. Antes de guardar muestra qué facturas (las
 // más viejas) quedan saldadas y cuánto le falta a la siguiente.
 // Con "inicial" el mismo formulario sirve para modificar una entrega ya cargada.
+// Campos de un pago con la tarjeta de crédito de un socio: en cuántas cuotas y cuándo se
+// paga la primera (las demás, el mismo día de los meses siguientes).
+function CamposCuotasTarjeta({ cuotas, onCuotas, primeraCuota, onPrimeraCuota }) {
+  const n = Math.max(1, Number(cuotas) || 1);
+  return (
+    <>
+      <Field label="Cuotas">
+        <select value={n} onChange={(e) => onCuotas(Number(e.target.value))} className={inputCls}>
+          {OPCIONES_CUOTAS_TARJETA.map((c) => <option key={c} value={c}>{c === 1 ? "1 pago" : `${c} cuotas`}</option>)}
+        </select>
+      </Field>
+      <Field label={n === 1 ? "Fecha de pago de la tarjeta" : "Pago de la 1ª cuota"}>
+        <FechaInput value={primeraCuota || ""} onChange={(e) => onPrimeraCuota(e.target.value)} required className={inputCls} />
+      </Field>
+    </>
+  );
+}
+// Resumen de lo que va a quedar como deuda con el socio: el valor de cada cuota (sale
+// solo del total) y entre qué fechas se devuelve.
+function AvisoCuotasTarjeta({ socio, total, cuotas, primeraCuota, className = "" }) {
+  const n = Math.max(1, Number(cuotas) || 1);
+  const ultima = primeraCuota ? sumarMesesISO(primeraCuota, n - 1) : null;
+  return (
+    <div className={`flex items-start gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs text-sky-900 ${className}`}>
+      <CreditCard size={14} className="mt-0.5 shrink-0" />
+      <span>
+        {total > 0 ? (
+          <span className="font-semibold">
+            {textoCuotas(total, n)}
+            {primeraCuota && (n === 1 ? ` el ${fmtFecha(primeraCuota)}` : `, del ${fmtFecha(primeraCuota)} al ${fmtFecha(ultima)}`)}.
+          </span>
+        ) : (
+          <span className="font-semibold">Cargá el monto total y la app calcula cada cuota.</span>
+        )}{" "}
+        No sale plata de las cuentas de la empresa: queda en Cuentas → Deudas tarjetas que la empresa le debe {total > 0 ? <span className="font-mono font-semibold">{fmtARS(total)}</span> : "ese total"} a {socio}, y cada cuota suma como egreso en los Próximos pagos de su mes.
+      </span>
+    </div>
+  );
+}
+
 function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar, onCancelar, inicial = null }) {
   const editando = !!inicial;
   const [fecha, setFecha] = useState(inicial?.fecha || hoyISO());
   const [monto, setMonto] = useState(inicial?.monto || 0);
   const [cuenta, setCuenta] = useState(inicial?.cuenta || CUENTAS[0]);
   const [fechaPagoTarjeta, setFechaPagoTarjeta] = useState(inicial?.fechaPagoTarjeta || "");
+  const [cuotasTarjeta, setCuotasTarjeta] = useState(inicial?.cuotasTarjeta || 1);
   const [nota, setNota] = useState(inicial?.nota || "");
   const [guardando, setGuardando] = useState(false);
   const socioTarjeta = TARJETAS_SOCIOS[cuenta];
@@ -4244,7 +4449,7 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
         e.preventDefault();
         if (!(monto > 0)) { alert("Cargá el monto que le entregaste al proveedor."); return; }
         setGuardando(true);
-        const ok = await onGuardar({ fecha, monto, cuenta, nota: nota.trim(), fechaPagoTarjeta: socioTarjeta ? fechaPagoTarjeta : null });
+        const ok = await onGuardar({ fecha, monto, cuenta, nota: nota.trim(), fechaPagoTarjeta: socioTarjeta ? fechaPagoTarjeta : null, cuotasTarjeta: socioTarjeta ? cuotasTarjeta : null });
         setGuardando(false);
         if (ok) onCancelar();
       }}
@@ -4260,7 +4465,14 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
         <Field label="Fecha"><FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field>
         <Field label="Monto entregado"><MoneyInput name="montoEntrega" value={inicial?.monto} onChange={setMonto} puntoDecimalAlPegar placeholder="0" className={inputCls} /></Field>
         <Field label="Sale de">
-          <select value={cuenta} onChange={(e) => setCuenta(e.target.value)} className={inputCls}>
+          <select
+            value={cuenta}
+            onChange={(e) => {
+              setCuenta(e.target.value);
+              if (esTarjetaSocio(e.target.value) && !fechaPagoTarjeta) setFechaPagoTarjeta(primeraCuotaSugerida(fecha));
+            }}
+            className={inputCls}
+          >
             {CUENTAS.map((c) => <option key={c}>{c}</option>)}
             <optgroup label="Tarjeta de crédito de un socio">
               {Object.entries(TARJETAS_SOCIOS).map(([t, socio]) => <option key={t} value={t}>Tarjeta de crédito de {socio}</option>)}
@@ -4268,18 +4480,11 @@ function FormularioEntregaProveedor({ saldo, facturas, creditoActual, onGuardar,
           </select>
         </Field>
         {socioTarjeta && (
-          <Field label="Fecha de pago de la tarjeta">
-            <FechaInput value={fechaPagoTarjeta} onChange={(e) => setFechaPagoTarjeta(e.target.value)} required className={inputCls} />
-          </Field>
+          <CamposCuotasTarjeta cuotas={cuotasTarjeta} onCuotas={setCuotasTarjeta} primeraCuota={fechaPagoTarjeta} onPrimeraCuota={setFechaPagoTarjeta} />
         )}
         <Field label="Nota (opcional)"><input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej: recibo N° 1234" className={inputCls} /></Field>
       </div>
-      {socioTarjeta && (
-        <div className="flex items-start gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs text-sky-900">
-          <CreditCard size={14} className="mt-0.5 shrink-0" />
-          <span>No sale plata de las cuentas de la empresa: queda anotado que la empresa le debe <span className="font-mono font-semibold">{fmtARS(monto || 0)}</span> a {socioTarjeta}, con aviso en General antes de la fecha de pago de la tarjeta. Cuando se lo devuelvan, se registra desde "Cobros Ricardo y Pablo" o desde Cuentas → Préstamos.</span>
-        </div>
-      )}
+      {socioTarjeta && <AvisoCuotasTarjeta socio={socioTarjeta} total={monto || 0} cuotas={cuotasTarjeta} primeraCuota={fechaPagoTarjeta} />}
       {monto > 0 && (
         <div className="space-y-1 rounded-md border border-stone-200 bg-white px-2.5 py-2 text-xs text-slate-600">
           <div className="flex flex-wrap items-center gap-x-2">
@@ -5072,6 +5277,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     { id: 10, fecha: "2026-08-20", obraId: 1, ordenCompraId: null, proveedor: "Aberturas del Norte", categoria: "Materiales", monto: 2000000, estado: "Pendiente", tipoFactura: "B", formaPago: "eCheq", fechaPagoEcheq: "2026-10-15", cuenta: "Banco" },
     { id: 11, fecha: "2026-08-10", obraId: 1, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 900000, estado: "Pendiente", tipoFactura: "C", formaPago: "Cuenta corriente", cuenta: null },
     { id: 12, fecha: "2026-08-22", obraId: 2, ordenCompraId: null, proveedor: "Corralón San Martín", categoria: "Materiales", monto: 350000, estado: "Pendiente", tipoFactura: "Sin factura", formaPago: "Cuenta corriente", cuenta: null },
+    // Compra en 6 cuotas con la tarjeta de Ricardo (la deuda con él es el préstamo 3).
+    { id: 13, fecha: "2026-10-20", obraId: 1, ordenCompraId: null, proveedor: "Ferretería Industrial", categoria: "Equipos y Herramientas", descripcion: "Amoladora y taladro", monto: 1200000, estado: "Pagada", tipoFactura: "A", formaPago: "Tarjeta Ricardo", cuenta: "Tarjeta Ricardo", prestamoId: 3 },
   ];
 
   const DEMO_INGRESOS = [
@@ -5086,6 +5293,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const DEMO_PRESTAMOS = [
     { id: 1, fecha: "2026-06-01", acreedor: "Inversor Juan Pérez", capital: 5000000, tasaAnualPct: 60, cuenta: "Banco", fechaEstimadaDevolucion: "2026-12-01", estado: "Vigente", fechaPago: null, montoPagado: null },
     { id: 2, fecha: "2026-01-15", acreedor: "Banco San Juan", capital: 2000000, tasaAnualPct: 40, cuenta: "Banco", fechaEstimadaDevolucion: "2026-04-15", estado: "Pagado", fechaPago: "2026-04-10", montoPagado: 2186301.37 },
+    { id: 3, fecha: "2026-10-20", acreedor: "Ricardo (tarjeta de crédito) — Ferretería Industrial", capital: 1200000, tasaAnualPct: 0, cuenta: "Tarjeta Ricardo", cuotas: 6, fechaPrimeraCuota: "2026-11-05", fechaEstimadaDevolucion: "2027-04-05", estado: "Vigente", fechaPago: null, montoPagado: null },
+    { id: 4, fecha: "2026-10-13", acreedor: "Ricardo (tarjeta de crédito) — Trielec", capital: 792044, tasaAnualPct: 0, cuenta: "Tarjeta Ricardo", fechaEstimadaDevolucion: "2026-11-10", estado: "Vigente", fechaPago: null, montoPagado: null },
   ];
   const DEMO_PRESTAMOS_PAGOS = [
     { id: 1, prestamoId: 1, fecha: "2026-07-15", monto: 1000000, cuenta: "Banco" },
@@ -5105,7 +5314,9 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // Entregas a cuenta a proveedores: plata que se le lleva al proveedor sin
   // pagar factura por factura — resta de la deuda total y salda solas las
   // facturas más viejas que alcanza a cubrir.
-  const DEMO_ENTREGAS_PROVEEDORES = [];
+  const DEMO_ENTREGAS_PROVEEDORES = [
+    { id: 1, fecha: "2026-10-13", proveedor: "Trielec", monto: 792044, cuenta: "Tarjeta Ricardo", medioBancario: null, nota: "383/4795", prestamoId: 4 },
+  ];
 
   // Facturas físicas (PDF o foto) que se suben de a varias juntas para un
   // proveedor, marcadas con el mes al que corresponden — no están atadas a
@@ -5249,6 +5460,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const comprasFacturas = comprasFacturasRaw.filter((c) => !c.eliminadoEn);
   const ingresos = ingresosRaw.filter((i) => !i.eliminadoEn);
   const prestamos = prestamosRaw.filter((p) => !p.eliminadoEn);
+  // Las deudas con un socio por compras con su tarjeta de crédito también se guardan como
+  // préstamos (sin interés), pero tienen su propia sección (Cuentas → Deudas tarjetas):
+  // en Préstamos solo van los de inversores y bancos.
+  const prestamosReales = prestamos.filter((p) => !esTarjetaSocio(p.cuenta));
   const cobrosSocios = cobrosSociosRaw.filter((c) => !c.eliminadoEn);
   const notasCredito = notasCreditoRaw.filter((n) => !n.eliminadoEn);
   const etapasObra = etapasObraRaw.filter((e) => !e.eliminadoEn);
@@ -6098,12 +6313,46 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const echeqsProximosADebitar = comprasFacturas
     .filter((c) => (c.medioBancario === "eCheq" || c.formaPago === "eCheq") && c.estado === "Pendiente" && !obraIdsPapelera.has(c.obraId) && c.fechaPagoEcheq && diasHasta(c.fechaPagoEcheq) >= 1 && diasHasta(c.fechaPagoEcheq) <= DIAS_AVISO_ECHEQ)
     .sort((a, b) => fechaLocal(a.fechaPagoEcheq) - fechaLocal(b.fechaPagoEcheq));
-  // Lo que la empresa le debe a un socio por algo que pagó con su tarjeta de crédito:
-  // avisa desde 5 días antes de la fecha de pago de la tarjeta y sigue avisando si ya
-  // venció, hasta que se le devuelva todo.
-  const deudasTarjetaSocioPorVencer = prestamos
-    .filter((p) => p.estado !== "Pagado" && esTarjetaSocio(p.cuenta) && p.fechaEstimadaDevolucion && diasHasta(p.fechaEstimadaDevolucion) <= 5)
-    .sort((a, b) => fechaLocal(a.fechaEstimadaDevolucion) - fechaLocal(b.fechaEstimadaDevolucion));
+  // ---------- Deudas tarjetas ----------
+  // Lo que la empresa le debe a cada socio por compras pagadas con su tarjeta de crédito:
+  // las de Gastos y Facturas (forma de pago "Tarjeta de crédito de ...") y las entregas a
+  // cuenta a un proveedor que salieron de esa tarjeta. Cada una se devuelve en cuotas.
+  // Si la compra se borró (o está en la Papelera, o es de una obra en la Papelera), su
+  // deuda deja de contar.
+  const prestamoIdsDeCompras = new Map(comprasFacturas.filter((c) => c.prestamoId && !obraIdsPapelera.has(c.obraId)).map((c) => [c.prestamoId, c]));
+  const prestamoIdsDeEntregas = new Map(entregasProveedores.filter((e) => e.prestamoId).map((e) => [e.prestamoId, e]));
+  const deudasTarjeta = prestamos
+    .filter((p) => esTarjetaSocio(p.cuenta) && (prestamoIdsDeCompras.has(p.id) || prestamoIdsDeEntregas.has(p.id)))
+    .map((p) => {
+      const compra = prestamoIdsDeCompras.get(p.id) || null;
+      const entrega = compra ? null : prestamoIdsDeEntregas.get(p.id) || null;
+      const cuotas = cuotasDeudaTarjeta(p, prestamosPagos);
+      const falta = cuotas.reduce((s, c) => s + c.falta, 0);
+      return {
+        id: p.id,
+        prestamo: p,
+        socio: TARJETAS_SOCIOS[p.cuenta],
+        compra,
+        entrega,
+        proveedor: compra?.proveedor || entrega?.proveedor || p.acreedor.split(" — ")[1] || "",
+        detalle: compra ? (compra.descripcion || compra.categoria || "") : `Entrega a cuenta${entrega?.nota ? ` (${entrega.nota})` : ""}`,
+        obraId: compra?.obraId ?? null,
+        cuotas,
+        total: p.capital || 0,
+        falta,
+        cuotasPagadas: cuotas.filter((c) => c.falta === 0).length,
+        proxima: cuotas.find((c) => c.falta > 0) || null,
+      };
+    })
+    .sort((a, b) => fechaLocal(a.prestamo.fecha) - fechaLocal(b.prestamo.fecha) || a.id - b.id);
+  const deudasTarjetaVigentes = deudasTarjeta.filter((d) => d.prestamo.estado !== "Pagado" && d.falta > 0);
+  // Todas las cuotas que faltan devolver, una por fila (para el mes a mes y los avisos).
+  const cuotasTarjetaPendientes = deudasTarjetaVigentes
+    .flatMap((d) => d.cuotas.filter((c) => c.falta > 0).map((c) => ({ ...c, id: `${d.id}-${c.numero}`, deuda: d })))
+    .sort((a, b) => fechaLocal(a.fecha || a.deuda.prestamo.fecha) - fechaLocal(b.fecha || b.deuda.prestamo.fecha));
+  // Aviso en General desde 5 días antes del pago de cada cuota (y si ya pasó, hasta que
+  // se le devuelva al socio).
+  const deudasTarjetaSocioPorVencer = cuotasTarjetaPendientes.filter((c) => c.fecha && diasHasta(c.fecha) <= 5);
 
   // "Visto bueno" de alertas: una vez descartada (tick) no vuelve a aparecer,
   // salvo que cambie lo que la generó — se identifica con un tipo fijo más
@@ -6487,6 +6736,11 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const [facturaPlazoEcheq, setFacturaPlazoEcheq] = useState("30");
   const [facturaEstadoCC, setFacturaEstadoCC] = useState("Pendiente");
   const [facturaMedioPagoCC, setFacturaMedioPagoCC] = useState("Efectivo");
+  // Pagada con la tarjeta de crédito de un socio: en cuántas cuotas, cuándo se paga la
+  // primera, y el total tipeado (para mostrar al toque cuánto es cada cuota).
+  const [facturaCuotasTarjeta, setFacturaCuotasTarjeta] = useState(1);
+  const [facturaPrimeraCuota, setFacturaPrimeraCuota] = useState("");
+  const [facturaMontoTecleado, setFacturaMontoTecleado] = useState(null);
   const [facturaArchivo, setFacturaArchivo] = useState(null);
   const [facturaNombreArchivo, setFacturaNombreArchivo] = useState(null);
   const [facturaTipoArchivo, setFacturaTipoArchivo] = useState(null);
@@ -6557,7 +6811,21 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         estado = "Pagada";
       }
     }
+    // Con la tarjeta de un socio no sale plata de ninguna cuenta de la empresa: queda una
+    // deuda con ese socio en cuotas (Cuentas → Deudas tarjetas), vinculada a la compra.
+    let deudaTarjeta = null;
+    if (esTarjetaSocio(formaPago)) {
+      if (!facturaPrimeraCuota) { alert("Cargá la fecha de pago de la tarjeta."); return; }
+      deudaTarjeta = await addRecord("prestamos", {
+        ...datosDeudaTarjeta({ tarjeta: formaPago, fecha: f.get("fecha"), monto: Number(f.get("monto")) || 0, detalle: f.get("proveedor"), cuotas: facturaCuotasTarjeta, primeraCuota: facturaPrimeraCuota }),
+        estado: "Vigente",
+        fechaPago: null,
+        montoPagado: null,
+      }, setPrestamos);
+      if (!deudaTarjeta) return;
+    }
     const nuevaCompra = await addRecord("compras_facturas", {
+      prestamoId: deudaTarjeta?.id ?? null,
       fecha: f.get("fecha"),
       obraId: f.get("obraId") ? Number(f.get("obraId")) : null,
       ordenCompraId: Number(f.get("ordenCompraId")) || null,
@@ -6578,7 +6846,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       tipoArchivo: facturaTipoArchivo,
       percepciones: facturaPercepciones.filter((x) => (Number(x.monto) || 0) > 0),
     }, setComprasFacturas);
-    if (!nuevaCompra) return;
+    if (!nuevaCompra) {
+      if (deudaTarjeta) updateRecord("prestamos", deudaTarjeta.id, { eliminadoEn: new Date().toISOString() }, setPrestamos);
+      return;
+    }
     setFacturaOcId("");
     const ocDeLaFactura = nuevaCompra.ordenCompraId ? ordenesCompra.find((o) => o.id === nuevaCompra.ordenCompraId) : null;
     if (ocDeLaFactura) avisarSiNoCoincideOC(ocDeLaFactura, [...comprasFacturas, nuevaCompra]);
@@ -6612,6 +6883,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     setFacturaPlazoEcheq("30");
     setFacturaEstadoCC("Pendiente");
     setFacturaMedioPagoCC("Efectivo");
+    setFacturaCuotasTarjeta(1);
+    setFacturaPrimeraCuota("");
     setFormularioCompraKey((k) => k + 1);
     setShowFacturaForm(false);
     if (onGuardado) onGuardado(nuevaCompra);
@@ -6621,6 +6894,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     setLecturaFacturaCompra(null);
     setFacturaPercepciones([]);
     setFacturaOcId("");
+    setFacturaMontoTecleado(null);
   }, [formularioCompraKey]);
   // Abre el formulario de gasto dentro de una obra, con esa obra ya elegida.
   const [cargandoGastoObraId, setCargandoGastoObraId] = useState(null);
@@ -6631,6 +6905,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     setFacturaMedioBancario("Débito/Transferencia");
     setFacturaEstadoCC("Pendiente");
     setFacturaMedioPagoCC("Efectivo");
+    setFacturaCuotasTarjeta(1);
+    setFacturaPrimeraCuota("");
     setFacturaArchivo(null);
     setFacturaNombreArchivo(null);
     setFacturaTipoArchivo(null);
@@ -6707,17 +6983,43 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           <input key={leido.comprobante ? `comprobante-${k}` : "comprobante"} name="comprobante" defaultValue={leido.comprobante || ""} placeholder="Ej: A-0019-00056013" className={inputCls} />
         </Field>
         <Field label="Precio final ($)">
-          <MoneyInput key={leido.total ? `monto-${k}` : "monto"} name="monto" value={leido.total || undefined} puntoDecimalAlPegar className={inputCls} />
+          <MoneyInput key={leido.total ? `monto-${k}` : "monto"} name="monto" value={leido.total || undefined} onChange={(v) => setFacturaMontoTecleado({ k, valor: v })} puntoDecimalAlPegar className={inputCls} />
           <div className="mt-1 text-[11px] text-slate-400">Con IVA y percepciones incluidos (el total de la factura).</div>
         </Field>
         <Field label="Factura">
           <select key={leido.tipoFactura ? `tipo-${k}` : "tipo"} name="tipoFactura" defaultValue={leido.tipoFactura || "Sin factura"} className={inputCls}>{TIPOS_FACTURA.map((t) => <option key={t}>{t}</option>)}</select>
         </Field>
         <Field label="Forma de pago">
-          <select name="formaPago" value={facturaFormaPago} onChange={(e) => setFacturaFormaPago(e.target.value)} className={inputCls}>
+          <select
+            name="formaPago"
+            value={facturaFormaPago}
+            onChange={(e) => {
+              setFacturaFormaPago(e.target.value);
+              if (esTarjetaSocio(e.target.value) && !facturaPrimeraCuota) {
+                const fechaCompra = e.target.form?.elements?.namedItem("fecha")?.value;
+                setFacturaPrimeraCuota(primeraCuotaSugerida(fechaCompra || hoyISO()));
+              }
+            }}
+            className={inputCls}
+          >
             {FORMAS_PAGO.map((fp) => <option key={fp}>{fp}</option>)}
+            <optgroup label="Tarjeta de crédito de un socio">
+              {Object.entries(TARJETAS_SOCIOS).map(([t, socio]) => <option key={t} value={t}>Tarjeta de crédito de {socio}</option>)}
+            </optgroup>
           </select>
         </Field>
+        {esTarjetaSocio(facturaFormaPago) && (
+          <>
+            <CamposCuotasTarjeta cuotas={facturaCuotasTarjeta} onCuotas={setFacturaCuotasTarjeta} primeraCuota={facturaPrimeraCuota} onPrimeraCuota={setFacturaPrimeraCuota} />
+            <AvisoCuotasTarjeta
+              socio={TARJETAS_SOCIOS[facturaFormaPago]}
+              total={facturaMontoTecleado && facturaMontoTecleado.k === k ? facturaMontoTecleado.valor : (leido.total || 0)}
+              cuotas={facturaCuotasTarjeta}
+              primeraCuota={facturaPrimeraCuota}
+              className="md:col-span-3"
+            />
+          </>
+        )}
         {facturaFormaPago === "Banco" && (
           <Field label="Medio">
             <select name="medioBancario" value={facturaMedioBancario} onChange={(e) => setFacturaMedioBancario(e.target.value)} className={inputCls}>
@@ -8035,12 +8337,31 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     }
     setPagandoPrestamoId(null);
   }
+  // Devolución de varias cuotas de tarjeta juntas (ej: todas las del mes): un pago por
+  // compra; la que queda devuelta entera pasa a "Pagado".
+  const [devolviendoCuotasTarjeta, setDevolviendoCuotasTarjeta] = useState(null);
+  async function guardarDevolucionCuotasTarjeta(items, fecha, cuenta) {
+    const porDeuda = new Map();
+    items.forEach((it) => porDeuda.set(it.deudaId, (porDeuda.get(it.deudaId) || 0) + it.monto));
+    const pagosHastaAhora = [...prestamosPagos];
+    for (const [prestamoId, monto] of porDeuda) {
+      const row = await addRecord("prestamos_pagos", { prestamoId, fecha, monto: Math.round(monto * 100) / 100, cuenta }, setPrestamosPagos);
+      if (!row) continue;
+      pagosHastaAhora.push(row);
+      const p = prestamos.find((x) => x.id === prestamoId);
+      const devuelto = pagosHastaAhora.filter((pg) => pg.prestamoId === prestamoId).reduce((s, pg) => s + (pg.monto || 0), 0);
+      if (p && devuelto + TOLERANCIA_REDONDEO_DEUDA >= (p.capital || 0)) {
+        updateRecord("prestamos", prestamoId, { estado: "Pagado", fechaPago: fecha, montoPagado: devuelto }, setPrestamos);
+      }
+    }
+    setDevolviendoCuotasTarjeta(null);
+  }
   // Total adeudado por prestamista: agrupa todos los préstamos (activos y
   // pagados) de un mismo acreedor. Los ya devueltos cuentan en la cantidad y el
   // capital original, pero no deben nada (algunos se marcaron devueltos sin cargar
   // los pagos, y si no se los forzara a $0 seguirían sumando su capital).
   const totalesPorPrestamista = Object.values(
-    prestamos.reduce((acc, p) => {
+    prestamosReales.reduce((acc, p) => {
       const pagado = p.estado === "Pagado";
       const estado = pagado ? null : deudaPrestamo(p, prestamosPagos);
       const g = (acc[p.acreedor] ??= { acreedor: p.acreedor, cantidad: 0, capitalOriginal: 0, saldoCapital: 0, interesAcumulado: 0, totalADevolver: 0 });
@@ -8053,7 +8374,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     }, {})
   ).sort((a, b) => b.totalADevolver - a.totalADevolver);
   // Total que se debe de préstamos (los que no están pagados), a las fechas estimadas.
-  const prestamosVigentes = prestamos.filter((p) => p.estado !== "Pagado");
+  const prestamosVigentes = prestamosReales.filter((p) => p.estado !== "Pagado");
   const deudaPrestamosTotal = prestamosVigentes.reduce((acc, p) => {
     const e = deudaPrestamo(p, prestamosPagos);
     return { capital: acc.capital + e.saldoCapital, interes: acc.interes + e.interesAcumulado, total: acc.total + e.totalADevolver };
@@ -8136,8 +8457,32 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // cuando todavía no la tenías al momento de cargarlo) — accesible tanto desde su
   // propia tabla como desde el ledger de Movimientos en Cuentas.
   const [editandoMovimiento, setEditandoMovimiento] = useState(null);
-  function guardarEdicionCompra(id, patch) {
-    updateRecord("compras_facturas", id, patch, setComprasFacturas);
+  // Si la compra se paga (o pasa a pagarse) con la tarjeta de un socio, su deuda con ese
+  // socio se ajusta (monto, cuotas, primera cuota, socio) o se crea; si deja de ser con
+  // tarjeta, esa deuda se cierra: a la Papelera si todavía no se le devolvió nada, o como
+  // devuelta si ya hubo devoluciones (que salieron de las cuentas y no se pierden).
+  async function guardarEdicionCompra(id, patch, tarjetaDatos = null) {
+    const compra = comprasFacturas.find((c) => c.id === id);
+    let prestamoId = compra?.prestamoId ?? null;
+    const deudaActual = prestamoId ? prestamos.find((p) => p.id === prestamoId) : null;
+    const devuelto = prestamoId ? prestamosPagos.filter((pg) => pg.prestamoId === prestamoId).reduce((s, pg) => s + (pg.monto || 0), 0) : 0;
+    if (esTarjetaSocio(patch.formaPago)) {
+      const datos = datosDeudaTarjeta({ tarjeta: patch.formaPago, fecha: patch.fecha, monto: patch.monto, detalle: patch.proveedor, cuotas: tarjetaDatos?.cuotas, primeraCuota: tarjetaDatos?.primeraCuota });
+      if (deudaActual) {
+        const saldada = devuelto + TOLERANCIA_REDONDEO_DEUDA >= datos.capital;
+        await updateRecord("prestamos", prestamoId, { ...datos, estado: saldada ? "Pagado" : "Vigente", fechaPago: saldada ? (deudaActual.fechaPago || hoyISO()) : null }, setPrestamos);
+      } else {
+        const nueva = await addRecord("prestamos", { ...datos, estado: "Vigente", fechaPago: null, montoPagado: null }, setPrestamos);
+        if (!nueva) return;
+        prestamoId = nueva.id;
+      }
+    } else if (prestamoId) {
+      if (deudaActual) {
+        await updateRecord("prestamos", prestamoId, devuelto > 0 ? { estado: "Pagado", fechaPago: deudaActual.fechaPago || hoyISO() } : { eliminadoEn: new Date().toISOString() }, setPrestamos);
+      }
+      prestamoId = null;
+    }
+    updateRecord("compras_facturas", id, { ...patch, prestamoId }, setComprasFacturas);
     setEditandoMovimiento(null);
   }
   function guardarEdicionCobro(id, patch) {
@@ -8217,14 +8562,15 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       id: `arreglo-${runId}`, fecha: filas[0].fecha, creadoEn: filas[0].creadoEn, tipo: "Ajuste", obraId: null, detalle: "Arreglo de caja", cuenta: null,
       monto: filas.reduce((s, f) => s + (f.monto || 0), 0), estado: null, origen: "arreglo_caja", origenId: runId,
     })),
-    ...prestamos.map((p) => ({
+    ...prestamosReales.map((p) => ({
       id: `prestamo-alta-${p.id}`, fecha: p.fecha, creadoEn: p.creadoEn, tipo: "Ingreso", obraId: null, detalle: `Préstamo recibido — ${p.acreedor}`, cuenta: p.cuenta, monto: p.capital || 0, estado: null,
       origenId: p.id,
     })),
     ...prestamosPagos.map((pg) => {
       const p = prestamos.find((x) => x.id === pg.prestamoId);
       return {
-        id: `prestamo-pago-${pg.id}`, fecha: pg.fecha, creadoEn: pg.creadoEn, tipo: "Egreso", obraId: null, detalle: `Devolución préstamo — ${p?.acreedor || "?"}`, cuenta: pg.cuenta, monto: -(pg.monto || 0), estado: "Pagada",
+        id: `prestamo-pago-${pg.id}`, fecha: pg.fecha, creadoEn: pg.creadoEn, tipo: "Egreso", obraId: null,
+        detalle: esTarjetaSocio(p?.cuenta) ? `Devolución tarjeta — ${TARJETAS_SOCIOS[p.cuenta]} (${p.acreedor.split(" — ")[1] || "compra con tarjeta"})` : `Devolución préstamo — ${p?.acreedor || "?"}`, cuenta: pg.cuenta, monto: -(pg.monto || 0), estado: "Pagada",
         origenId: pg.id,
       };
     }),
@@ -8554,8 +8900,9 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const [debitandoCheque, setDebitandoCheque] = useState(null);
   const [mesProximosSeleccionado, setMesProximosSeleccionado] = useState(null);
   const [showPrestamos, setShowPrestamos] = useState(false);
+  const [showDeudasTarjetas, setShowDeudasTarjetas] = useState(false);
   const [showIvaGanancias, setShowIvaGanancias] = useState(false);
-  const prestamosPorDevolver = prestamos
+  const prestamosPorDevolver = prestamosReales
     .filter((p) => p.estado !== "Pagado")
     .sort((a, b) => fechaLocal(a.fechaEstimadaDevolucion || a.fecha) - fechaLocal(b.fechaEstimadaDevolucion || b.fecha));
   // eCheqs de salida: los que nosotros libramos al pagarle a un proveedor. "eCheq" es
@@ -8701,12 +9048,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     let prestamo = null;
     if (esTarjetaSocio(datos.cuenta)) {
       prestamo = await addRecord("prestamos", {
-        fecha: datos.fecha,
-        acreedor: `${TARJETAS_SOCIOS[datos.cuenta]} (tarjeta de crédito) — ${nombreComercial(prov)}`,
-        capital: datos.monto,
-        tasaAnualPct: 0,
-        cuenta: datos.cuenta,
-        fechaEstimadaDevolucion: datos.fechaPagoTarjeta || null,
+        ...datosDeudaTarjeta({ tarjeta: datos.cuenta, fecha: datos.fecha, monto: datos.monto, detalle: nombreComercial(prov), cuotas: datos.cuotasTarjeta, primeraCuota: datos.fechaPagoTarjeta }),
         estado: "Vigente",
         fechaPago: null,
         montoPagado: null,
@@ -8755,13 +9097,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     const prestamoActual = prestamoId ? prestamos.find((p) => p.id === prestamoId) : null;
     if (socio) {
       const devuelto = prestamosPagos.filter((pg) => pg.prestamoId === prestamoId).reduce((s, pg) => s + (pg.monto || 0), 0);
-      const datosPrestamo = {
-        fecha: datos.fecha,
-        acreedor: `${socio} (tarjeta de crédito) — ${entrega.proveedor}`,
-        capital: datos.monto,
-        cuenta: datos.cuenta,
-        fechaEstimadaDevolucion: datos.fechaPagoTarjeta || null,
-      };
+      const datosPrestamo = datosDeudaTarjeta({ tarjeta: datos.cuenta, fecha: datos.fecha, monto: datos.monto, detalle: entrega.proveedor, cuotas: datos.cuotasTarjeta, primeraCuota: datos.fechaPagoTarjeta });
       if (prestamoActual) {
         // Si con el monto nuevo ya está todo devuelto queda "Pagado"; si no, vuelve a "Vigente".
         const saldada = devuelto + 0.5 >= datos.monto;
@@ -8970,6 +9306,9 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     // Se proyecta el interés hasta la fecha estimada de devolución (no "a hoy"),
     // así el monto que figura acá es lo que realmente habría que devolver ese día.
     ...prestamosPorDevolver.map((p) => ({ fecha: p.fechaEstimadaDevolucion, monto: calcularEstadoPrestamo(p, prestamosPagos, p.fechaEstimadaDevolucion).totalADevolver, flujo: "egreso" })),
+    // Cuotas de las compras con la tarjeta de un socio: cada una sale el mes en que vence
+    // (lo que hay que devolverle al socio para que pague su resumen).
+    ...cuotasTarjetaPendientes.map((c) => ({ fecha: c.fecha, monto: c.falta, flujo: "egreso" })),
     ...echeqsSalida.map((c) => ({ fecha: c.fechaPagoEcheq, monto: c.monto, flujo: "egreso" })),
     ...echeqsEntrada.map((i) => ({ fecha: i.fechaCobroEstimada || i.fecha, monto: montoNetoIngreso(i), flujo: "ingreso" })),
     ...cuentasCorrientesPorProveedor.map((g) => ({ fecha: g.fechaVencimiento, monto: g.monto, flujo: "egreso" })),
@@ -11098,25 +11437,33 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   )}
                   {deudasTarjetaSocioPorVencer.length > 0 && (
                     <AlertCard
-                      tone={deudasTarjetaSocioPorVencer.some((p) => diasHasta(p.fechaEstimadaDevolucion) < 0) ? "rose" : "amber"}
+                      tone={deudasTarjetaSocioPorVencer.some((c) => diasHasta(c.fecha) < 0) ? "rose" : "amber"}
                       icon={CreditCard}
-                      title={`${deudasTarjetaSocioPorVencer.length} pago(s) con tarjeta de un socio por devolver antes del vencimiento de la tarjeta.`}
+                      title={`${deudasTarjetaSocioPorVencer.length} cuota(s) de tarjeta por devolverle a un socio — ${fmtARS(deudasTarjetaSocioPorVencer.reduce((s, c) => s + c.falta, 0))}.`}
                     >
                       <ul className="space-y-1 text-xs">
-                        {deudasTarjetaSocioPorVencer.map((p) => {
-                          const dias = diasHasta(p.fechaEstimadaDevolucion);
-                          const debe = calcularEstadoPrestamo(p, prestamosPagos).totalADevolver;
+                        {deudasTarjetaSocioPorVencer.map((c) => {
+                          const dias = diasHasta(c.fecha);
                           return (
-                            <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="truncate">Devolverle a {TARJETAS_SOCIOS[p.cuenta]} — {fmtARS(debe)} <span className="opacity-70">({p.acreedor.split(" — ")[1] || "tarjeta"})</span></span>
+                            <li key={c.id} className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="truncate">
+                                Devolverle a {c.deuda.socio} — {fmtARS(c.falta)}{" "}
+                                <span className="opacity-70">({c.deuda.proveedor}{c.de > 1 ? ` · cuota ${c.numero}/${c.de}` : ""})</span>
+                              </span>
                               <span className="flex shrink-0 items-center gap-2">
-                                <span className="font-semibold">{fmtFecha(p.fechaEstimadaDevolucion)}{dias < 0 ? ` · vencida hace ${Math.abs(dias)} día(s)` : dias === 0 ? " · hoy" : ` · en ${dias} día(s)`}</span>
-                                <button onClick={() => setPagandoPrestamoId(p.id)} className="rounded-md border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-white">Registrar devolución</button>
+                                <span className="font-semibold">{fmtFecha(c.fecha)}{dias < 0 ? ` · vencida hace ${Math.abs(dias)} día(s)` : dias === 0 ? " · hoy" : ` · en ${dias} día(s)`}</span>
+                                <button onClick={() => setPagandoPrestamoId(c.deuda.id)} className="rounded-md border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-white">Registrar devolución</button>
                               </span>
                             </li>
                           );
                         })}
                       </ul>
+                      <button
+                        onClick={() => { setTab("cuentas"); setShowProximos(false); setShowPrestamos(false); setShowIvaGanancias(false); setShowCheques(false); setShowDeudasTarjetas(true); }}
+                        className="mt-1.5 rounded-md border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-white"
+                      >
+                        Ir a Deudas tarjetas
+                      </button>
                     </AlertCard>
                   )}
                   {gastosRecurrentesProximos.length > 0 && (
@@ -15999,7 +16346,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           </div>
         )}
 
-        {tab === "cuentas" && canVerFinanzas && !showProximos && !showPrestamos && !showIvaGanancias && !showCheques && (
+        {tab === "cuentas" && canVerFinanzas && !showProximos && !showPrestamos && !showIvaGanancias && !showCheques && !showDeudasTarjetas && (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">Cuentas</h2>
@@ -16030,6 +16377,15 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   className="flex items-center gap-1 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-stone-50"
                 >
                   <Landmark size={16} /> Préstamos
+                </button>
+                <button
+                  onClick={() => setShowDeudasTarjetas(true)}
+                  className={`flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-semibold ${deudasTarjetaSocioPorVencer.length > 0 ? "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100" : "border-stone-300 bg-white text-slate-600 hover:bg-stone-50"}`}
+                >
+                  <CreditCard size={16} /> Deudas tarjetas
+                  {deudasTarjetaVigentes.length > 0 && (
+                    <span className="rounded-full bg-slate-900 px-1.5 text-[10px] font-bold text-white">{deudasTarjetaVigentes.length}</span>
+                  )}
                 </button>
                 <button
                   onClick={() => setShowIvaGanancias(true)}
@@ -16400,6 +16756,188 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           );
         })()}
 
+        {tab === "cuentas" && canVerFinanzas && showDeudasTarjetas && !showCheques && (() => {
+          const nombreObra = (id) => (id ? obras.find((o) => o.id === id)?.nombre || "" : "General");
+          const sociosConDeuda = SOCIOS.filter((s) => deudasTarjetaVigentes.some((d) => d.socio === s));
+          const totalDeuda = deudasTarjetaVigentes.reduce((s, d) => s + d.falta, 0);
+          // Cuotas que faltan, agrupadas por el mes en que hay que devolverlas (lo vencido cae en el mes actual).
+          const meses = Object.values(cuotasTarjetaPendientes.reduce((acc, c) => {
+            const clave = claveMesProximos(c.fecha);
+            const g = (acc[clave] ??= { clave, total: 0, porSocio: {}, cuotas: [] });
+            g.total += c.falta;
+            g.porSocio[c.deuda.socio] = (g.porSocio[c.deuda.socio] || 0) + c.falta;
+            g.cuotas.push(c);
+            return acc;
+          }, {})).sort((a, b) => (a.clave === "sin-fecha" ? 1 : b.clave === "sin-fecha" ? -1 : a.clave.localeCompare(b.clave)));
+          const devolverMes = (g) => setDevolviendoCuotasTarjeta({
+            titulo: g.clave === "sin-fecha" ? "Devolver cuotas sin fecha" : `Devolver cuotas de ${nombreMesCuentas(g.clave)}`,
+            // También las de meses anteriores que falten: las devoluciones se aplican primero a la cuota más vieja.
+            cuotas: cuotasTarjetaPendientes.filter((c) => g.clave === "sin-fecha" ? !c.fecha : claveMesProximos(c.fecha) <= g.clave && c.fecha),
+          });
+          const estiloCuota = (c, esProxima) => {
+            if (c.falta === 0) return "border-emerald-200 bg-emerald-50 text-emerald-800";
+            if (c.fecha && diasHasta(c.fecha) < 0) return "border-rose-300 bg-rose-50 text-rose-700";
+            if (esProxima) return "border-amber-300 bg-amber-50 text-amber-800";
+            return "border-stone-200 bg-white text-slate-500";
+          };
+          const devueltas = deudasTarjeta.filter((d) => d.prestamo.estado === "Pagado" || d.falta === 0);
+          return (
+            <div className="space-y-4">
+              <button onClick={() => setShowDeudasTarjetas(false)} className="text-xs font-semibold text-slate-500 hover:text-slate-800">
+                ← Volver a Cuentas
+              </button>
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900">Deudas tarjetas</h2>
+                <p className="mt-1 max-w-2xl text-xs text-slate-500">
+                  Compras pagadas con la tarjeta de crédito de Ricardo o Pablo: las de Gastos y Facturas con forma de pago "Tarjeta de crédito de…" y las entregas a cuenta a un proveedor que salieron de esa tarjeta.
+                  No sacan plata de las cuentas de la empresa: lo que sale es cada cuota que se le devuelve al socio para que pague su resumen (más o menos el {DIA_PAGO_TARJETA} de cada mes). Cada cuota suma como egreso en Próximos pagos e ingresos, en su mes.
+                </p>
+              </div>
+
+              {deudasTarjetaVigentes.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-sm text-slate-400">
+                  No hay deudas de tarjeta pendientes. Para cargar una, elegí "Tarjeta de crédito de Ricardo" como forma de pago al cargar un gasto.
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {sociosConDeuda.map((socio) => {
+                      const deSocio = deudasTarjetaVigentes.filter((d) => d.socio === socio);
+                      const proxima = cuotasTarjetaPendientes.find((c) => c.deuda.socio === socio);
+                      const proximaClave = proxima ? claveMesProximos(proxima.fecha) : null;
+                      const delProximoMes = proxima ? cuotasTarjetaPendientes.filter((c) => c.deuda.socio === socio && claveMesProximos(c.fecha) === proximaClave).reduce((s, c) => s + c.falta, 0) : 0;
+                      return (
+                        <div key={socio} className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-sky-800"><CreditCard size={13} /> Le debemos a {socio}</div>
+                          <div className="font-mono text-2xl font-bold text-rose-700">{fmtARS(deSocio.reduce((s, d) => s + d.falta, 0))}</div>
+                          <div className="mt-0.5 text-xs text-slate-600">
+                            {deSocio.length} compra{deSocio.length === 1 ? "" : "s"} con su tarjeta
+                            {proxima && <> · a devolver {proximaClave === "sin-fecha" ? "sin fecha" : `en ${nombreMesCuentas(proximaClave).toLowerCase()}`}: <span className="font-mono font-semibold">{fmtARS(delProximoMes)}</span></>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {sociosConDeuda.length > 1 && (
+                      <div className="rounded-lg border border-stone-300 bg-stone-50 p-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total deudas tarjetas</div>
+                        <div className="font-mono text-2xl font-bold text-rose-700">{fmtARS(totalDeuda)}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Cuotas por mes</h3>
+                    {/* Celular: una tarjeta por mes, con el botón siempre a la vista. */}
+                    <div className="space-y-1.5 sm:hidden">
+                      {meses.map((g) => {
+                        const vencidas = g.cuotas.some((c) => c.fecha && diasHasta(c.fecha) < 0);
+                        return (
+                          <div key={g.clave} className="rounded-lg border border-stone-200 bg-white p-2.5 shadow-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-semibold text-slate-900">
+                                {g.clave === "sin-fecha" ? "Sin fecha" : nombreMesCuentas(g.clave)}
+                                {vencidas && <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">vencidas</span>}
+                              </span>
+                              <span className="font-mono text-sm font-bold tabular-nums text-rose-700">{fmtARS(g.total)}</span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                              <span>{g.cuotas.length} cuota{g.cuotas.length === 1 ? "" : "s"}{sociosConDeuda.length > 1 ? ` · ${sociosConDeuda.filter((s) => g.porSocio[s]).map((s) => `${s} ${fmtARS(g.porSocio[s])}`).join(" · ")}` : ""}</span>
+                              <button onClick={() => devolverMes(g)} className={btnGhost}>Registrar devolución</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="hidden overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm sm:block">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-stone-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-3 py-2">Mes</th>
+                            {sociosConDeuda.map((s) => <th key={s} className="px-3 py-2 text-right">{s}</th>)}
+                            {sociosConDeuda.length > 1 && <th className="px-3 py-2 text-right">Total</th>}
+                            <th className="px-3 py-2"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {meses.map((g) => {
+                            const vencidas = g.cuotas.some((c) => c.fecha && diasHasta(c.fecha) < 0);
+                            return (
+                              <tr key={g.clave} className="border-t border-stone-100">
+                                <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">
+                                  {g.clave === "sin-fecha" ? "Sin fecha" : nombreMesCuentas(g.clave)}
+                                  <span className="ml-1.5 text-xs font-normal text-slate-400">{g.cuotas.length} cuota{g.cuotas.length === 1 ? "" : "s"}</span>
+                                  {vencidas && <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">vencidas</span>}
+                                </td>
+                                {sociosConDeuda.map((s) => <td key={s} className="px-3 py-2 text-right font-mono tabular-nums text-rose-600">{g.porSocio[s] ? fmtARS(g.porSocio[s]) : <span className="text-slate-300">—</span>}</td>)}
+                                {sociosConDeuda.length > 1 && <td className="px-3 py-2 text-right font-mono font-semibold tabular-nums text-rose-700">{fmtARS(g.total)}</td>}
+                                <td className="px-3 py-2 text-right"><button onClick={() => devolverMes(g)} className={btnGhost}>Registrar devolución</button></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Compras con tarjeta</h3>
+                    <div className="space-y-2">
+                      {deudasTarjetaVigentes.map((d) => (
+                        <div key={d.id} className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5 text-sm">
+                                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">{d.socio}</span>
+                                <span className="font-semibold text-slate-900">{d.proveedor}</span>
+                                {d.detalle && <span className="text-slate-500">· {d.detalle}</span>}
+                              </div>
+                              <div className="mt-0.5 text-xs text-slate-500">
+                                Compra del {fmtFecha(d.prestamo.fecha)}{d.compra ? ` · ${nombreObra(d.obraId)}` : ""} · {textoCuotas(d.total, d.cuotas.length)} · total {fmtARS(d.total)}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-mono text-base font-bold text-rose-600">{fmtARS(d.falta)}</div>
+                              <div className="text-[11px] text-slate-500">falta · {d.cuotasPagadas} de {d.cuotas.length} devuelta{d.cuotas.length === 1 ? "" : "s"}</div>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {d.cuotas.map((c) => (
+                              <span key={c.numero} className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] tabular-nums ${estiloCuota(c, d.proxima?.numero === c.numero)}`} title={c.falta === 0 ? "Devuelta" : c.pagado > 0 ? `Devuelto ${fmtARS(c.pagado)}, falta ${fmtARS(c.falta)}` : "Falta devolver"}>
+                                {c.falta === 0 && <Check size={11} />}
+                                {d.cuotas.length > 1 && <span className="font-semibold">{c.numero}</span>}
+                                {c.fecha ? fmtFecha(c.fecha).slice(0, -5) : "sin fecha"}
+                                <span className="font-mono">{fmtARS(c.falta > 0 ? c.falta : c.monto)}</span>
+                              </span>
+                            ))}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button onClick={() => setPagandoPrestamoId(d.id)} className={btnGhost}>Registrar devolución</button>
+                            {d.compra && <button onClick={() => setEditandoMovimiento({ origen: "compras_facturas", origenId: d.compra.id })} className={btnGhost}>Modificar compra / cuotas</button>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {devueltas.length > 0 && (
+                <details className="rounded-lg border border-stone-200 bg-white p-3 text-sm">
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-500">Ya devueltas ({devueltas.length})</summary>
+                  <div className="mt-2 space-y-1">
+                    {devueltas.map((d) => (
+                      <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+                        <span><span className="font-semibold">{d.socio}</span> · {d.proveedor} · compra del {fmtFecha(d.prestamo.fecha)}{d.cuotas.length > 1 ? ` · ${d.cuotas.length} cuotas` : ""}</span>
+                        <span className="font-mono">{fmtARS(d.total)}{d.prestamo.fechaPago ? ` · devuelta el ${fmtFecha(d.prestamo.fechaPago)}` : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </div>
+          );
+        })()}
+
         {tab === "cuentas" && canVerFinanzas && showPrestamos && !showCheques && (
           <div className="space-y-4">
             <button
@@ -16467,18 +17005,18 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
             </div>
 
             <TablaPrestamos
-              items={prestamos.filter((p) => p.estado !== "Pagado")}
+              items={prestamosVigentes}
               pagos={prestamosPagos}
               onEditar={(p) => setEditandoPrestamoId(p.id)}
               onRegistrarPago={(p) => setPagandoPrestamoId(p.id)}
               onEliminar={(p) => moverAPapelera("prestamos", p.id, setPrestamos, p.acreedor)}
             />
 
-            {prestamos.some((p) => p.estado === "Pagado") && (
+            {prestamosReales.some((p) => p.estado === "Pagado") && (
               <div>
                 <h3 className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">Préstamos devueltos</h3>
                 <TablaPrestamosDevueltos
-                  items={prestamos.filter((p) => p.estado === "Pagado")}
+                  items={prestamosReales.filter((p) => p.estado === "Pagado")}
                   onEditar={(p) => setEditandoPrestamoId(p.id)}
                   onEliminar={(p) => moverAPapelera("prestamos", p.id, setPrestamos, p.acreedor)}
                 />
@@ -16614,6 +17152,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               (() => {
                 const claveMes = mesProximosSeleccionado;
                 const prestamosDelMes = prestamosPorDevolver.filter((p) => perteneceAMesProximos(p.fechaEstimadaDevolucion, claveMes));
+                const cuotasTarjetaDelMes = cuotasTarjetaPendientes.filter((c) => perteneceAMesProximos(c.fecha, claveMes));
                 const echeqsSalidaDelMes = echeqsSalida.filter((c) => perteneceAMesProximos(c.fechaPagoEcheq, claveMes));
                 const echeqsEntradaDelMes = echeqsEntrada.filter((i) => perteneceAMesProximos(i.fechaCobroEstimada || i.fecha, claveMes));
                 const cuentasCorrientesDelMes = cuentasCorrientesPorProveedor.filter((g) => perteneceAMesProximos(g.fechaVencimiento, claveMes));
@@ -16648,6 +17187,37 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                                     {p.fechaEstimadaDevolucion ? `${fmtFecha(p.fechaEstimadaDevolucion)}${dias < 0 ? ` — vencido hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}` : "Sin fecha estimada"}
                                   </span>
                                   <span className="font-mono font-semibold text-rose-600">{fmtARS(total)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cuotas de tarjetas (devolver a Ricardo y Pablo)</span>
+                          {cuotasTarjetaDelMes.length > 0 && <span className="font-mono text-xs font-semibold text-rose-600">{fmtARS(cuotasTarjetaDelMes.reduce((s, c) => s + c.falta, 0))}</span>}
+                        </div>
+                        {cuotasTarjetaDelMes.length === 0 ? (
+                          <div className="text-xs text-slate-400">No hay cuotas de tarjeta este mes.</div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {cuotasTarjetaDelMes.map((c) => {
+                              const dias = c.fecha ? diasHasta(c.fecha) : null;
+                              return (
+                                <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 px-2.5 py-1.5 text-sm">
+                                  <span className="font-medium text-slate-800">
+                                    {c.deuda.socio} · {c.deuda.proveedor}
+                                    <span className="font-normal text-slate-500"> — {c.de > 1 ? `cuota ${c.numero} de ${c.de}` : "un pago"}</span>
+                                  </span>
+                                  <span className={`text-xs ${dias === null ? "text-slate-400" : dias < 0 ? "font-semibold text-rose-600" : dias <= 5 ? "font-semibold text-amber-700" : "text-slate-500"}`}>
+                                    {c.fecha ? `${fmtFecha(c.fecha)}${dias < 0 ? ` — vencida hace ${Math.abs(dias)} día(s)` : dias === 0 ? " — hoy" : ` — en ${dias} día(s)`}` : "Sin fecha"}
+                                  </span>
+                                  <span className="flex items-center gap-2">
+                                    <span className="font-mono font-semibold text-rose-600">{fmtARS(c.falta)}</span>
+                                    <button onClick={() => setPagandoPrestamoId(c.deuda.id)} className={btnGhost}>Registrar devolución</button>
+                                  </span>
                                 </div>
                               );
                             })}
@@ -16913,44 +17483,42 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               </div>
             </div>
 
-            {(() => {
-              // Lo que la empresa le debe a cada socio por pagos hechos con su tarjeta de
-              // crédito (se cargan como "Entrega a cuenta" a un proveedor con "Sale de:
-              // Tarjeta de crédito de ..."). La devolución sale de una cuenta real.
-              const deudasTarjeta = prestamos
-                .filter((p) => p.estado !== "Pagado" && esTarjetaSocio(p.cuenta))
-                .sort((a, b) => fechaLocal(a.fechaEstimadaDevolucion || a.fecha) - fechaLocal(b.fechaEstimadaDevolucion || b.fecha));
-              if (deudasTarjeta.length === 0) return null;
-              return (
-                <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+            {deudasTarjetaVigentes.length > 0 && (
+              // Lo que la empresa le debe a cada socio por compras con su tarjeta de crédito
+              // (detalle completo en Cuentas → Deudas tarjetas). La devolución sale de una cuenta real.
+              <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-sky-800">
-                    <CreditCard size={13} /> La empresa les debe — pagos con tarjeta de crédito
+                    <CreditCard size={13} /> La empresa les debe — compras con tarjeta de crédito
                   </div>
-                  <div className="mt-1.5 space-y-1">
-                    {deudasTarjeta.map((p) => {
-                      const debe = calcularEstadoPrestamo(p, prestamosPagos).totalADevolver;
-                      const dias = p.fechaEstimadaDevolucion ? diasHasta(p.fechaEstimadaDevolucion) : null;
-                      return (
-                        <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700">
-                          <span>
-                            <span className="font-semibold">{TARJETAS_SOCIOS[p.cuenta]}</span> · {p.acreedor.split(" — ")[1] || "tarjeta"} ({fmtFecha(p.fecha)})
-                            {p.fechaEstimadaDevolucion && (
-                              <span className={dias < 0 ? "font-semibold text-rose-600" : dias <= 5 ? "font-semibold text-amber-700" : "text-slate-500"}>
-                                {" "}· paga la tarjeta el {fmtFecha(p.fechaEstimadaDevolucion)}{dias < 0 ? ` (vencida hace ${Math.abs(dias)} día(s))` : dias === 0 ? " (hoy)" : ` (en ${dias} día(s))`}
-                              </span>
-                            )}
-                          </span>
-                          <span className="flex items-center gap-2">
-                            <span className="font-mono font-semibold text-rose-600">{fmtARS(debe)}</span>
-                            <button onClick={() => setPagandoPrestamoId(p.id)} className={btnGhost}>Registrar devolución</button>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <button onClick={() => { setTab("cuentas"); setShowProximos(false); setShowPrestamos(false); setShowIvaGanancias(false); setShowCheques(false); setShowDeudasTarjetas(true); }} className={btnGhost}>
+                    Ver deudas tarjetas
+                  </button>
                 </div>
-              );
-            })()}
+                <div className="mt-1.5 space-y-1">
+                  {deudasTarjetaVigentes.map((d) => {
+                    const c = d.proxima;
+                    const dias = c?.fecha ? diasHasta(c.fecha) : null;
+                    return (
+                      <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700">
+                        <span>
+                          <span className="font-semibold">{d.socio}</span> · {d.proveedor} ({fmtFecha(d.prestamo.fecha)}){d.cuotas.length > 1 ? ` · ${d.cuotasPagadas} de ${d.cuotas.length} cuotas devueltas` : ""}
+                          {c?.fecha && (
+                            <span className={dias < 0 ? "font-semibold text-rose-600" : dias <= 5 ? "font-semibold text-amber-700" : "text-slate-500"}>
+                              {" "}· {d.cuotas.length > 1 ? `cuota ${c.numero} de ${fmtARS(c.falta)}` : "paga la tarjeta"} el {fmtFecha(c.fecha)}{dias < 0 ? ` (vencida hace ${Math.abs(dias)} día(s))` : dias === 0 ? " (hoy)" : ` (en ${dias} día(s))`}
+                            </span>
+                          )}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-mono font-semibold text-rose-600">{fmtARS(d.falta)}</span>
+                          <button onClick={() => setPagandoPrestamoId(d.id)} className={btnGhost}>Registrar devolución</button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {SOCIOS.map((s) => (
@@ -17359,7 +17927,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                                           monto: e.monto,
                                           cuenta: e.cuenta,
                                           nota: e.nota,
-                                          fechaPagoTarjeta: prestamos.find((pr) => pr.id === e.prestamoId)?.fechaEstimadaDevolucion || "",
+                                          fechaPagoTarjeta: (() => { const pr = prestamos.find((x) => x.id === e.prestamoId); return pr?.fechaPrimeraCuota || pr?.fechaEstimadaDevolucion || ""; })(),
+                                          cuotasTarjeta: prestamos.find((pr) => pr.id === e.prestamoId)?.cuotas || 1,
                                         }}
                                         onGuardar={(datos) => guardarEdicionEntregaProveedor(e, datos)}
                                         onCancelar={() => setEditandoEntregaId(null)}
@@ -18156,6 +18725,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           obras={obras}
           proveedores={proveedores}
           facturasVarias={facturasVarias}
+          prestamos={prestamos}
           onVincularFacturaVaria={vincularFacturaVaria}
           onClose={() => setEditandoMovimiento(null)}
           onGuardarCompra={guardarEdicionCompra}
@@ -18191,8 +18761,22 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           key={pagandoPrestamoId}
           prestamo={prestamos.find((p) => p.id === pagandoPrestamoId)}
           pagos={prestamosPagos}
+          atajos={(() => {
+            const proxima = deudasTarjeta.find((d) => d.id === pagandoPrestamoId)?.proxima;
+            if (!proxima || proxima.de === 1) return [];
+            return [{ label: `Cargar la cuota ${proxima.numero} de ${proxima.de} (${fmtARS(proxima.falta)})`, monto: proxima.falta }];
+          })()}
           onClose={() => setPagandoPrestamoId(null)}
           onGuardar={guardarPagoPrestamo}
+        />
+      )}
+
+      {devolviendoCuotasTarjeta && (
+        <ModalDevolverCuotasTarjeta
+          titulo={devolviendoCuotasTarjeta.titulo}
+          cuotas={devolviendoCuotasTarjeta.cuotas}
+          onClose={() => setDevolviendoCuotasTarjeta(null)}
+          onGuardar={guardarDevolucionCuotasTarjeta}
         />
       )}
 
