@@ -325,11 +325,12 @@ const CATEGORIAS_POR_VISTA = {
 // en la que está parado (Materiales / Equipos y Herramientas / Epps / Consumibles).
 const CATEGORIA_DE_VISTA = { materiales: "Materiales", equipos: "Equipos", epps: "Epps", consumibles: "Consumibles" };
 // "Equipos auxiliares": andamios, escaleras y similares.
-const CATEGORIAS_HERRAMIENTA = ["Manual", "Batería", "Combustión", "Equipos auxiliares"];
+const CATEGORIAS_HERRAMIENTA = ["Manual", "Eléctrica", "Batería", "Combustión", "Equipos auxiliares"];
 const SI_NO = ["No", "Sí"];
 // Letra usada en el N° de serie automático (Tipo-Marca+N°). Cambiá acá si preferís otras letras.
 const LETRA_TIPO_HERRAMIENTA = {
   Manual: "M",
+  "Eléctrica": "E",
   "Batería": "B",
   "Combustión": "C",
   "Equipos auxiliares": "A",
@@ -535,6 +536,7 @@ const ICONO_ESPECIALIDAD = {
 };
 const ICONO_CATEGORIA_HERR = {
   Manual: Hammer,
+  "Eléctrica": Zap,
   "Batería": BatteryCharging,
   "Combustión": Flame,
   "Equipos auxiliares": Construction,
