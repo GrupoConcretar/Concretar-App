@@ -1096,6 +1096,17 @@ function Badge({ estado }) {
   );
 }
 
+// Estado de una compra pagada con la tarjeta de crédito de un socio: en otro color que
+// "Pagada" y con la cantidad de cuotas.
+function BadgeTarjeta({ cuotas, socio }) {
+  const n = Math.max(1, Number(cuotas) || 1);
+  return (
+    <span title={socio ? `Tarjeta de crédito de ${socio}` : undefined} className="inline-flex items-center gap-1 rounded-full border-2 border-violet-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap text-violet-700">
+      <CreditCard size={11} /> Pagada en: {n} cuota{n === 1 ? "" : "s"}
+    </span>
+  );
+}
+
 function EspecialidadIcon({ especialidad, size = 13 }) {
   const IconComp = ICONO_ESPECIALIDAD[especialidad];
   if (!IconComp) return null;
@@ -1949,6 +1960,8 @@ function TablaMovimientos({ items, obras, onEditar, onToggleEstado, marcandoPago
   // que en Gastos y Facturas.
   function EstadoMovimiento({ m }) {
     if (!m.estado) return null;
+    // Pagada con la tarjeta de un socio: siempre está pagada al proveedor (lo que queda es la deuda con el socio).
+    if (esTarjetaSocio(m.cuenta) && m.estado !== "Pendiente") return <BadgeTarjeta cuotas={m.cuotasTarjeta} socio={TARJETAS_SOCIOS[m.cuenta]} />;
     if (m.origen !== "compras_facturas" || !onToggleEstado) return <Badge estado={m.estado} />;
     const esCC = m.formaPago === "Cuenta corriente" || m.medioBancario === "Cuenta corriente";
     if (m.estado === "Pendiente" && esCC && marcandoPagoCCId === m.origenId) {
@@ -6346,6 +6359,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     })
     .sort((a, b) => fechaLocal(a.prestamo.fecha) - fechaLocal(b.prestamo.fecha) || a.id - b.id);
   const deudasTarjetaVigentes = deudasTarjeta.filter((d) => d.prestamo.estado !== "Pagado" && d.falta > 0);
+  // En cuántas cuotas se pagó con tarjeta una compra o entrega (para su estado "Pagada en: N cuotas").
+  const cuotasDeDeudaTarjeta = (prestamoId) => (prestamoId ? prestamos.find((p) => p.id === prestamoId)?.cuotas : null) || 1;
   // Todas las cuotas que faltan devolver, una por fila (para el mes a mes y los avisos).
   const cuotasTarjetaPendientes = deudasTarjetaVigentes
     .flatMap((d) => d.cuotas.filter((c) => c.falta > 0).map((c) => ({ ...c, id: `${d.id}-${c.numero}`, deuda: d })))
@@ -8551,7 +8566,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       origen: "ingresos", origenId: i.id, tipoFactura: i.tipoFactura,
     })),
     ...comprasFacturas.filter((c) => !obraIdsPapelera.has(c.obraId)).map((c) => ({
-      id: `egr-${c.id}`, fecha: fechaEfectivaMovimiento(c), creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: `${c.descripcion ? `${c.proveedor} — ${c.descripcion}` : c.proveedor}${c.pagadaConEntrega ? " (saldada con entregas / notas de crédito)" : ""}`, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado,
+      id: `egr-${c.id}`, fecha: fechaEfectivaMovimiento(c), creadoEn: c.creadoEn, tipo: "Egreso", obraId: c.obraId, detalle: `${c.descripcion ? `${c.proveedor} — ${c.descripcion}` : c.proveedor}${c.pagadaConEntrega ? " (saldada con entregas / notas de crédito)" : ""}`, cuenta: c.cuenta, monto: -(c.monto || 0), estado: c.estado, cuotasTarjeta: esTarjetaSocio(c.cuenta) ? cuotasDeDeudaTarjeta(c.prestamoId) : null,
       origen: "compras_facturas", origenId: c.id, tipoFactura: c.tipoFactura, formaPago: c.formaPago, medioBancario: c.medioBancario,
     })),
     ...movimientosManualNormales.flatMap((m) => [
@@ -8579,7 +8594,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       origen: "cobros_socios", origenId: c.id, tipoFactura: c.tipoFactura,
     })),
     ...entregasProveedores.map((e) => ({
-      id: `entrega-prov-${e.id}`, fecha: e.fecha, creadoEn: e.creadoEn, tipo: "Egreso", obraId: null, detalle: `Entrega a cuenta — ${e.proveedor}${e.nota ? ` (${e.nota})` : ""}`, cuenta: e.cuenta, monto: -(e.monto || 0), estado: "Pagada",
+      id: `entrega-prov-${e.id}`, fecha: e.fecha, creadoEn: e.creadoEn, tipo: "Egreso", obraId: null, detalle: `Entrega a cuenta — ${e.proveedor}${e.nota ? ` (${e.nota})` : ""}`, cuenta: e.cuenta, monto: -(e.monto || 0), estado: "Pagada", cuotasTarjeta: esTarjetaSocio(e.cuenta) ? cuotasDeDeudaTarjeta(e.prestamoId) : null,
       origenId: e.id,
     })),
     ...avancesTanteros.flatMap((a) => {
@@ -15919,7 +15934,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                                     {` · ${c.comprobante || "sin N°"} · ${c.tipoFactura && c.tipoFactura !== "Sin factura" ? `Factura ${c.tipoFactura}` : "sin factura"} · `}
                                     <span className="font-mono font-semibold text-slate-800">{fmtARS(c.monto)}</span>
                                     {totalPercepciones(c) > 0 && <span className="text-slate-400"> (incluye {fmtARS(totalPercepciones(c))} de percepciones)</span>}
-                                    {` · ${c.estado}`}
+                                    {esTarjetaSocio(c.cuenta) && c.estado !== "Pendiente" ? <> · <span className="font-semibold text-violet-700">Pagada en: {cuotasDeDeudaTarjeta(c.prestamoId)} cuota{cuotasDeDeudaTarjeta(c.prestamoId) === 1 ? "" : "s"}</span></> : ` · ${c.estado}`}
                                   </span>
                                   <button onClick={() => desvincularFacturaOC(c)} className={btnGhostSm}>Desvincular</button>
                                 </li>
@@ -16078,6 +16093,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                               <button onClick={() => marcarCuentaCorrientePagada(c, "Transferencia")} className={btnGhostSm}>Transferencia</button>
                               <button onClick={() => setMarcandoPagoCCId(null)} className={btnGhostSm}><X size={10} /></button>
                             </span>
+                          ) : esTarjetaSocio(c.cuenta) && c.estado !== "Pendiente" ? (
+                            <BadgeTarjeta cuotas={cuotasDeDeudaTarjeta(c.prestamoId)} socio={TARJETAS_SOCIOS[c.cuenta]} />
                           ) : (
                             <button onClick={() => toggleEstadoCompra(c)} title="Cambiar entre Pendiente y Pagada" className="cursor-pointer">
                               <Badge estado={c.estado} />
@@ -18179,7 +18196,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                                       <span className="flex items-center gap-1 text-slate-500"><ObraDot obra={obra} />{obra?.nombre || "General"}</span>
                                       <span className="text-slate-600">{c.categoria}{c.descripcion ? ` — ${c.descripcion}` : ""}</span>
                                       {c.comprobante && <span className="font-mono text-[10px] text-slate-400">{c.comprobante}</span>}
-                                      <Badge estado={c.estado} />
+                                      {esTarjetaSocio(c.cuenta) && c.estado !== "Pendiente" ? <BadgeTarjeta cuotas={cuotasDeDeudaTarjeta(c.prestamoId)} socio={TARJETAS_SOCIOS[c.cuenta]} /> : <Badge estado={c.estado} />}
                                       {c.pagadaConEntrega && c.estado === "Pagada" && <span className="text-[10px] text-emerald-700">saldada con entregas / notas de crédito</span>}
                                       {(() => {
                                         // La factura propia de la compra + las de "Facturas varias" vinculadas a ella.
