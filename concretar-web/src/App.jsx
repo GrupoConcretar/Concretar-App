@@ -5097,6 +5097,30 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // El contenido scrollea dentro de <main>, no en el body — al abrir un formulario
   // de edición desde algo que quedó más abajo en la lista, lo subimos a la vista.
   const mainRef = useRef(null);
+  // Botón "Instalar" en el celular: aparece cuando Chrome avisa que la app se puede
+  // instalar (ver main.jsx) y todavía no está instalada. "Ahora no" lo esconde 30 días.
+  const DIAS_SIN_OFRECER_INSTALAR = 30;
+  const [avisoInstalar, setAvisoInstalar] = useState(() => window.__avisoInstalar || null);
+  const [instalarDescartadoHasta, setInstalarDescartadoHasta] = useState(() => {
+    try { return Number(localStorage.getItem("concretar-instalar-descartado-hasta")) || 0; } catch { return 0; }
+  });
+  useEffect(() => {
+    const actualizar = () => setAvisoInstalar(window.__avisoInstalar || null);
+    window.addEventListener("concretar-instalable", actualizar);
+    return () => window.removeEventListener("concretar-instalable", actualizar);
+  }, []);
+  async function instalarApp() {
+    if (!avisoInstalar) return;
+    avisoInstalar.prompt();
+    try { await avisoInstalar.userChoice; } catch { /* el usuario cerró el cartel */ }
+    window.__avisoInstalar = null;
+    setAvisoInstalar(null);
+  }
+  function descartarInstalar() {
+    const hasta = Date.now() + DIAS_SIN_OFRECER_INSTALAR * 86400000;
+    try { localStorage.setItem("concretar-instalar-descartado-hasta", String(hasta)); } catch { /* sin almacenamiento: vuelve a aparecer la próxima vez */ }
+    setInstalarDescartadoHasta(hasta);
+  }
   function scrollContenidoArriba() {
     mainRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -11240,6 +11264,17 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
 
       {/* Main content */}
       <main ref={mainRef} className="mt-12 flex-1 overflow-y-auto p-4 md:mt-0 md:p-8">
+        {avisoInstalar && Date.now() > instalarDescartadoHasta && (
+          <div className="mb-4 flex items-center gap-3 rounded-lg p-3 text-white shadow-sm sm:hidden" style={{ backgroundColor: BRAND.navy900 }}>
+            <img src="/icono-c-fondo-192.png" alt="" className="h-10 w-10 shrink-0 rounded-xl ring-1 ring-white/20" />
+            <div className="min-w-0 flex-1 text-xs text-slate-200">
+              <div className="text-sm font-semibold text-white">Instalá Concretar en el celular</div>
+              Se abre como una app, con su ícono en la pantalla de inicio.
+            </div>
+            <button onClick={instalarApp} className="shrink-0 rounded-md bg-white px-3 py-1.5 text-sm font-semibold" style={{ color: BRAND.navy900 }}>Instalar</button>
+            <button onClick={descartarInstalar} aria-label="Ahora no" title="Ahora no" className="shrink-0 text-slate-300 hover:text-white"><X size={16} /></button>
+          </div>
+        )}
         {tab === "general" && (
           <div className="space-y-6">
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">General</h2>
