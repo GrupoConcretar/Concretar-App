@@ -2152,7 +2152,7 @@ function ResumenObrasCuentas({ items }) {
               <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Gastado Eq. y Mat.</div><div className="font-mono text-slate-700">{celda(r.gastadoEqYMat)}</div></div>
               <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Gastado total</div><div className="font-mono text-slate-700">{celda(r.gastado)}</div></div>
               <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Dinero en caja</div><div className={`font-mono font-semibold ${r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.dineroEnCaja)}</div></div>
-              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">Ganancia estimada</div><div className={`font-mono font-semibold ${r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.gananciaEstimada)}</div></div>
+              <div><div className="text-[10px] uppercase tracking-wide text-slate-400">{r.trabajoCerrado ? "Ganancia final" : "Ganancia estimada"}</div><div className={`font-mono font-semibold ${r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.gananciaEstimada)}</div></div>
               <div><div className="text-[10px] uppercase tracking-wide text-slate-400">% Ganancia</div><div className="font-mono text-slate-700">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</div></div>
             </div>
           </div>
@@ -2173,7 +2173,7 @@ function ResumenObrasCuentas({ items }) {
               <th className="px-2 py-1.5 text-right">Gastado Eq. y Mat.</th>
               <th className="px-2 py-1.5 text-right">Gastado total</th>
               <th className="px-2 py-1.5 text-right">Dinero en caja</th>
-              <th className="px-2 py-1.5 text-right">Ganancia estimada</th>
+              <th className="px-2 py-1.5 text-right">Ganancia</th>
               <th className="px-2 py-1.5 text-right">% Ganancia</th>
               <th className="px-2 py-1.5">Estado</th>
             </tr>
@@ -2190,7 +2190,7 @@ function ResumenObrasCuentas({ items }) {
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.gastadoEqYMat)}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{celda(r.gastado)}</td>
                 <td className={`px-2 py-1 text-right font-mono font-semibold ${r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.dineroEnCaja)}</td>
-                <td className={`px-2 py-1 text-right font-mono font-semibold ${r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`}>{celda(r.gananciaEstimada)}</td>
+                <td className={`px-2 py-1 text-right font-mono font-semibold ${r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`} title={r.trabajoCerrado ? "Ganancia final (trabajo finalizado)" : "Ganancia estimada con lo presupuestado"}>{celda(r.gananciaEstimada)}{r.trabajoCerrado && <span className="ml-1 rounded bg-emerald-100 px-1 text-[9px] font-bold text-emerald-700">FINAL</span>}</td>
                 <td className="px-2 py-1 text-right font-mono text-slate-700">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</td>
                 <td className="px-2 py-1"><Badge estado={r.obra.estado} /></td>
               </tr>
@@ -3483,6 +3483,48 @@ function ModalDevolverCuotasTarjeta({ titulo, cuotas, onClose, onGuardar }) {
             <button type="button" onClick={onClose} className={btnGhost}>Cancelar</button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+// Confirmación de "Finalizar trabajo": cómo queda la obra/contrato al cerrarlo.
+function ModalFinalizarTrabajo({ resumen: r, onClose, onConfirmar }) {
+  const [fecha, setFecha] = useState(hoyISO());
+  const gananciaFinal = (r.precioObra || 0) - (r.gastado || 0);
+  const sinGastar = r.presupuestadoManoObra !== null || r.presupuestadoEqYMat !== null
+    ? Math.max(0, (r.presupuestadoManoObra || 0) - (r.gastadoManoObra || 0)) + Math.max(0, (r.presupuestadoEqYMat || 0) - (r.gastadoEqYMat || 0))
+    : null;
+  const fila = (label, valor, cls = "text-slate-800") => (
+    <div className="flex items-center justify-between gap-3"><span className="text-slate-600">{label}</span><span className={`font-mono font-semibold ${cls}`}>{valor}</span></div>
+  );
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <h3 className="text-lg font-bold text-slate-900">Finalizar trabajo</h3>
+          <button onClick={onClose} aria-label="Cerrar"><X size={18} /></button>
+        </div>
+        <p className="mb-3 text-sm text-slate-600"><span className="font-semibold">{r.obra.nombre}</span>. Solo se cierra este contrato: los demás del cliente siguen como están.</p>
+        <div className="space-y-1.5 rounded-md border border-stone-200 bg-stone-50 p-3 text-sm">
+          {fila("Precio de obra", fmtARS(r.precioObra))}
+          {fila("Gastado total", fmtARS(r.gastado))}
+          {sinGastar !== null && fila("Presupuesto que no se gastó", fmtARS(sinGastar), "text-slate-500")}
+          <div className="border-t border-stone-200 pt-1.5">
+            {fila("Ganancia final", fmtARS(gananciaFinal), gananciaFinal < 0 ? "text-rose-600" : "text-emerald-700")}
+            {r.precioObra ? <div className="text-right text-xs text-slate-500">{Math.round((gananciaFinal / r.precioObra) * 100)}% del precio</div> : null}
+          </div>
+          {fila("Falta cobrar", fmtARS(r.faltaCobrar), r.faltaCobrar > TOLERANCIA_REDONDEO_DEUDA ? "text-rose-600" : "text-emerald-700")}
+        </div>
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-slate-600">
+          <li>Deja de proyectar gastos por hacer en Próximos pagos.</li>
+          <li>La ganancia pasa a ser la final (si después cargás un gasto atrasado, se descuenta solo).</li>
+          <li>Queda como {r.faltaCobrar > TOLERANCIA_REDONDEO_DEUDA ? <b>Pendiente de cobro</b> : <b>Finalizada</b>}{r.faltaCobrar > TOLERANCIA_REDONDEO_DEUDA ? " hasta que se cobre lo que falta" : ""}.</li>
+        </ul>
+        <div className="mt-3 max-w-[12rem]"><Field label="Fecha de finalización"><FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required className={inputCls} /></Field></div>
+        <div className="mt-4 flex items-center gap-2">
+          <button onClick={() => onConfirmar(fecha)} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Finalizar trabajo</button>
+          <button onClick={onClose} className={btnGhost}>Cancelar</button>
+        </div>
       </div>
     </div>
   );
@@ -6871,6 +6913,19 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     const nuevo = await addRecord("expedientes_obra", { obraId, ...datos, pasos: {}, dias: {} }, setExpedientesObra);
     if (nuevo) consultarDondeEsta(nuevo, false);
   }
+  // ---------- Finalizar el trabajo de una obra / contrato ----------
+  // Se cierra solo ese contrato (los demás del cliente siguen como están): no se proyectan
+  // más gastos por hacer, la ganancia pasa a ser la final y el estado queda "Pendiente de
+  // cobro" si todavía falta cobrar algo, o "Finalizada" si ya se cobró todo.
+  const [finalizandoTrabajoId, setFinalizandoTrabajoId] = useState(null);
+  function finalizarTrabajo(obra, faltaCobrar, fecha) {
+    updateRecord("obras", obra.id, { trabajoCerradoEn: fecha || hoyISO(), estado: faltaCobrar > TOLERANCIA_REDONDEO_DEUDA ? "Pendiente de cobro" : "Finalizada" }, setObras);
+    setFinalizandoTrabajoId(null);
+  }
+  function reabrirTrabajo(obra) {
+    updateRecord("obras", obra.id, { trabajoCerradoEn: null, estado: "En curso" }, setObras);
+  }
+
   // ---------- Portal del cliente ----------
   // Un link por obra "principal" (la obra suelta, o el centro de costos / la obra de la
   // que cuelgan los contratos): el cliente ve esa obra y todos sus contratos juntos.
@@ -9157,7 +9212,10 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
       const gastado = gastadoEqYMat + gastadoManoObra;
       const disponibleEqYMat = presupuestadoEqYMat !== null ? presupuestadoEqYMat - gastadoEqYMat : null;
       const costoPresupuestado = pg ? presupuestadoManoObra + presupuestadoEqYMat : null;
-      const gananciaEstimada = costoPresupuestado !== null ? precioObra - costoPresupuestado : null;
+      // Trabajo finalizado: ya no quedan gastos por hacer, la ganancia es la final (precio
+      // menos lo gastado de verdad). Si no, se estima con lo presupuestado.
+      const trabajoCerrado = !!o.trabajoCerradoEn;
+      const gananciaEstimada = trabajoCerrado ? precioObra - gastado : costoPresupuestado !== null ? precioObra - costoPresupuestado : null;
       return {
         obra: o,
         precioObra,
@@ -9170,6 +9228,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         gastado,
         disponibleEqYMat,
         gananciaEstimada,
+        trabajoCerrado,
         porcentajeGanancia: gananciaEstimada !== null && precioObra ? gananciaEstimada / precioObra : null,
         dineroEnCaja: cobrado - gastado,
         inicio: o.inicio,
@@ -9518,7 +9577,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   }
   const obrasDisponibleProyectado = resumenPorObra
-    .filter((r) => r.obra.estado === "En curso")
+    .filter((r) => r.obra.estado === "En curso" && !r.trabajoCerrado)
     .map((r) => {
       const disponibleManoObra = r.presupuestadoManoObra !== null ? Math.max(0, r.presupuestadoManoObra - r.gastadoManoObra) : 0;
       const disponibleEqYMat = r.disponibleEqYMat !== null ? Math.max(0, r.disponibleEqYMat) : 0;
@@ -12289,6 +12348,12 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                           <div><div className="text-slate-400">Cobrado</div><div className="font-mono font-semibold text-emerald-700">{fmtARS(r?.cobrado || 0)}</div></div>
                           <div><div className="text-slate-400">Falta cobrar</div><div className="font-mono font-semibold text-rose-600">{fmtARS(r?.faltaCobrar || 0)}</div></div>
                         </div>
+                        {r?.trabajoCerrado && (
+                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md bg-emerald-50 px-2 py-1 text-xs">
+                            <span className="flex items-center gap-1 font-semibold text-emerald-700"><CheckCircle2 size={12} /> Trabajo finalizado el {fmtFecha(c.trabajoCerradoEn)}</span>
+                            <span className="text-slate-600">Ganancia final <span className={`font-mono font-semibold ${r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(r.gananciaEstimada)}</span></span>
+                          </div>
+                        )}
                       </button>
                     );
                   })}
@@ -12334,8 +12399,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                       const actual = o.id === obraSel.id;
                       return (
                         <button key={o.id} onClick={() => abrirObra(o)} className={`rounded-md border px-3 py-1.5 text-left text-sm ${actual ? "border-amber-500 bg-amber-50 font-semibold text-slate-900" : "border-stone-300 bg-white text-slate-700 hover:bg-stone-50"}`}>
-                          <div>{o.id === principal.id ? "Contrato original" : nombreContrato(o)}</div>
-                          <div className="font-mono text-[11px] text-slate-500">{fmtARS(r?.precioObra || 0)}</div>
+                          <div className="flex items-center gap-1">{o.trabajoCerradoEn && <CheckCircle2 size={12} className="text-emerald-600" />}{o.id === principal.id ? "Contrato original" : nombreContrato(o)}</div>
+                          <div className="font-mono text-[11px] text-slate-500">{fmtARS(r?.precioObra || 0)}{o.trabajoCerradoEn ? " · finalizado" : ""}</div>
                         </button>
                       );
                     })}
@@ -12475,6 +12540,11 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                           <span className="flex items-center gap-1"><ArrowRightLeft size={13} /> Asignar personal</span>
                         </button>
                       )}
+                      {canVerFinanzas && !obraSel.trabajoCerradoEn && (
+                        <button onClick={() => setFinalizandoTrabajoId(obraSel.id)} className="rounded-md border border-emerald-600 bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700">
+                          <span className="flex items-center gap-1"><CheckCircle2 size={13} /> Finalizar trabajo</span>
+                        </button>
+                      )}
                       <button onClick={() => iniciarEdicionObra(obraSel)} className={btnGhost}>
                         <span className="flex items-center gap-1"><Pencil size={13} /> Editar</span>
                       </button>
@@ -12483,6 +12553,23 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                       </button>
                     </div>
                   </div>
+
+                  {obraSel.trabajoCerradoEn && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm">
+                      <span className="flex items-center gap-1.5 font-semibold text-emerald-800">
+                        <CheckCircle2 size={16} /> Trabajo finalizado el {fmtFecha(obraSel.trabajoCerradoEn)}
+                        <span className="font-normal text-emerald-700">· ya no se proyectan gastos por hacer; la ganancia es la final.</span>
+                      </span>
+                      {canVerFinanzas && (
+                        <button
+                          onClick={() => { if (window.confirm(`¿Reabrir "${obraSel.nombre}"? Vuelve a estar "En curso", a proyectar los gastos que falten y a estimar la ganancia con lo presupuestado.`)) reabrirTrabajo(obraSel); }}
+                          className={btnGhost}
+                        >
+                          Reabrir
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   <Panel title="Balance de la obra">
                     {(() => {
@@ -12504,7 +12591,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                           {item("Gastado Eq. y Mat.", r.gastadoEqYMat)}
                           {item("Gastado total", r.gastado)}
                           {item("Dinero en caja", r.dineroEnCaja, r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700")}
-                          {item("Ganancia estimada", r.gananciaEstimada, r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700")}
+                          {item(r.trabajoCerrado ? "Ganancia final" : "Ganancia estimada", r.gananciaEstimada, r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700")}
                           <div>
                             <div className="text-[10px] uppercase tracking-wide text-slate-400">% Ganancia</div>
                             <div className="font-mono text-xs font-semibold text-slate-800">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</div>
@@ -19124,6 +19211,12 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           onGuardar={guardarPagoPrestamo}
         />
       )}
+
+      {finalizandoTrabajoId && (() => {
+        const r = resumenPorObra.find((x) => x.obra.id === finalizandoTrabajoId);
+        if (!r) return null;
+        return <ModalFinalizarTrabajo resumen={r} onClose={() => setFinalizandoTrabajoId(null)} onConfirmar={(fecha) => finalizarTrabajo(r.obra, r.faltaCobrar, fecha)} />;
+      })()}
 
       {devolviendoCuotasTarjeta && (
         <ModalDevolverCuotasTarjeta
