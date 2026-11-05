@@ -5195,6 +5195,28 @@ function ArchivoInput({ label, value, nombreArchivo, onChange }) {
   );
 }
 
+// Sección que arranca cerrada mostrando solo su título y un resumen de una línea; al
+// tocarla se abre completa. Los botones de la sección aparecen cuando está abierta.
+function Desplegable({ titulo, resumen, action, children, forzarAbierto = false }) {
+  const [abierto, setAbierto] = useState(false);
+  const visible = abierto || forzarAbierto;
+  return (
+    <div className="rounded-lg border border-stone-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3 sm:px-5">
+        <button type="button" onClick={() => setAbierto(!visible)} aria-expanded={visible} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+          <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${visible ? "" : "-rotate-90"}`} />
+          <span className="min-w-0">
+            <span className="block text-sm font-bold uppercase tracking-wide text-slate-700">{titulo}</span>
+            {resumen && <span className="block text-xs text-slate-500">{resumen}</span>}
+          </span>
+        </button>
+        {visible && action && <div className="shrink-0">{action}</div>}
+      </div>
+      {visible && <div className="border-t border-stone-200 p-4 sm:p-5">{children}</div>}
+    </div>
+  );
+}
+
 function Panel({ title, action, children }) {
   return (
     <div className="rounded-lg border border-stone-200 bg-white shadow-sm">
@@ -12423,6 +12445,21 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               const cobradosObra = ingresos
                 .filter((i) => i.obraId === obraSel.id && i.estado !== "Pendiente")
                 .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha) || (a.id - b.id));
+              // Resúmenes de una línea para los desplegables de la obra.
+              const porCobrarObra = [
+                ...cobrosPendientesObra.map((i) => ({ monto: i.monto || 0, fecha: i.fechaCobroEstimada || i.fecha })),
+                ...facturasVentaProyectadasObra.map((f) => ({ monto: f.monto || 0, fecha: f.fechaCobroEstimada || f.fecha })),
+              ].sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+              const resumenFacturasObra = [
+                porCobrarObra.length === 0 ? "Nada por cobrar" : `${porCobrarObra.length} por cobrar · ${fmtARS(porCobrarObra.reduce((x, c) => x + c.monto, 0))} · próximo ${fmtFecha(porCobrarObra[0].fecha)}`,
+                cobradosObra.length > 0 ? `cobrado ${fmtARS(cobradosObra.reduce((x, i) => x + (i.monto || 0), 0))}` : null,
+              ].filter(Boolean).join(" · ");
+              const resumenExpedienteObra = (() => {
+                const exp = expedienteDeObra(obraSel.id);
+                if (!exp) return "Sin expediente cargado";
+                const actual = calcularPasosExpediente(exp, hoyISO(), feriadosExpedientes()).find((p) => p.estado !== "hecho");
+                return actual ? `Paso ${actual.n}/20 · ${actual.oficina}${actual.estado === "atrasado" ? " (atrasado)" : ""}` : "Pagado";
+              })();
 
               return (
                 <>
@@ -12447,60 +12484,35 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                    <div className="rounded-lg border border-stone-200 bg-white p-3">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Encargado</div>
-                      <div className="mt-0.5 font-medium text-slate-800">{encargadoObra ? nombreCompletoDe(encargadoObra) : "Sin asignar"}</div>
-                    </div>
-                    <div className="rounded-lg border border-stone-200 bg-white p-3">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Duración</div>
-                      <div className="mt-0.5 font-medium text-slate-800">{obraSel.meses} meses desde {fmtFecha(obraSel.inicio)}</div>
-                    </div>
-                    <div className="rounded-lg border border-stone-200 bg-white p-3">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Cierre semanal</div>
-                      <div className="mt-0.5 font-medium text-slate-800">{obraSel.diaCierre || "—"} {obraSel.horaCierre || ""}</div>
-                    </div>
-                    <div className="rounded-lg border border-stone-200 bg-white p-3">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Personal afectado</div>
-                      <div className="mt-0.5 font-medium text-slate-800">{personal.filter((p) => obraActualDe(p)?.id === obraSel.id).length}</div>
-                    </div>
-                  </div>
-
-                  <Panel title="Expediente (obra del Estado)">
-                    <ExpedienteObra
-                      key={obraSel.id}
-                      expediente={expedienteDeObra(obraSel.id)}
-                      hoy={hoyISO()}
-                      consultando={consultandoExpedienteId === expedienteDeObra(obraSel.id)?.id}
-                      onCrear={(datos) => crearExpediente(obraSel.id, datos)}
-                      onGuardar={(patch) => guardarExpediente(expedienteDeObra(obraSel.id), patch)}
-                      onConsultar={() => consultarDondeEsta(expedienteDeObra(obraSel.id))}
-                      onQuitar={() => quitarExpediente(expedienteDeObra(obraSel.id))}
-                    />
+                  <Panel title="Balance de la obra">
+                    {(() => {
+                      const celda = (v) => (v === null || v === undefined ? "—" : fmtARS(v));
+                      const r = resumenObraSel;
+                      const item = (label, val, tono) => (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
+                          <div className={`font-mono text-xs font-semibold ${tono || "text-slate-800"}`}>{celda(val)}</div>
+                        </div>
+                      );
+                      return (
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
+                          {item("Precio de obra", r.precioObra)}
+                          {item("Falta cobrar", r.faltaCobrar)}
+                          {item("Presup. M.O.", r.presupuestadoManoObra)}
+                          {item("Pagado M.O.", r.gastadoManoObra)}
+                          {item("Presup. Eq. y Mat.", r.presupuestadoEqYMat)}
+                          {item("Gastado Eq. y Mat.", r.gastadoEqYMat)}
+                          {item("Gastado total", r.gastado)}
+                          {item("Dinero en caja", r.dineroEnCaja, r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700")}
+                          {item("Ganancia estimada", r.gananciaEstimada, r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700")}
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wide text-slate-400">% Ganancia</div>
+                            <div className="font-mono text-xs font-semibold text-slate-800">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </Panel>
-
-                  {canVerFinanzas && (() => {
-                    const principal = obraPrincipalDe(obraSel);
-                    const ids = [principal.id, ...contratosDe(principal.id).map((c) => c.id)];
-                    const portal = portalDeObra(principal.id);
-                    return (
-                      <Panel title={`Portal del cliente${principal.id !== obraSel.id ? ` — ${principal.nombre} (todos sus contratos)` : ""}`}>
-                        <PanelPortalCliente
-                          obra={principal}
-                          portal={portal}
-                          certificados={certificadosPortal(ids)}
-                          fotos={obraFotos.filter((f) => ids.includes(f.obraId)).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || b.id - a.id)}
-                          onCrear={() => crearPortal(principal.id)}
-                          onActualizar={(patch) => actualizarPortal(portal, patch)}
-                          onCambiarLink={() => actualizarPortal(portal, { token: tokenPortalNuevo() })}
-                          onGuardarCertificado={guardarCertificadoPortal}
-                          onSubirFotos={(archivos) => subirFotosObra(obraSel.id, archivos)}
-                          onGuardarFoto={(f, patch) => updateRecord("obra_fotos", f.id, patch, setObraFotos)}
-                          onBorrarFoto={(f) => deleteRecord("obra_fotos", f.id, setObraFotos)}
-                        />
-                      </Panel>
-                    );
-                  })()}
 
                   <Panel title="Alertas de esta obra">
                     {totalAlertasObra === 0 ? (
@@ -12598,174 +12610,11 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                     )}
                   </Panel>
 
-                  <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Herramientas en uso</div>
-                    <div className="mt-1 font-mono text-lg font-bold text-slate-900">{herramientasEnUso}</div>
-                  </div>
-
-                  <Panel title="Balance de la obra">
-                    {(() => {
-                      const celda = (v) => (v === null || v === undefined ? "—" : fmtARS(v));
-                      const r = resumenObraSel;
-                      const item = (label, val, tono) => (
-                        <div>
-                          <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
-                          <div className={`font-mono text-xs font-semibold ${tono || "text-slate-800"}`}>{celda(val)}</div>
-                        </div>
-                      );
-                      return (
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
-                          {item("Precio de obra", r.precioObra)}
-                          {item("Falta cobrar", r.faltaCobrar)}
-                          {item("Presup. M.O.", r.presupuestadoManoObra)}
-                          {item("Pagado M.O.", r.gastadoManoObra)}
-                          {item("Presup. Eq. y Mat.", r.presupuestadoEqYMat)}
-                          {item("Gastado Eq. y Mat.", r.gastadoEqYMat)}
-                          {item("Gastado total", r.gastado)}
-                          {item("Dinero en caja", r.dineroEnCaja, r.dineroEnCaja < 0 ? "text-rose-600" : "text-emerald-700")}
-                          {item("Ganancia estimada", r.gananciaEstimada, r.gananciaEstimada !== null && r.gananciaEstimada < 0 ? "text-rose-600" : "text-emerald-700")}
-                          <div>
-                            <div className="text-[10px] uppercase tracking-wide text-slate-400">% Ganancia</div>
-                            <div className="font-mono text-xs font-semibold text-slate-800">{r.porcentajeGanancia === null ? "—" : `${Math.round(r.porcentajeGanancia * 100)}%`}</div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </Panel>
-
-                  {(() => {
-                    // Todo lo del personal de esta obra en un solo lugar: quiénes trabajan acá,
-                    // los grupos de tanteros (con sus pagos) y los jornales que faltan pagar.
-                    const cuadrilla = cuadrillasPorObra[obraSel.id] || { empresa: [], gruposTantero: [] };
-                    const tanterosObra = tanterosActivos.filter((t) => t.obraId === obraSel.id);
-                    const tanterosObraFinalizados = tanterosFinalizados.filter((t) => t.obraId === obraSel.id);
-                    const jornalesPendientes = [];
-                    semanasOrdenadas.forEach((sk) => {
-                      const porPersona = gruposSemana[sk][obraSel.id];
-                      if (!porPersona) return;
-                      Object.keys(porPersona).forEach((nombre) => {
-                        const g = porPersona[nombre];
-                        const extras = extrasDe(sk, String(obraSel.id), nombre).reduce((x, ex) => x + (ex.monto || 0), 0);
-                        jornalesPendientes.push({ semana: sk, nombre, horas: g.horas, monto: g.monto + extras });
-                      });
-                    });
-                    const totalJornalesPendientes = jornalesPendientes.reduce((x, j) => x + j.monto, 0);
-                    const blancoPendienteObra = pendientesEnBlanco.filter((g) => g.obraId === obraSel.id);
-                    const saldoTanteros = tanterosObra.reduce((x, t) => x + ((t.precioTotal || 0) - pagadoDeTantero(t.id)), 0);
-                    const nadie = cuadrilla.empresa.length === 0 && tanterosObra.length === 0;
-                    return (
-                      <Panel
-                        title="Personal y pagos"
-                        action={
-                          <div className="flex flex-wrap gap-2">
-                            {canEditarPersonal && <button onClick={() => setAsignarPersonalContexto(obraSel.id)} className={btnGhost}>Asignar personal</button>}
-                            {canVerLiquidacion && <button onClick={() => abrirPagos("historial", obraSel.id)} className={btnGhost}>Historial de pagos</button>}
-                          </div>
-                        }
-                      >
-                        <div className="space-y-5">
-                          {canVerLiquidacion && (
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                              <div className="rounded-md border border-stone-200 p-3">
-                                <div className="text-[10px] uppercase tracking-wide text-slate-400">Mano de obra hasta hoy</div>
-                                <div className="font-mono text-sm font-semibold text-slate-800">{fmtARS(costoManoDeObraDeObra(obraSel.id))}</div>
-                              </div>
-                              <div className="rounded-md border border-stone-200 p-3">
-                                <div className="text-[10px] uppercase tracking-wide text-slate-400">Jornales por pagar</div>
-                                <div className={`font-mono text-sm font-semibold ${totalJornalesPendientes > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalJornalesPendientes)}</div>
-                              </div>
-                              <div className="rounded-md border border-stone-200 p-3">
-                                <div className="text-[10px] uppercase tracking-wide text-slate-400">Saldo a tanteros</div>
-                                <div className={`font-mono text-sm font-semibold ${saldoTanteros > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldoTanteros)}</div>
-                              </div>
-                            </div>
-                          )}
-
-                          <div>
-                            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Trabajando en esta obra</div>
-                            {nadie ? (
-                              <div className="text-xs text-slate-400">No hay personal asignado a esta obra.</div>
-                            ) : (
-                              <div className="flex flex-wrap gap-2">
-                                {cuadrilla.empresa.map((p) => (
-                                  <button key={p.id} onClick={() => { setTab("personal"); setViewingPersonId(p.id); }} className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-stone-50">
-                                    {nombreCompletoDe(p)} <span className="text-slate-400">· {p.categoria}</span>
-                                  </button>
-                                ))}
-                                {tanterosObra.map((t) => (
-                                  <span key={`t-${t.id}`} className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs text-amber-800">
-                                    Tanteros: {t.nombreGrupo} ({(t.integrantes || []).length})
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          {canVerLiquidacion && (
-                            <div>
-                              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tanteros de esta obra</span>
-                                <span className="flex flex-wrap gap-2">
-                                  {tanterosObraFinalizados.length > 0 && (
-                                    <button onClick={() => { abrirPagos("tanteros", obraSel.id); setShowTanterosFinalizados(true); }} className={btnGhost}>Finalizados ({tanterosObraFinalizados.length})</button>
-                                  )}
-                                  <button onClick={() => { abrirPagos("tanteros", obraSel.id); setShowTanteroForm(true); }} className={btnGhost}><span className="flex items-center gap-1"><Plus size={13} /> Nuevo grupo</span></button>
-                                </span>
-                              </div>
-                              {tanterosObra.length === 0 ? (
-                                <div className="text-xs text-slate-400">No hay grupos de tanteros activos en esta obra.</div>
-                              ) : (
-                                <div className="space-y-3">{tanterosObra.map((t) => renderGrupoTantero(t))}</div>
-                              )}
-                            </div>
-                          )}
-
-                          {canVerLiquidacion && (
-                            <div>
-                              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Jornales por pagar</span>
-                                {jornalesPendientes.length > 0 && (
-                                  <button onClick={() => abrirPagos("pendientes", obraSel.id)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-                                    <Wallet size={13} /> Pagar jornales
-                                  </button>
-                                )}
-                              </div>
-                              {jornalesPendientes.length === 0 ? (
-                                <div className="text-xs text-slate-400">No hay jornales pendientes de pago en esta obra.</div>
-                              ) : (
-                                <div className="overflow-x-auto rounded-md border border-stone-200">
-                                  <table className="w-full text-left text-xs">
-                                    <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                                      <tr><th className="px-2 py-1.5">Semana del</th><th className="px-2 py-1.5">Persona</th><th className="px-2 py-1.5 text-right">Hs.</th><th className="px-2 py-1.5 text-right">Monto</th></tr>
-                                    </thead>
-                                    <tbody>
-                                      {jornalesPendientes.map((j) => (
-                                        <tr key={`${j.semana}|${j.nombre}`} className="border-t border-stone-100">
-                                          <td className="px-2 py-1 text-slate-600">{fmtFecha(j.semana)}</td>
-                                          <td className="px-2 py-1 font-medium text-slate-800">{j.nombre}</td>
-                                          <td className="px-2 py-1 text-right font-mono text-slate-500">{j.horas}</td>
-                                          <td className="px-2 py-1 text-right font-mono text-slate-800">{fmtARS(j.monto)}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                              {blancoPendienteObra.length > 0 && (
-                                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                                  <span>{blancoPendienteObra.length} quincena(s) de personal en blanco sin liquidar ({blancoPendienteObra.map((g) => etiquetaQuincena(g.mes, g.quincena)).join("; ")}).</span>
-                                  <button onClick={() => abrirPagos("formal", obraSel.id)} className={btnGhost}>Ir a liquidación</button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </Panel>
-                    );
-                  })()}
-
-                  <Panel
-                    title="Facturas y cobros"
+                  <div className="space-y-2">
+                  <Desplegable
+                    key={`facturas-${obraSel.id}`}
+                    titulo="Facturas y cobros"
+                    resumen={resumenFacturasObra}
                     action={
                       <button
                         onClick={() => {
@@ -12940,10 +12789,13 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                         </div>
                       </div>
                     )}
-                  </Panel>
+                  </Desplegable>
 
-                  <Panel
-                    title="Historial de gastos"
+                  <Desplegable
+                    key={`gastos-${obraSel.id}`}
+                    titulo="Historial de gastos"
+                    resumen={historialGastosObra.length === 0 ? "Sin gastos todavía" : `${historialGastosObra.length} movimiento(s) · ${fmtARS(historialGastosObra.reduce((x, g) => x + (g.monto || 0), 0))} · último ${fmtFecha(historialGastosObra[0].fecha)}`}
+                    forzarAbierto={cargandoGastoObraId === obraSel.id}
                     action={
                       <button onClick={() => abrirCargaGastoObra(obraSel)} className={btnGhost}>
                         <span className="flex items-center gap-1"><Plus size={13} /> Cargar gasto</span>
@@ -12962,7 +12814,211 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                       </div>
                     )}
                     <HistorialGastosObra items={historialGastosObra} />
-                  </Panel>
+                  </Desplegable>
+
+                  {(() => {
+                    // Todo lo del personal de esta obra en un solo lugar: quiénes trabajan acá,
+                    // los grupos de tanteros (con sus pagos) y los jornales que faltan pagar.
+                    const cuadrilla = cuadrillasPorObra[obraSel.id] || { empresa: [], gruposTantero: [] };
+                    const tanterosObra = tanterosActivos.filter((t) => t.obraId === obraSel.id);
+                    const tanterosObraFinalizados = tanterosFinalizados.filter((t) => t.obraId === obraSel.id);
+                    const jornalesPendientes = [];
+                    semanasOrdenadas.forEach((sk) => {
+                      const porPersona = gruposSemana[sk][obraSel.id];
+                      if (!porPersona) return;
+                      Object.keys(porPersona).forEach((nombre) => {
+                        const g = porPersona[nombre];
+                        const extras = extrasDe(sk, String(obraSel.id), nombre).reduce((x, ex) => x + (ex.monto || 0), 0);
+                        jornalesPendientes.push({ semana: sk, nombre, horas: g.horas, monto: g.monto + extras });
+                      });
+                    });
+                    const totalJornalesPendientes = jornalesPendientes.reduce((x, j) => x + j.monto, 0);
+                    const blancoPendienteObra = pendientesEnBlanco.filter((g) => g.obraId === obraSel.id);
+                    const saldoTanteros = tanterosObra.reduce((x, t) => x + ((t.precioTotal || 0) - pagadoDeTantero(t.id)), 0);
+                    const nadie = cuadrilla.empresa.length === 0 && tanterosObra.length === 0;
+                    return (
+                      <Desplegable
+                        key={`personal-${obraSel.id}`}
+                        titulo="Personal y pagos"
+                        resumen={`${cuadrilla.empresa.length} de la empresa · ${tanterosObra.length} grupo(s) de tanteros${canVerLiquidacion && totalJornalesPendientes > 0 ? ` · jornales a pagar ${fmtARS(totalJornalesPendientes)}` : ""}`}
+                        action={
+                          <div className="flex flex-wrap gap-2">
+                            {canEditarPersonal && <button onClick={() => setAsignarPersonalContexto(obraSel.id)} className={btnGhost}>Asignar personal</button>}
+                            {canVerLiquidacion && <button onClick={() => abrirPagos("historial", obraSel.id)} className={btnGhost}>Historial de pagos</button>}
+                          </div>
+                        }
+                      >
+                        <div className="space-y-5">
+                          {canVerLiquidacion && (
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                              <div className="rounded-md border border-stone-200 p-3">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-400">Mano de obra hasta hoy</div>
+                                <div className="font-mono text-sm font-semibold text-slate-800">{fmtARS(costoManoDeObraDeObra(obraSel.id))}</div>
+                              </div>
+                              <div className="rounded-md border border-stone-200 p-3">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-400">Jornales por pagar</div>
+                                <div className={`font-mono text-sm font-semibold ${totalJornalesPendientes > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(totalJornalesPendientes)}</div>
+                              </div>
+                              <div className="rounded-md border border-stone-200 p-3">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-400">Saldo a tanteros</div>
+                                <div className={`font-mono text-sm font-semibold ${saldoTanteros > 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtARS(saldoTanteros)}</div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div>
+                            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Trabajando en esta obra</div>
+                            {nadie ? (
+                              <div className="text-xs text-slate-400">No hay personal asignado a esta obra.</div>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                {cuadrilla.empresa.map((p) => (
+                                  <button key={p.id} onClick={() => { setTab("personal"); setViewingPersonId(p.id); }} className="rounded-full border border-stone-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-stone-50">
+                                    {nombreCompletoDe(p)} <span className="text-slate-400">· {p.categoria}</span>
+                                  </button>
+                                ))}
+                                {tanterosObra.map((t) => (
+                                  <span key={`t-${t.id}`} className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs text-amber-800">
+                                    Tanteros: {t.nombreGrupo} ({(t.integrantes || []).length})
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {canVerLiquidacion && (
+                            <div>
+                              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tanteros de esta obra</span>
+                                <span className="flex flex-wrap gap-2">
+                                  {tanterosObraFinalizados.length > 0 && (
+                                    <button onClick={() => { abrirPagos("tanteros", obraSel.id); setShowTanterosFinalizados(true); }} className={btnGhost}>Finalizados ({tanterosObraFinalizados.length})</button>
+                                  )}
+                                  <button onClick={() => { abrirPagos("tanteros", obraSel.id); setShowTanteroForm(true); }} className={btnGhost}><span className="flex items-center gap-1"><Plus size={13} /> Nuevo grupo</span></button>
+                                </span>
+                              </div>
+                              {tanterosObra.length === 0 ? (
+                                <div className="text-xs text-slate-400">No hay grupos de tanteros activos en esta obra.</div>
+                              ) : (
+                                <div className="space-y-3">{tanterosObra.map((t) => renderGrupoTantero(t))}</div>
+                              )}
+                            </div>
+                          )}
+
+                          {canVerLiquidacion && (
+                            <div>
+                              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Jornales por pagar</span>
+                                {jornalesPendientes.length > 0 && (
+                                  <button onClick={() => abrirPagos("pendientes", obraSel.id)} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+                                    <Wallet size={13} /> Pagar jornales
+                                  </button>
+                                )}
+                              </div>
+                              {jornalesPendientes.length === 0 ? (
+                                <div className="text-xs text-slate-400">No hay jornales pendientes de pago en esta obra.</div>
+                              ) : (
+                                <div className="overflow-x-auto rounded-md border border-stone-200">
+                                  <table className="w-full text-left text-xs">
+                                    <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                      <tr><th className="px-2 py-1.5">Semana del</th><th className="px-2 py-1.5">Persona</th><th className="px-2 py-1.5 text-right">Hs.</th><th className="px-2 py-1.5 text-right">Monto</th></tr>
+                                    </thead>
+                                    <tbody>
+                                      {jornalesPendientes.map((j) => (
+                                        <tr key={`${j.semana}|${j.nombre}`} className="border-t border-stone-100">
+                                          <td className="px-2 py-1 text-slate-600">{fmtFecha(j.semana)}</td>
+                                          <td className="px-2 py-1 font-medium text-slate-800">{j.nombre}</td>
+                                          <td className="px-2 py-1 text-right font-mono text-slate-500">{j.horas}</td>
+                                          <td className="px-2 py-1 text-right font-mono text-slate-800">{fmtARS(j.monto)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                              {blancoPendienteObra.length > 0 && (
+                                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                  <span>{blancoPendienteObra.length} quincena(s) de personal en blanco sin liquidar ({blancoPendienteObra.map((g) => etiquetaQuincena(g.mes, g.quincena)).join("; ")}).</span>
+                                  <button onClick={() => abrirPagos("formal", obraSel.id)} className={btnGhost}>Ir a liquidación</button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </Desplegable>
+                    );
+                  })()}
+
+                  <Desplegable
+                    key={`datos-${obraSel.id}`}
+                    titulo="Datos de la obra"
+                    resumen={`Encargado: ${encargadoObra ? nombreCompletoDe(encargadoObra) : "sin asignar"} · ${obraSel.meses} mes(es) desde ${fmtFecha(obraSel.inicio)} · ${personal.filter((p) => obraActualDe(p)?.id === obraSel.id).length} persona(s)`}
+                  >
+                  <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                    <div className="rounded-lg border border-stone-200 bg-white p-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Encargado</div>
+                      <div className="mt-0.5 font-medium text-slate-800">{encargadoObra ? nombreCompletoDe(encargadoObra) : "Sin asignar"}</div>
+                    </div>
+                    <div className="rounded-lg border border-stone-200 bg-white p-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Duración</div>
+                      <div className="mt-0.5 font-medium text-slate-800">{obraSel.meses} meses desde {fmtFecha(obraSel.inicio)}</div>
+                    </div>
+                    <div className="rounded-lg border border-stone-200 bg-white p-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Cierre semanal</div>
+                      <div className="mt-0.5 font-medium text-slate-800">{obraSel.diaCierre || "—"} {obraSel.horaCierre || ""}</div>
+                    </div>
+                    <div className="rounded-lg border border-stone-200 bg-white p-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Personal afectado</div>
+                      <div className="mt-0.5 font-medium text-slate-800">{personal.filter((p) => obraActualDe(p)?.id === obraSel.id).length}</div>
+                    </div>
+                    <div className="rounded-lg border border-stone-200 bg-white p-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Herramientas en uso</div>
+                      <div className="mt-0.5 font-medium text-slate-800">{herramientasEnUso}</div>
+                    </div>
+                  </div>
+                  </Desplegable>
+
+                  <Desplegable key={`exp-${obraSel.id}`} titulo="Expediente (obra del Estado)" resumen={resumenExpedienteObra}>
+                    <ExpedienteObra
+                      key={obraSel.id}
+                      expediente={expedienteDeObra(obraSel.id)}
+                      hoy={hoyISO()}
+                      consultando={consultandoExpedienteId === expedienteDeObra(obraSel.id)?.id}
+                      onCrear={(datos) => crearExpediente(obraSel.id, datos)}
+                      onGuardar={(patch) => guardarExpediente(expedienteDeObra(obraSel.id), patch)}
+                      onConsultar={() => consultarDondeEsta(expedienteDeObra(obraSel.id))}
+                      onQuitar={() => quitarExpediente(expedienteDeObra(obraSel.id))}
+                    />
+                  </Desplegable>
+
+                  {canVerFinanzas && (() => {
+                    const principal = obraPrincipalDe(obraSel);
+                    const ids = [principal.id, ...contratosDe(principal.id).map((c) => c.id)];
+                    const portal = portalDeObra(principal.id);
+                    return (
+                      <Desplegable
+                        key={`portal-${obraSel.id}`}
+                        titulo={`Portal del cliente${principal.id !== obraSel.id ? ` — ${principal.nombre} (todos sus contratos)` : ""}`}
+                        resumen={portal ? `${portal.activo ? "Link activo" : "Link desactivado"} · ${obraFotos.filter((f) => ids.includes(f.obraId)).length} foto(s)${portal.mostrarPreciosMateriales ? " · muestra precios de materiales" : ""}` : "Todavía no tiene link para el cliente"}
+                      >
+                        <PanelPortalCliente
+                          obra={principal}
+                          portal={portal}
+                          certificados={certificadosPortal(ids)}
+                          fotos={obraFotos.filter((f) => ids.includes(f.obraId)).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || b.id - a.id)}
+                          onCrear={() => crearPortal(principal.id)}
+                          onActualizar={(patch) => actualizarPortal(portal, patch)}
+                          onCambiarLink={() => actualizarPortal(portal, { token: tokenPortalNuevo() })}
+                          onGuardarCertificado={guardarCertificadoPortal}
+                          onSubirFotos={(archivos) => subirFotosObra(obraSel.id, archivos)}
+                          onGuardarFoto={(f, patch) => updateRecord("obra_fotos", f.id, patch, setObraFotos)}
+                          onBorrarFoto={(f) => deleteRecord("obra_fotos", f.id, setObraFotos)}
+                        />
+                      </Desplegable>
+                    );
+                  })()}
+
+                  </div>
 
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => { setTab("personal"); }} className={btnGhost}>Ver Personal</button>
