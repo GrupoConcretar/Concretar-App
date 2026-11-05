@@ -11913,7 +11913,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                   <button
                     key={f.estado}
                     onClick={() => setFiltroObrasEstado(f.estado)}
-                    className={`flex items-center gap-1.5 rounded-full border-2 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${activo ? f.activeCls : f.idleCls}`}
+                    className={`flex items-center gap-1.5 rounded-full border-2 px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${activo ? f.activeCls : `bg-white ${f.idleCls}`}`}
                   >
                     {f.label}
                     <span className={`flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[10px] ${activo ? "bg-white/25" : "bg-stone-100"}`}>{cantidad}</span>
