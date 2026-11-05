@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabaseConfig.js";
 import {
   LayoutDashboard, Building2, Users, ClipboardCheck, Wrench,
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
@@ -737,19 +738,8 @@ function telefonoWhatsApp(telefono) {
   return `549${d}`;
 }
 
-// ============================================================
-// CONFIGURACIÓN DE SUPABASE
-// Reemplazá estos dos valores por los de tu proyecto:
-// Project Settings > API > Project URL / anon public key
-// ============================================================
-const SUPABASE_URL = "https://ijkthelpxsyjicanduaj.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_YTPsdNI7QefbSm6YkDiaaA_1NCjtXnV";
-
-const isSupabaseConfigured =
-  SUPABASE_URL.startsWith("http") &&
-  !SUPABASE_URL.includes("TU-PROYECTO") &&
-  SUPABASE_ANON_KEY &&
-  !SUPABASE_ANON_KEY.includes("TU_ANON_KEY");
+// Configuración de Supabase (URL y clave pública): en supabaseConfig.js, compartida con
+// la página del cliente (portalCliente.jsx).
 
 // Cliente oficial. Se crea siempre (no rompe nada crearlo con valores
 // de ejemplo); solo se usa de verdad cuando isSupabaseConfigured es true.
@@ -779,6 +769,7 @@ const ARCHIVOS_DIFERIDOS = {
   ingresos: ["archivo", "aviso_pago_archivo"],
   facturas_venta_proyectadas: ["archivo"],
   cobros_socios: ["archivo"],
+  obra_fotos: ["archivo"],
 };
 const MARCA_DIFERIDO = "diferido:";
 const esArchivoDiferido = (v) => typeof v === "string" && v.startsWith(MARCA_DIFERIDO);
@@ -4387,6 +4378,196 @@ function FormularioGastoRecurrente({ claveMes, onAgregar }) {
 // cuenta salió, sin elegir facturas. Antes de guardar muestra qué facturas (las
 // más viejas) quedan saldadas y cuánto le falta a la siguiente.
 // Con "inicial" el mismo formulario sirve para modificar una entrega ya cargada.
+// Achica una foto del celular (1,5 a 4 MB) a 1600 px del lado más largo, en JPG: se ve
+// bien en pantalla y pesa unos 200-400 KB.
+async function comprimirFoto(file, ladoMax = 1600, calidad = 0.75) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const escala = Math.min(1, ladoMax / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * escala);
+    canvas.height = Math.round(img.naturalHeight * escala);
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", calidad);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+const tokenPortalNuevo = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+const urlPortal = (token) => `${window.location.origin}/?portal=${token}`;
+
+function MiniaturaFoto({ archivo, alt }) {
+  const [src, setSrc] = useState(esArchivoDiferido(archivo) ? null : archivo);
+  useEffect(() => {
+    if (!esArchivoDiferido(archivo)) { setSrc(archivo); return; }
+    let vivo = true;
+    resolverArchivo(archivo).then((d) => { if (vivo) setSrc(d); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [archivo]);
+  return src
+    ? <img src={src} alt={alt} className="h-full w-full object-cover" />
+    : <span className="flex h-full w-full items-center justify-center text-slate-300"><Loader2 size={16} className="animate-spin" /></span>;
+}
+
+// Portal del cliente (en la obra): el link privado que se le manda al cliente, qué ve
+// (precios de materiales sí/no), el factor de actualización y el día de cobro de cada
+// certificado, y las fotos del avance.
+function PanelPortalCliente({ obra, portal, certificados, fotos, onCrear, onActualizar, onCambiarLink, onGuardarCertificado, onSubirFotos, onGuardarFoto, onBorrarFoto }) {
+  const [copiado, setCopiado] = useState(false);
+  const [subiendo, setSubiendo] = useState(false);
+  const inputFotosRef = useRef(null);
+  if (!portal) {
+    return (
+      <div className="space-y-2 text-sm text-slate-600">
+        <p>Un link privado para que el cliente vea cuando quiera el avance de su obra, los certificados con sus días de cobro, los próximos materiales y las fotos. No entra a la app ni ve costos, gastos ni proveedores.</p>
+        <button onClick={onCrear} className={btnPrimary}><Plus size={16} /> Crear link para el cliente</button>
+      </div>
+    );
+  }
+  const url = urlPortal(portal.token);
+  const mensaje = `Hola! Te comparto el seguimiento de la obra "${obra.nombre}": ${url}`;
+  const ordenados = [...certificados].sort((a, b) => (a.fecha || "").localeCompare(b.fecha || ""));
+  return (
+    <div className="space-y-4 text-sm">
+      <div className={`rounded-lg border p-3 ${portal.activo ? "border-emerald-200 bg-emerald-50/50" : "border-stone-300 bg-stone-50"}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className={`text-xs font-semibold ${portal.activo ? "text-emerald-700" : "text-slate-500"}`}>{portal.activo ? "Link activo: el cliente lo puede abrir" : "Link desactivado: el cliente no lo puede abrir"}</span>
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600">
+            <input type="checkbox" checked={portal.activo} onChange={(e) => onActualizar({ activo: e.target.checked })} /> Activo
+          </label>
+        </div>
+        <input readOnly value={url} onFocus={(e) => e.target.select()} className={`${inputCls} mt-2 w-full font-mono text-xs`} />
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            onClick={async () => { try { await navigator.clipboard.writeText(url); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch { window.prompt("Copiá el link:", url); } }}
+            className={btnGhost}
+          >
+            <span className="flex items-center gap-1"><Copy size={13} /> {copiado ? "¡Copiado!" : "Copiar link"}</span>
+          </button>
+          <a href={`https://wa.me/?text=${encodeURIComponent(mensaje)}`} target="_blank" rel="noreferrer" className={btnGhost}>
+            <span className="flex items-center gap-1"><MessageCircle size={13} /> Mandar por WhatsApp</span>
+          </a>
+          <a href={url} target="_blank" rel="noreferrer" className={btnGhost}>Ver como el cliente</a>
+          <button
+            onClick={() => { if (window.confirm("¿Generar un link nuevo? El link anterior deja de funcionar y vas a tener que mandarle el nuevo al cliente.")) onCambiarLink(); }}
+            className={btnGhost}
+          >
+            Cambiar link
+          </button>
+        </div>
+        <label className="mt-3 flex cursor-pointer items-center gap-2 text-xs text-slate-700">
+          <input type="checkbox" checked={!!portal.mostrarPreciosMateriales} onChange={(e) => onActualizar({ mostrarPreciosMateriales: e.target.checked })} />
+          Mostrarle los precios de los materiales (si no, ve solo qué material, cuánto y para cuándo)
+        </label>
+      </div>
+
+      <div>
+        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Certificados que ve el cliente</div>
+        {ordenados.length === 0 ? (
+          <div className="text-xs text-slate-400">Todavía no hay certificados (se cargan en "Facturas y cobros").</div>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-stone-200">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-stone-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-2 py-1.5">Certificado</th>
+                  <th className="px-2 py-1.5 text-right">Monto</th>
+                  <th className="px-2 py-1.5">Factor</th>
+                  <th className="px-2 py-1.5 text-right">Actualizado</th>
+                  <th className="px-2 py-1.5">Día de cobro</th>
+                  <th className="px-2 py-1.5">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ordenados.map((c) => {
+                  const cobrado = c.tipo === "cobro" && c.estado !== "Pendiente";
+                  const factor = Number(c.factorActualizacion) || null;
+                  return (
+                    <tr key={`${c.tipo}-${c.id}`} className="border-t border-stone-100">
+                      <td className="px-2 py-1.5"><div className="font-medium text-slate-800">{c.concepto || "Certificado"}</div><div className="text-slate-400">{fmtFecha(c.fecha)}</div></td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono">{fmtARS(c.monto)}</td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          key={`f-${c.tipo}-${c.id}-${c.factorActualizacion ?? ""}`}
+                          type="number" min="0" step="0.0001" placeholder="1"
+                          defaultValue={c.factorActualizacion ?? ""}
+                          onBlur={(e) => {
+                            const v = e.target.value === "" ? null : Number(e.target.value);
+                            if (v !== null && !(v > 0)) { e.target.value = c.factorActualizacion ?? ""; return; }
+                            if (v !== (c.factorActualizacion ?? null)) onGuardarCertificado(c, { factorActualizacion: v });
+                          }}
+                          className="w-20 rounded-md border border-stone-300 px-1.5 py-1 text-xs"
+                        />
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono font-semibold text-slate-800">{fmtARS((Number(c.monto) || 0) * (factor || 1))}</td>
+                      <td className="px-2 py-1.5">
+                        {cobrado ? (
+                          <span className="text-slate-500">{fmtFecha(c.fechaCobro || c.fecha)}</span>
+                        ) : (
+                          <div className="w-32"><FechaInput value={c.fechaCobroEstimada || ""} onChange={(e) => onGuardarCertificado(c, { fechaCobroEstimada: e.target.value || null })} className="w-full rounded-md border border-stone-300 px-1.5 py-1 text-xs" /></div>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <span className={`font-semibold ${cobrado ? "text-emerald-700" : c.tipo === "cobro" ? "text-amber-700" : "text-sky-700"}`}>{cobrado ? "Pagado" : c.tipo === "cobro" ? "A pagar" : "A certificar"}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="mt-1 text-[11px] text-slate-400">Factor de actualización: el cliente ve el monto multiplicado por el factor (vacío = sin actualizar). El día de cobro es el mismo que se usa en Próximos pagos.</div>
+      </div>
+
+      <div>
+        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fotos de la obra ({fotos.length})</span>
+          <button onClick={() => inputFotosRef.current?.click()} disabled={subiendo} className={btnGhost}>
+            <span className="flex items-center gap-1">{subiendo ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />} {subiendo ? "Subiendo…" : "Subir fotos"}</span>
+          </button>
+          <input
+            ref={inputFotosRef} type="file" accept="image/*" multiple className="hidden"
+            onChange={async (e) => {
+              const archivos = Array.from(e.target.files || []);
+              e.target.value = "";
+              if (archivos.length === 0) return;
+              setSubiendo(true);
+              try { await onSubirFotos(archivos); } finally { setSubiendo(false); }
+            }}
+          />
+        </div>
+        {fotos.length === 0 ? (
+          <div className="text-xs text-slate-400">Todavía no hay fotos. Las que subas acá las ve el cliente en su link.</div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {fotos.map((f) => (
+              <div key={f.id} className="overflow-hidden rounded-lg border border-stone-200 bg-white">
+                <div className="aspect-[4/3] bg-stone-100"><MiniaturaFoto archivo={f.archivo} alt={f.descripcion || "Foto de la obra"} /></div>
+                <div className="space-y-1 p-1.5">
+                  <input
+                    key={`d-${f.id}-${f.descripcion ?? ""}`}
+                    defaultValue={f.descripcion || ""} placeholder="Descripción (opcional)"
+                    onBlur={(e) => { const v = e.target.value.trim(); if (v !== (f.descripcion || "")) onGuardarFoto(f, { descripcion: v || null }); }}
+                    className="w-full rounded border border-stone-200 px-1.5 py-0.5 text-[11px]"
+                  />
+                  <div className="flex items-center justify-between text-[10px] text-slate-400">
+                    <span>{fmtFecha(f.fecha)}</span>
+                    <button onClick={() => onBorrarFoto(f)} className="text-slate-400 hover:text-rose-600" aria-label="Borrar foto"><Trash2 size={12} /></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Campos de un pago con la tarjeta de crédito de un socio: en cuántas cuotas y cuándo se
 // paga la primera (las demás, el mismo día de los meses siguientes).
 function CamposCuotasTarjeta({ cuotas, onCuotas, primeraCuota, onPrimeraCuota }) {
@@ -5465,6 +5646,9 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // atados a una factura de venta futura y, cuando se cobra, al ingreso.
   const [documentosCobros, setDocumentosCobros] = useState([]);
   const [expedientesObra, setExpedientesObra] = useState([]);
+  // Portal del cliente: el link privado de cada obra y las fotos del avance.
+  const [portalObras, setPortalObras] = useState([]);
+  const [obraFotos, setObraFotos] = useState([]);
   const [facturasVarias, setFacturasVarias] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VARIAS);
   const [sueldosPlanificados, setSueldosPlanificados] = useState(isSupabaseConfigured ? [] : DEMO_SUELDOS_PLANIFICADOS);
   const [facturasVentaProyectadas, setFacturasVentaProyectadas] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VENTA_PROYECTADAS);
@@ -5532,7 +5716,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp, dcob, exped] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp, dcob, exped, portales, fotosObra] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -5546,7 +5730,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"), sbSelect("notas_credito"), sbSelect("facturas_varias"),
           sbSelect("sueldos_planificados"), sbSelect("facturas_venta_proyectadas"), sbSelect("gastos_recurrentes"),
           sbSelect("entregas_proveedores"), sbSelect("correcciones_deuda_proveedor"), sbSelect("documentos_cobros"),
-          sbSelect("expedientes_obra"),
+          sbSelect("expedientes_obra"), sbSelect("portal_obras"), sbSelect("obra_fotos"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -5596,6 +5780,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         setCorreccionesDeuda(cdp);
         setDocumentosCobros(dcob);
         setExpedientesObra(exped);
+        setPortalObras(portales);
+        setObraFotos(fotosObra);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -6663,6 +6849,43 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     const nuevo = await addRecord("expedientes_obra", { obraId, ...datos, pasos: {}, dias: {} }, setExpedientesObra);
     if (nuevo) consultarDondeEsta(nuevo, false);
   }
+  // ---------- Portal del cliente ----------
+  // Un link por obra "principal" (la obra suelta, o el centro de costos / la obra de la
+  // que cuelgan los contratos): el cliente ve esa obra y todos sus contratos juntos.
+  const obraPrincipalDe = (obra) => (obra?.obraPadreId ? obras.find((o) => o.id === obra.obraPadreId) || obra : obra);
+  const portalDeObra = (obraId) => portalObras.find((p) => p.obraId === obraId) || null;
+  function crearPortal(obraId) {
+    addRecord("portal_obras", { obraId, token: tokenPortalNuevo(), activo: true, mostrarPreciosMateriales: false }, setPortalObras);
+  }
+  function actualizarPortal(portal, patch) {
+    updateRecord("portal_obras", portal.id, patch, setPortalObras);
+  }
+  // Certificados de la obra y sus contratos, tal como los ve el cliente: los cobros (ingresos)
+  // y la facturación futura.
+  function certificadosPortal(ids) {
+    return [
+      ...ingresos.filter((i) => ids.includes(i.obraId)).map((i) => ({ ...i, tipo: "cobro" })),
+      ...facturasVentaProyectadas.filter((f) => ids.includes(f.obraId)).map((f) => ({ ...f, tipo: "futuro" })),
+    ];
+  }
+  function guardarCertificadoPortal(c, patch) {
+    if (c.tipo === "cobro") updateRecord("ingresos", c.id, patch, setIngresos);
+    else updateRecord("facturas_venta_proyectadas", c.id, patch, setFacturasVentaProyectadas);
+  }
+  async function subirFotosObra(obraId, archivos) {
+    const fallidas = [];
+    for (const archivo of archivos) {
+      try {
+        const dataUrl = await comprimirFoto(archivo);
+        const fila = await addRecord("obra_fotos", { obraId, fecha: hoyISO(), descripcion: null, archivo: dataUrl }, setObraFotos);
+        if (!fila) fallidas.push(archivo.name);
+      } catch {
+        fallidas.push(archivo.name);
+      }
+    }
+    if (fallidas.length) alert(`No se pudieron subir: ${fallidas.join(", ")}`);
+  }
+
   function guardarExpediente(exp, patch) {
     return updateRecord("expedientes_obra", exp.id, patch, setExpedientesObra);
   }
@@ -12255,6 +12478,29 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                       onQuitar={() => quitarExpediente(expedienteDeObra(obraSel.id))}
                     />
                   </Panel>
+
+                  {canVerFinanzas && (() => {
+                    const principal = obraPrincipalDe(obraSel);
+                    const ids = [principal.id, ...contratosDe(principal.id).map((c) => c.id)];
+                    const portal = portalDeObra(principal.id);
+                    return (
+                      <Panel title={`Portal del cliente${principal.id !== obraSel.id ? ` — ${principal.nombre} (todos sus contratos)` : ""}`}>
+                        <PanelPortalCliente
+                          obra={principal}
+                          portal={portal}
+                          certificados={certificadosPortal(ids)}
+                          fotos={obraFotos.filter((f) => ids.includes(f.obraId)).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "") || b.id - a.id)}
+                          onCrear={() => crearPortal(principal.id)}
+                          onActualizar={(patch) => actualizarPortal(portal, patch)}
+                          onCambiarLink={() => actualizarPortal(portal, { token: tokenPortalNuevo() })}
+                          onGuardarCertificado={guardarCertificadoPortal}
+                          onSubirFotos={(archivos) => subirFotosObra(obraSel.id, archivos)}
+                          onGuardarFoto={(f, patch) => updateRecord("obra_fotos", f.id, patch, setObraFotos)}
+                          onBorrarFoto={(f) => deleteRecord("obra_fotos", f.id, setObraFotos)}
+                        />
+                      </Panel>
+                    );
+                  })()}
 
                   <Panel title="Alertas de esta obra">
                     {totalAlertasObra === 0 ? (

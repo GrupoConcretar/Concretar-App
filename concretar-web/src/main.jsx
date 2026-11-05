@@ -1,6 +1,5 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App.jsx";
 import "./index.css";
 
 // Chrome avisa una sola vez, apenas carga la página, que la app se puede instalar: se
@@ -16,8 +15,25 @@ window.addEventListener("appinstalled", () => {
   window.dispatchEvent(new Event("concretar-instalable"));
 });
 
-ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+// El link privado de un cliente (?portal=...) abre solo la página de su obra: se carga
+// aparte, sin bajar la app completa ni pedir usuario.
+const tokenPortal = new URLSearchParams(window.location.search).get("portal");
+const root = ReactDOM.createRoot(document.getElementById("root"));
+
+if (tokenPortal) {
+  import("./portalCliente.jsx").then(({ default: PortalCliente }) => {
+    root.render(
+      <React.StrictMode>
+        <PortalCliente token={tokenPortal} />
+      </React.StrictMode>
+    );
+  });
+} else {
+  import("./App.jsx").then(({ default: App }) => {
+    root.render(
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>
+    );
+  });
+}
