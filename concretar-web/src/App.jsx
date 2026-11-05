@@ -6,7 +6,7 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck, ScanLine, BatteryCharging, Construction
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck, ScanLine, BatteryCharging, Construction, StickyNote, BellRing
 } from "lucide-react";
 import { leerFactura, paginasPdfComoImagenes } from "./lectorFacturas.js";
 
@@ -3487,6 +3487,114 @@ function ModalDevolverCuotasTarjeta({ titulo, cuotas, onClose, onGuardar }) {
     </div>
   );
 }
+// Alta de un recordatorio de obra (fecha obligatoria y obra) o de una nota (fecha opcional).
+function FormRecordatorio({ conObra = false, obras = [], fechaOpcional = false, textoBoton = "Guardar", placeholder = "Ej: Llega el hormigón, visita del cliente…", onGuardar, onCancelar }) {
+  const [texto, setTexto] = useState("");
+  const [fecha, setFecha] = useState(fechaOpcional ? "" : hoyISO());
+  const [obraId, setObraId] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  return (
+    <form
+      className={`grid grid-cols-1 gap-3 ${conObra ? "mb-4 rounded-md border border-stone-200 bg-stone-50 p-3 md:grid-cols-4" : "md:grid-cols-4"}`}
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!texto.trim()) return;
+        if (conObra && !obraId) { alert("Elegí la obra."); return; }
+        setGuardando(true);
+        const ok = await onGuardar({ texto: texto.trim(), fecha: fecha || null, ...(conObra ? { obraId: Number(obraId) } : {}) });
+        setGuardando(false);
+        if (ok !== false && ok !== null) { setTexto(""); setFecha(fechaOpcional ? "" : hoyISO()); }
+      }}
+    >
+      <div className={conObra ? "md:col-span-2" : "md:col-span-3"}>
+        <Field label={conObra ? "Recordatorio" : "Nota"}>
+          {conObra
+            ? <input required value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={placeholder} className={inputCls} />
+            : <textarea required rows={2} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={placeholder} className={`${inputCls} w-full resize-y`} />}
+        </Field>
+      </div>
+      {conObra && (
+        <Field label="Obra">
+          <select required value={obraId} onChange={(e) => setObraId(e.target.value)} className={inputCls}>
+            <option value="">Elegí la obra…</option>
+            {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+          </select>
+        </Field>
+      )}
+      <Field label={fechaOpcional ? "Fecha (opcional)" : "Fecha"}>
+        <FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required={!fechaOpcional} className={inputCls} />
+      </Field>
+      <div className={`flex items-end gap-2 ${conObra ? "md:col-span-4" : "md:col-span-4"}`}>
+        <button disabled={guardando} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">{guardando ? "Guardando…" : textoBoton}</button>
+        {onCancelar && <button type="button" onClick={onCancelar} className={btnGhost}>Cancelar</button>}
+      </div>
+    </form>
+  );
+}
+
+// Lista de recordatorios / notas: primero las pendientes (las con fecha por fecha, después
+// las sin fecha), con su aviso de cuándo es; las hechas quedan en un desplegable aparte.
+function ListaRecordatorios({ items, obras, notas = false, vacio, onToggleHecho, onGuardar, onBorrar }) {
+  const [editandoId, setEditandoId] = useState(null);
+  const [borrador, setBorrador] = useState({ texto: "", fecha: "" });
+  const hoy = hoyISO();
+  const dias = (f) => Math.round((fechaLocal(f) - fechaLocal(hoy)) / 86400000);
+  const orden = (a, b) => (a.fecha && b.fecha ? a.fecha.localeCompare(b.fecha) : a.fecha ? -1 : b.fecha ? 1 : b.id - a.id);
+  const pendientes = items.filter((r) => !r.hecho).sort(orden);
+  const hechos = items.filter((r) => r.hecho).sort((a, b) => b.id - a.id);
+  const cuando = (r) => {
+    if (!r.fecha) return null;
+    const d = dias(r.fecha);
+    const txt = d < 0 ? `venció hace ${Math.abs(d)} día(s)` : d === 0 ? "hoy" : d === 1 ? "mañana" : `en ${d} días`;
+    const cls = d < 0 ? "bg-rose-100 text-rose-700" : d <= 1 ? "bg-amber-100 text-amber-800" : "bg-stone-100 text-slate-600";
+    return <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{fmtFecha(r.fecha)} · {txt}</span>;
+  };
+  const fila = (r) => {
+    const obra = obras.find((o) => o.id === r.obraId);
+    if (editandoId === r.id) {
+      return (
+        <div key={r.id} className={`space-y-2 rounded-lg border border-amber-300 p-3 ${notas ? "bg-amber-50" : "bg-white"}`}>
+          <textarea rows={2} value={borrador.texto} onChange={(e) => setBorrador((b) => ({ ...b, texto: e.target.value }))} className={`${inputCls} w-full resize-y`} />
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-40"><FechaInput value={borrador.fecha} onChange={(e) => setBorrador((b) => ({ ...b, fecha: e.target.value }))} required={!notas} className={inputCls} /></div>
+            <button onClick={() => { if (!borrador.texto.trim() || (!notas && !borrador.fecha)) return; onGuardar(r, { texto: borrador.texto.trim(), fecha: borrador.fecha || null }); setEditandoId(null); }} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Guardar</button>
+            <button onClick={() => setEditandoId(null)} className={btnGhost}>Cancelar</button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div key={r.id} className={`flex items-start gap-3 rounded-lg border p-3 ${notas ? "border-amber-200 bg-amber-50/70" : "border-stone-200 bg-white"} ${r.hecho ? "opacity-60" : ""}`}>
+        <input type="checkbox" checked={!!r.hecho} onChange={() => onToggleHecho(r)} className="mt-1 h-4 w-4 shrink-0 accent-emerald-600" title={r.hecho ? "Volver a pendiente" : "Marcar como hecho"} />
+        <div className="min-w-0 flex-1">
+          <div className={`whitespace-pre-wrap text-sm text-slate-800 ${r.hecho ? "line-through" : ""}`}>{r.texto}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+            {!r.hecho && cuando(r)}
+            {r.hecho && r.fecha && <span>{fmtFecha(r.fecha)}</span>}
+            {!notas && obra && <span className="flex items-center gap-1"><ObraDot obra={obra} />{obra.nombre}</span>}
+            {r.creadoPor && <span className="text-slate-400">{r.fecha || (!notas && obra) ? "· " : ""}{r.creadoPor}</span>}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {!r.hecho && <button onClick={() => { setEditandoId(r.id); setBorrador({ texto: r.texto, fecha: r.fecha || "" }); }} className="p-1 text-slate-400 hover:text-slate-700" aria-label="Modificar"><Pencil size={13} /></button>}
+          <button onClick={() => onBorrar(r)} className="p-1 text-slate-400 hover:text-rose-600" aria-label="Borrar"><Trash2 size={13} /></button>
+        </div>
+      </div>
+    );
+  };
+  return (
+    <div className="space-y-3">
+      {pendientes.length === 0 ? <div className="text-sm text-slate-400">{vacio}</div> : <div className={notas ? "grid grid-cols-1 gap-2 md:grid-cols-2" : "space-y-2"}>{pendientes.map(fila)}</div>}
+      {hechos.length > 0 && (
+        <details className="rounded-lg border border-stone-200 bg-white p-3 text-sm">
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-500">Hechos ({hechos.length})</summary>
+          <div className="mt-2 space-y-2">{hechos.map(fila)}</div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 // Confirmación de "Finalizar trabajo": cómo queda la obra/contrato al cerrarlo.
 function ModalFinalizarTrabajo({ resumen: r, onClose, onConfirmar }) {
   const [fecha, setFecha] = useState(hoyISO());
@@ -5596,6 +5704,12 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // Entregas a cuenta a proveedores: plata que se le lleva al proveedor sin
   // pagar factura por factura — resta de la deuda total y salda solas las
   // facturas más viejas que alcanza a cubrir.
+  const DEMO_RECORDATORIOS = [
+    { id: 1, tipo: "obra", fecha: fechaMasDias(1), obraId: 1, texto: "Visita del cliente a la obra, 10 hs", hecho: false, creadoPor: "Pablo" },
+    { id: 2, tipo: "obra", fecha: fechaMasDias(12), obraId: 2, texto: "Llega el hierro para la losa", hecho: false, creadoPor: "Ricardo" },
+    { id: 3, tipo: "nota", fecha: fechaMasDias(0), obraId: null, texto: "Llamar al contador por el cierre de octubre", hecho: false, creadoPor: "Pablo" },
+    { id: 4, tipo: "nota", fecha: null, obraId: null, texto: "Pedir presupuesto de andamios nuevos (3 cuerpos)", hecho: false, creadoPor: "Ricardo" },
+  ];
   const DEMO_ENTREGAS_PROVEEDORES = [
     { id: 1, fecha: "2026-10-13", proveedor: "Trielec", monto: 792044, cuenta: "Tarjeta Ricardo", medioBancario: null, nota: "383/4795", prestamoId: 4 },
   ];
@@ -5712,6 +5826,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const [expedientesObra, setExpedientesObra] = useState([]);
   // Portal del cliente: el link privado de cada obra y las fotos del avance.
   const [portalObras, setPortalObras] = useState([]);
+  // Recordatorios de obras (Calendario) y block de notas (Notas): misma tabla, por "tipo".
+  const [recordatorios, setRecordatorios] = useState(isSupabaseConfigured ? [] : DEMO_RECORDATORIOS);
   const [obraFotos, setObraFotos] = useState([]);
   const [facturasVarias, setFacturasVarias] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VARIAS);
   const [sueldosPlanificados, setSueldosPlanificados] = useState(isSupabaseConfigured ? [] : DEMO_SUELDOS_PLANIFICADOS);
@@ -5780,7 +5896,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp, dcob, exped, portales, fotosObra] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp, dcob, exped, portales, fotosObra, recs] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -5794,7 +5910,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"), sbSelect("notas_credito"), sbSelect("facturas_varias"),
           sbSelect("sueldos_planificados"), sbSelect("facturas_venta_proyectadas"), sbSelect("gastos_recurrentes"),
           sbSelect("entregas_proveedores"), sbSelect("correcciones_deuda_proveedor"), sbSelect("documentos_cobros"),
-          sbSelect("expedientes_obra"), sbSelect("portal_obras"), sbSelect("obra_fotos"),
+          sbSelect("expedientes_obra"), sbSelect("portal_obras"), sbSelect("obra_fotos"), sbSelect("recordatorios"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -5846,6 +5962,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         setExpedientesObra(exped);
         setPortalObras(portales);
         setObraFotos(fotosObra);
+        setRecordatorios(recs);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -6511,6 +6628,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     { id: "cobros_socios", label: "Cobros Ricardo y Pablo", icon: Banknote },
     { id: "proveedores", label: "Clientes/Proveedores", icon: Truck },
     { id: "calendario", label: "Calendario", icon: CalendarDays },
+    { id: "notas", label: "Notas", icon: StickyNote },
     // Todavía usamos poco estas dos secciones — quedan al final del menú y resaltadas en amarillo.
     { id: "materiales", label: "Pedidos de Obra", icon: Package },
     { id: "ordenes", label: "Órdenes de Compra", icon: ShoppingCart },
@@ -6642,6 +6760,11 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // Aviso en General desde 5 días antes del pago de cada cuota (y si ya pasó, hasta que
   // se le devuelva al socio).
   const deudasTarjetaSocioPorVencer = cuotasTarjetaPendientes.filter((c) => c.fecha && diasHasta(c.fecha) <= 5);
+  // Recordatorios de obras y notas con fecha: aparecen desde 1 día antes y siguen hasta
+  // marcarlos como hechos. Las notas son de los gerentes.
+  const recordatoriosPorVencer = recordatorios
+    .filter((r) => !r.hecho && r.fecha && diasHasta(r.fecha) <= 1 && (r.tipo === "obra" || currentRole === "Gerente") && !obraIdsPapelera.has(r.obraId))
+    .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha) || a.id - b.id);
 
   // "Visto bueno" de alertas: una vez descartada (tick) no vuelve a aparecer,
   // salvo que cambie lo que la generó — se identifica con un tipo fijo más
@@ -6676,7 +6799,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     herramientasAtencion.length + herramientasReparadasRecientes.length + ocPendientesAprobacion.length + ocsARevisar.length +
     asistenciasEditadas.length + asistenciasEliminadasRecientes.length +
     materialesVencidos.length + materialesProximos.length + pedidosPorAprobar.length + personalSinObra5Dias.length +
-    gastosRecurrentesProximos.length + deudasTarjetaSocioPorVencer.length + echeqsPorConfirmarDebito.length + echeqsProximosADebitar.length;
+    gastosRecurrentesProximos.length + deudasTarjetaSocioPorVencer.length + recordatoriosPorVencer.length + echeqsPorConfirmarDebito.length + echeqsProximosADebitar.length;
 
   // ---------- Forms state ----------
   const [showObraForm, setShowObraForm] = useState(false);
@@ -6913,6 +7036,18 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     const nuevo = await addRecord("expedientes_obra", { obraId, ...datos, pasos: {}, dias: {} }, setExpedientesObra);
     if (nuevo) consultarDondeEsta(nuevo, false);
   }
+  // ---------- Recordatorios de obras y notas ----------
+  const [showRecordatorioForm, setShowRecordatorioForm] = useState(false);
+  function agregarRecordatorio(datos) {
+    return addRecord("recordatorios", { hecho: false, creadoPor: usuario?.nombre || currentRole, ...datos }, setRecordatorios);
+  }
+  function actualizarRecordatorio(r, patch) {
+    updateRecord("recordatorios", r.id, patch, setRecordatorios);
+  }
+  function borrarRecordatorio(r) {
+    deleteRecord("recordatorios", r.id, setRecordatorios);
+  }
+
   // ---------- Finalizar el trabajo de una obra / contrato ----------
   // Se cierra solo ese contrato (los demás del cliente siguen como están): no se proyectan
   // más gastos por hacer, la ganancia pasa a ser la final y el estado queda "Pendiente de
@@ -11787,6 +11922,32 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                       >
                         Ir a Cheques
                       </button>
+                    </AlertCard>
+                  )}
+                  {recordatoriosPorVencer.length > 0 && (
+                    <AlertCard
+                      tone={recordatoriosPorVencer.some((r) => diasHasta(r.fecha) < 0) ? "rose" : "amber"}
+                      icon={BellRing}
+                      title={`${recordatoriosPorVencer.length} recordatorio(s) para hoy o mañana.`}
+                    >
+                      <ul className="space-y-1 text-xs">
+                        {recordatoriosPorVencer.map((r) => {
+                          const dias = diasHasta(r.fecha);
+                          const obra = obras.find((o) => o.id === r.obraId);
+                          return (
+                            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="min-w-0">
+                                <span className="font-semibold">{dias < 0 ? `Venció hace ${Math.abs(dias)} día(s)` : dias === 0 ? "Hoy" : "Mañana"}</span>
+                                {" — "}{r.texto}
+                                <span className="opacity-70"> ({r.tipo === "nota" ? "nota" : obra?.nombre || "obra"})</span>
+                              </span>
+                              <button onClick={() => actualizarRecordatorio(r, { hecho: true })} className="rounded-md border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-white">
+                                <span className="flex items-center gap-1"><Check size={10} /> Hecho</span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
                     </AlertCard>
                   )}
                   {deudasTarjetaSocioPorVencer.length > 0 && (
@@ -18916,9 +19077,66 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           </div>
         )}
 
+        {tab === "notas" && (
+          currentRole !== "Gerente" ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
+              <StickyNote size={28} className="text-slate-400" />
+              <div className="text-sm font-semibold text-slate-700">Sección restringida</div>
+              <div className="max-w-sm text-xs text-slate-500">Las notas son solo para los gerentes.</div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900">Notas</h2>
+                <p className="mt-1 text-xs text-slate-500">Para anotar recordatorios y cosas. La fecha es opcional: las que tienen fecha aparecen en General el día antes.</p>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+                <FormRecordatorio
+                  textoBoton="Agregar nota"
+                  placeholder="Escribí la nota…"
+                  fechaOpcional
+                  onGuardar={(datos) => agregarRecordatorio({ tipo: "nota", obraId: null, ...datos })}
+                />
+              </div>
+              <ListaRecordatorios
+                notas
+                items={recordatorios.filter((r) => r.tipo === "nota")}
+                obras={obras}
+                vacio="Todavía no hay notas."
+                onToggleHecho={(r) => actualizarRecordatorio(r, { hecho: !r.hecho })}
+                onGuardar={actualizarRecordatorio}
+                onBorrar={borrarRecordatorio}
+              />
+            </div>
+          )
+        )}
+
         {tab === "calendario" && (
           <div className="space-y-6">
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">Calendario Corporativo</h2>
+
+            <Panel title="Recordatorios de obras" action={
+              <button onClick={() => setShowRecordatorioForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-amber-400">
+                <Plus size={14} /> Agregar recordatorio
+              </button>
+            }>
+              {showRecordatorioForm && (
+                <FormRecordatorio
+                  conObra
+                  obras={obrasSeleccionables(obras)}
+                  onGuardar={async (datos) => { const ok = await agregarRecordatorio({ tipo: "obra", ...datos }); if (ok) setShowRecordatorioForm(false); }}
+                  onCancelar={() => setShowRecordatorioForm(false)}
+                />
+              )}
+              <ListaRecordatorios
+                items={recordatorios.filter((r) => r.tipo === "obra" && !obraIdsPapelera.has(r.obraId))}
+                obras={obras}
+                vacio="Sin recordatorios. Agregá uno para que aparezca en General el día antes."
+                onToggleHecho={(r) => actualizarRecordatorio(r, { hecho: !r.hecho })}
+                onGuardar={actualizarRecordatorio}
+                onBorrar={borrarRecordatorio}
+              />
+            </Panel>
 
             <Panel title="Feriados y días especiales" action={
               <button onClick={() => setShowFeriadoForm((v) => !v)} className="flex items-center gap-1 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-amber-400">
