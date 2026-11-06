@@ -3487,11 +3487,14 @@ function ModalDevolverCuotasTarjeta({ titulo, cuotas, onClose, onGuardar }) {
     </div>
   );
 }
+const nombrePersona = (p) => [(p.nombre || "").trim(), (p.apellido || "").trim()].filter(Boolean).join(" ") || "—";
 // Alta de un recordatorio de obra (fecha obligatoria y obra) o de una nota (fecha opcional).
-function FormRecordatorio({ conObra = false, obras = [], fechaOpcional = false, textoBoton = "Guardar", placeholder = "Ej: Llega el hormigón, visita del cliente…", onGuardar, onCancelar }) {
+function FormRecordatorio({ conObra = false, obras = [], personal = [], fechaOpcional = false, textoBoton = "Guardar", placeholder = "Ej: Llega el hormigón, visita del cliente…", onGuardar, onCancelar }) {
   const [texto, setTexto] = useState("");
   const [fecha, setFecha] = useState(fechaOpcional ? "" : hoyISO());
   const [obraId, setObraId] = useState("");
+  const [hora, setHora] = useState("");
+  const [encargadoId, setEncargadoId] = useState("");
   const [guardando, setGuardando] = useState(false);
   return (
     <form
@@ -3501,9 +3504,9 @@ function FormRecordatorio({ conObra = false, obras = [], fechaOpcional = false, 
         if (!texto.trim()) return;
         if (conObra && !obraId) { alert("Elegí la obra."); return; }
         setGuardando(true);
-        const ok = await onGuardar({ texto: texto.trim(), fecha: fecha || null, ...(conObra ? { obraId: Number(obraId) } : {}) });
+        const ok = await onGuardar({ texto: texto.trim(), fecha: fecha || null, ...(conObra ? { obraId: Number(obraId), hora: hora || null, encargadoId: encargadoId ? Number(encargadoId) : null } : {}) });
         setGuardando(false);
-        if (ok !== false && ok !== null) { setTexto(""); setFecha(fechaOpcional ? "" : hoyISO()); }
+        if (ok !== false && ok !== null) { setTexto(""); setFecha(fechaOpcional ? "" : hoyISO()); setHora(""); setEncargadoId(""); }
       }}
     >
       <div className={conObra ? "md:col-span-2" : "md:col-span-3"}>
@@ -3524,6 +3527,22 @@ function FormRecordatorio({ conObra = false, obras = [], fechaOpcional = false, 
       <Field label={fechaOpcional ? "Fecha (opcional)" : "Fecha"}>
         <FechaInput value={fecha} onChange={(e) => setFecha(e.target.value)} required={!fechaOpcional} className={inputCls} />
       </Field>
+      {conObra && (
+        <>
+          <Field label="Hora (opcional)">
+            <input type="time" value={hora} onChange={(e) => setHora(e.target.value)} className={inputCls} />
+          </Field>
+          <div className="md:col-span-2">
+            <Field label="Encargado de la tarea (opcional)">
+              <select value={encargadoId} onChange={(e) => setEncargadoId(e.target.value)} className={inputCls}>
+                <option value="">Sin encargado</option>
+                {personal.map((p) => <option key={p.id} value={p.id}>{nombrePersona(p)}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div className="self-end pb-2 text-[11px] text-slate-400 md:col-span-1">Con hora: aparece en General ese día a las 8. Sin hora: desde el día antes.</div>
+        </>
+      )}
       <div className={`flex items-end gap-2 ${conObra ? "md:col-span-4" : "md:col-span-4"}`}>
         <button disabled={guardando} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">{guardando ? "Guardando…" : textoBoton}</button>
         {onCancelar && <button type="button" onClick={onCancelar} className={btnGhost}>Cancelar</button>}
@@ -3534,12 +3553,12 @@ function FormRecordatorio({ conObra = false, obras = [], fechaOpcional = false, 
 
 // Lista de recordatorios / notas: primero las pendientes (las con fecha por fecha, después
 // las sin fecha), con su aviso de cuándo es; las hechas quedan en un desplegable aparte.
-function ListaRecordatorios({ items, obras, notas = false, vacio, onToggleHecho, onGuardar, onBorrar }) {
+function ListaRecordatorios({ items, obras, personal = [], notas = false, vacio, onToggleHecho, onGuardar, onBorrar }) {
   const [editandoId, setEditandoId] = useState(null);
-  const [borrador, setBorrador] = useState({ texto: "", fecha: "" });
+  const [borrador, setBorrador] = useState({ texto: "", fecha: "", hora: "", encargadoId: "" });
   const hoy = hoyISO();
   const dias = (f) => Math.round((fechaLocal(f) - fechaLocal(hoy)) / 86400000);
-  const orden = (a, b) => (a.fecha && b.fecha ? a.fecha.localeCompare(b.fecha) : a.fecha ? -1 : b.fecha ? 1 : b.id - a.id);
+  const orden = (a, b) => (a.fecha && b.fecha ? a.fecha.localeCompare(b.fecha) || (a.hora || "99").localeCompare(b.hora || "99") : a.fecha ? -1 : b.fecha ? 1 : b.id - a.id);
   const pendientes = items.filter((r) => !r.hecho).sort(orden);
   const hechos = items.filter((r) => r.hecho).sort((a, b) => b.id - a.id);
   const cuando = (r) => {
@@ -3547,17 +3566,27 @@ function ListaRecordatorios({ items, obras, notas = false, vacio, onToggleHecho,
     const d = dias(r.fecha);
     const txt = d < 0 ? `venció hace ${Math.abs(d)} día(s)` : d === 0 ? "hoy" : d === 1 ? "mañana" : `en ${d} días`;
     const cls = d < 0 ? "bg-rose-100 text-rose-700" : d <= 1 ? "bg-amber-100 text-amber-800" : "bg-stone-100 text-slate-600";
-    return <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{fmtFecha(r.fecha)} · {txt}</span>;
+    return <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${cls}`}>{fmtFecha(r.fecha)}{r.hora ? ` ${r.hora} hs` : ""} · {txt}</span>;
   };
   const fila = (r) => {
     const obra = obras.find((o) => o.id === r.obraId);
+    const encargado = r.encargadoId ? personal.find((p) => p.id === r.encargadoId) : null;
     if (editandoId === r.id) {
       return (
         <div key={r.id} className={`space-y-2 rounded-lg border border-amber-300 p-3 ${notas ? "bg-amber-50" : "bg-white"}`}>
           <textarea rows={2} value={borrador.texto} onChange={(e) => setBorrador((b) => ({ ...b, texto: e.target.value }))} className={`${inputCls} w-full resize-y`} />
           <div className="flex flex-wrap items-end gap-2">
             <div className="w-40"><FechaInput value={borrador.fecha} onChange={(e) => setBorrador((b) => ({ ...b, fecha: e.target.value }))} required={!notas} className={inputCls} /></div>
-            <button onClick={() => { if (!borrador.texto.trim() || (!notas && !borrador.fecha)) return; onGuardar(r, { texto: borrador.texto.trim(), fecha: borrador.fecha || null }); setEditandoId(null); }} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Guardar</button>
+            {!notas && (
+              <>
+                <input type="time" value={borrador.hora} onChange={(e) => setBorrador((b) => ({ ...b, hora: e.target.value }))} className={`${inputCls} w-32`} aria-label="Hora (opcional)" />
+                <select value={borrador.encargadoId} onChange={(e) => setBorrador((b) => ({ ...b, encargadoId: e.target.value }))} className={inputCls} aria-label="Encargado (opcional)">
+                  <option value="">Sin encargado</option>
+                  {personal.map((p) => <option key={p.id} value={p.id}>{nombrePersona(p)}</option>)}
+                </select>
+              </>
+            )}
+            <button onClick={() => { if (!borrador.texto.trim() || (!notas && !borrador.fecha)) return; onGuardar(r, { texto: borrador.texto.trim(), fecha: borrador.fecha || null, ...(notas ? {} : { hora: borrador.hora || null, encargadoId: borrador.encargadoId ? Number(borrador.encargadoId) : null }) }); setEditandoId(null); }} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Guardar</button>
             <button onClick={() => setEditandoId(null)} className={btnGhost}>Cancelar</button>
           </div>
         </div>
@@ -3572,11 +3601,12 @@ function ListaRecordatorios({ items, obras, notas = false, vacio, onToggleHecho,
             {!r.hecho && cuando(r)}
             {r.hecho && r.fecha && <span>{fmtFecha(r.fecha)}</span>}
             {!notas && obra && <span className="flex items-center gap-1"><ObraDot obra={obra} />{obra.nombre}</span>}
+            {encargado && <span className="flex items-center gap-1 font-medium text-slate-600"><Users size={11} /> {nombrePersona(encargado)}</span>}
             {r.creadoPor && <span className="text-slate-400">{r.fecha || (!notas && obra) ? "· " : ""}{r.creadoPor}</span>}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {!r.hecho && <button onClick={() => { setEditandoId(r.id); setBorrador({ texto: r.texto, fecha: r.fecha || "" }); }} className="p-1 text-slate-400 hover:text-slate-700" aria-label="Modificar"><Pencil size={13} /></button>}
+          {!r.hecho && <button onClick={() => { setEditandoId(r.id); setBorrador({ texto: r.texto, fecha: r.fecha || "", hora: r.hora || "", encargadoId: r.encargadoId ? String(r.encargadoId) : "" }); }} className="p-1 text-slate-400 hover:text-slate-700" aria-label="Modificar"><Pencil size={13} /></button>}
           <button onClick={() => onBorrar(r)} className="p-1 text-slate-400 hover:text-rose-600" aria-label="Borrar"><Trash2 size={13} /></button>
         </div>
       </div>
@@ -5705,7 +5735,9 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // pagar factura por factura — resta de la deuda total y salda solas las
   // facturas más viejas que alcanza a cubrir.
   const DEMO_RECORDATORIOS = [
-    { id: 1, tipo: "obra", fecha: fechaMasDias(1), obraId: 1, texto: "Visita del cliente a la obra, 10 hs", hecho: false, creadoPor: "Pablo" },
+    { id: 1, tipo: "obra", fecha: fechaMasDias(1), obraId: 1, texto: "Visita del cliente a la obra", hecho: false, creadoPor: "Pablo" },
+    { id: 5, tipo: "obra", fecha: fechaMasDias(0), hora: "10:30", encargadoId: 3, obraId: 1, texto: "Recibir el hormigón", hecho: false, creadoPor: "Pablo" },
+    { id: 6, tipo: "obra", fecha: fechaMasDias(1), hora: "09:00", obraId: 2, texto: "Medición con el cliente", hecho: false, creadoPor: "Ricardo" },
     { id: 2, tipo: "obra", fecha: fechaMasDias(12), obraId: 2, texto: "Llega el hierro para la losa", hecho: false, creadoPor: "Ricardo" },
     { id: 3, tipo: "nota", fecha: fechaMasDias(0), obraId: null, texto: "Llamar al contador por el cierre de octubre", hecho: false, creadoPor: "Pablo" },
     { id: 4, tipo: "nota", fecha: null, obraId: null, texto: "Pedir presupuesto de andamios nuevos (3 cuerpos)", hecho: false, creadoPor: "Ricardo" },
@@ -6762,9 +6794,25 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const deudasTarjetaSocioPorVencer = cuotasTarjetaPendientes.filter((c) => c.fecha && diasHasta(c.fecha) <= 5);
   // Recordatorios de obras y notas con fecha: aparecen desde 1 día antes y siguen hasta
   // marcarlos como hechos. Las notas son de los gerentes.
+  // Con hora: aparece ese mismo día desde las 8 de la mañana (no el día antes).
+  const HORA_AVISO_RECORDATORIO = 8;
+  const [yaSonLas8, setYaSonLas8] = useState(() => new Date().getHours() >= HORA_AVISO_RECORDATORIO);
+  useEffect(() => {
+    // Revisa cada 5 minutos si ya pasaron las 8 (y si cambió el día): solo vuelve a
+    // dibujar cuando eso cambia, para que los recordatorios con hora aparezcan solos.
+    const t = setInterval(() => setYaSonLas8(new Date().getHours() >= HORA_AVISO_RECORDATORIO), 5 * 60000);
+    return () => clearInterval(t);
+  }, []);
+  const recordatorioVisibleEnGeneral = (r) => {
+    const d = diasHasta(r.fecha);
+    return r.hora ? d < 0 || (d === 0 && yaSonLas8) : d <= 1;
+  };
   const recordatoriosPorVencer = recordatorios
-    .filter((r) => !r.hecho && r.fecha && diasHasta(r.fecha) <= 1 && (r.tipo === "obra" || currentRole === "Gerente") && !obraIdsPapelera.has(r.obraId))
-    .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha) || a.id - b.id);
+    .filter((r) => !r.hecho && r.fecha && recordatorioVisibleEnGeneral(r) && (r.tipo === "obra" || currentRole === "Gerente") && !obraIdsPapelera.has(r.obraId))
+    .sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha) || (a.hora || "99").localeCompare(b.hora || "99") || a.id - b.id);
+  const personalActivoRecordatorios = personal
+    .filter((p) => p.estado === "Activo")
+    .sort((a, b) => nombreCompletoDe(a).localeCompare(nombreCompletoDe(b)));
 
   // "Visto bueno" de alertas: una vez descartada (tick) no vuelve a aparecer,
   // salvo que cambie lo que la generó — se identifica con un tipo fijo más
@@ -11934,12 +11982,13 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                         {recordatoriosPorVencer.map((r) => {
                           const dias = diasHasta(r.fecha);
                           const obra = obras.find((o) => o.id === r.obraId);
+                          const encargado = r.encargadoId ? personal.find((p) => p.id === r.encargadoId) : null;
                           return (
                             <li key={r.id} className="flex flex-wrap items-center justify-between gap-2">
                               <span className="min-w-0">
-                                <span className="font-semibold">{dias < 0 ? `Venció hace ${Math.abs(dias)} día(s)` : dias === 0 ? "Hoy" : "Mañana"}</span>
+                                <span className="font-semibold">{dias < 0 ? `Venció hace ${Math.abs(dias)} día(s)` : dias === 0 ? "Hoy" : "Mañana"}{r.hora ? ` ${r.hora} hs` : ""}</span>
                                 {" — "}{r.texto}
-                                <span className="opacity-70"> ({r.tipo === "nota" ? "nota" : obra?.nombre || "obra"})</span>
+                                <span className="opacity-70"> ({r.tipo === "nota" ? "nota" : obra?.nombre || "obra"}{encargado ? ` · encargado: ${nombreCompletoDe(encargado)}` : ""})</span>
                               </span>
                               <button onClick={() => actualizarRecordatorio(r, { hecho: true })} className="rounded-md border border-current/30 bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-white">
                                 <span className="flex items-center gap-1"><Check size={10} /> Hecho</span>
@@ -19124,6 +19173,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
                 <FormRecordatorio
                   conObra
                   obras={obrasSeleccionables(obras)}
+                  personal={personalActivoRecordatorios}
                   onGuardar={async (datos) => { const ok = await agregarRecordatorio({ tipo: "obra", ...datos }); if (ok) setShowRecordatorioForm(false); }}
                   onCancelar={() => setShowRecordatorioForm(false)}
                 />
@@ -19131,6 +19181,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               <ListaRecordatorios
                 items={recordatorios.filter((r) => r.tipo === "obra" && !obraIdsPapelera.has(r.obraId))}
                 obras={obras}
+                personal={personalActivoRecordatorios}
                 vacio="Sin recordatorios. Agregá uno para que aparezca en General el día antes."
                 onToggleHecho={(r) => actualizarRecordatorio(r, { hecho: !r.hecho })}
                 onGuardar={actualizarRecordatorio}
