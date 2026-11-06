@@ -6,8 +6,9 @@ import {
   ShoppingCart, Receipt, Plus, MapPin, TrendingUp, X, AlertTriangle, CheckCircle2,
   Database, Loader2, RefreshCw, DollarSign, Check, Menu, FileDown, ShieldCheck, Shield,
   Printer, HardHat, Zap, PaintRoller, Droplet, Hammer, Flame, Wallet,
-  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck, ScanLine, BatteryCharging, Construction, StickyNote, BellRing
+  Landmark, Smartphone, Banknote, Briefcase, Info, Pencil, Truck, ArrowRightLeft, CalendarDays, CalendarClock, Package, Upload, FileSpreadsheet, Trash2, Camera, ChevronLeft, ChevronRight, ChevronDown, Percent, History, Copy, CreditCard, FileText, MessageCircle, Mail, PackageCheck, ScanLine, BatteryCharging, Construction, StickyNote, BellRing, UserPlus, QrCode, Star, Phone, Search
 } from "lucide-react";
+import { RUBROS_POSTULANTE, CATEGORIAS_POSTULANTE, MODALIDADES_POSTULANTE, ESTADOS_POSTULANTE, ESPECIALIDAD_DE_RUBRO, RANGO_CATEGORIA } from "./postulantesConfig.js";
 import { leerFactura, paginasPdfComoImagenes } from "./lectorFacturas.js";
 
 // Librerías pesadas que solo se usan al tocar un botón (armar PDFs, leer Excel, unir
@@ -770,6 +771,7 @@ const ARCHIVOS_DIFERIDOS = {
   facturas_venta_proyectadas: ["archivo"],
   cobros_socios: ["archivo"],
   obra_fotos: ["archivo"],
+  postulantes: ["cv_archivo", "fotos"],
 };
 const MARCA_DIFERIDO = "diferido:";
 const esArchivoDiferido = (v) => typeof v === "string" && v.startsWith(MARCA_DIFERIDO);
@@ -3487,6 +3489,344 @@ function ModalDevolverCuotasTarjeta({ titulo, cuotas, onClose, onGuardar }) {
     </div>
   );
 }
+// ---------- Postulantes ----------
+const urlPostulacion = () => `${window.location.origin}/?trabajo`;
+// WhatsApp de Argentina: 549 + característica + número (sin 0 ni 15).
+function linkWhatsApp(tel, texto = "") {
+  let d = String(tel || "").replace(/\D/g, "");
+  if (!d) return null;
+  if (d.startsWith("54")) d = d.slice(2);
+  d = d.replace(/^0/, "").replace(/^9/, "");
+  const m = d.match(/^(\d{2,4})15(\d{6,8})$/);
+  if (m && (m[1] + m[2]).length === 10) d = m[1] + m[2];
+  return `https://wa.me/549${d}${texto ? `?text=${encodeURIComponent(texto)}` : ""}`;
+}
+// Cartel para imprimir y pegar en las obras: el QR lleva al formulario de postulación.
+async function abrirCartelQR() {
+  const ventana = window.open("", "_blank");
+  if (!ventana) { alert("El navegador bloqueó la ventana. Permití ventanas emergentes para este sitio."); return; }
+  ventana.document.write("<p style='font-family:sans-serif;padding:16px'>Armando el cartel…</p>");
+  try {
+    const QRCode = (await import("qrcode")).default;
+    const url = urlPostulacion();
+    const qr = await QRCode.toDataURL(url, { width: 700, margin: 1, errorCorrectionLevel: "M", color: { dark: "#021d34", light: "#ffffff" } });
+    ventana.document.open();
+    ventana.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Trabajá con nosotros · Grupo Concretar</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
+<style>@page{size:A4;margin:14mm}*{box-sizing:border-box}body{margin:0;font-family:Poppins,system-ui,sans-serif;color:#021d34;text-align:center}
+.top{background:#021d34;color:#fff;padding:28px 20px 34px;border-radius:18px}.top img{height:46px}.eyebrow{margin:22px 0 4px;color:#f59e0b;font-weight:600;letter-spacing:.18em;font-size:15px;text-transform:uppercase}
+h1{margin:0;font-size:40px;line-height:1.1;font-weight:800}.qr{width:330px;margin:26px auto 8px;display:block}.paso{font-size:20px;margin:6px 0}.url{font-size:15px;color:#3a5c66;margin-top:10px}
+.oficios{margin:22px auto 0;max-width:560px;font-size:15px;color:#153f59;line-height:1.6}button{margin-top:18px;padding:10px 18px;font:inherit;border-radius:8px;border:1px solid #021d34;background:#fff;cursor:pointer}@media print{button{display:none}}</style></head>
+<body><div class="top"><img src="${window.location.origin}/gc-logo-white.png" alt="Grupo Concretar"><div class="eyebrow">Trabajá con nosotros</div><h1>¿Trabajás en la construcción?</h1></div>
+<img class="qr" src="${qr}" alt="QR para postularse"><div class="paso"><b>Escaneá el código con la cámara</b> y dejanos tus datos.</div>
+<div class="url">${url}</div><div class="oficios">Albañiles · Electricistas · Plomeros · Pintores · Herreros · Carpinteros · Durlock · Techistas · Ayudantes y oficiales</div>
+<button onclick="window.print()">Imprimir</button></body></html>`);
+    ventana.document.close();
+  } catch {
+    ventana.close();
+    alert("No se pudo armar el cartel. Revisá la conexión y probá de nuevo.");
+  }
+}
+const ESTILO_ESTADO_POSTULANTE = {
+  Nuevo: "bg-sky-100 text-sky-800",
+  Contactado: "bg-amber-100 text-amber-800",
+  Apto: "bg-emerald-100 text-emerald-800",
+  "No apto": "bg-rose-100 text-rose-700",
+  Contratado: "bg-slate-800 text-white",
+};
+const ORDENES_POSTULANTES = {
+  recientes: "Más recientes",
+  calificacion: "Mejor calificados",
+  experiencia: "Más experiencia",
+  categoria: "Mayor categoría",
+  disponibles: "Disponibles antes",
+  nombre: "Nombre (A-Z)",
+};
+function Estrellas({ valor, onCambiar, size = 14 }) {
+  return (
+    <span className="inline-flex items-center">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button key={n} type="button" disabled={!onCambiar} onClick={() => onCambiar?.(valor === n ? null : n)} aria-label={`${n} estrella${n > 1 ? "s" : ""}`} className={onCambiar ? "p-0.5" : "cursor-default"}>
+          <Star size={size} className={n <= (valor || 0) ? "fill-amber-400 text-amber-400" : "text-slate-300"} />
+        </button>
+      ))}
+    </span>
+  );
+}
+const nombrePostulante = (p) => `${p.nombre || ""} ${p.apellido || ""}`.trim();
+const textoRubros = (p) => (p.rubros || []).map((r) => `${r.rubro} · ${r.categoria}`).join("  |  ");
+const mejorCategoria = (p, rubro) => Math.max(0, ...(p.rubros || []).filter((r) => !rubro || r.rubro === rubro || r.rubro.startsWith(`${rubro}:`)).map((r) => RANGO_CATEGORIA[r.categoria] || 0));
+const diasDesde = (iso) => Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+const hace = (iso) => { const d = diasDesde(iso); return d <= 0 ? "hoy" : d === 1 ? "ayer" : `hace ${d} días`; };
+
+function SeccionPostulantes({ postulantes, onActualizar, onBorrar, onPasarAPersonal }) {
+  const [filtros, setFiltros] = useState({ texto: "", rubro: "", categoria: "", estado: "", modalidad: "", herramientas: false, ieric: false });
+  const [orden, setOrden] = useState("recientes");
+  const [abiertoId, setAbiertoId] = useState(null);
+  const [copiado, setCopiado] = useState(false);
+  const setFiltro = (k) => (e) => setFiltros((f) => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  const hayFiltros = Object.entries(filtros).some(([, v]) => v);
+
+  const ultimos = [...postulantes].sort((a, b) => (b.creadoEn || "").localeCompare(a.creadoEn || "")).slice(0, 6);
+  const nuevosSemana = postulantes.filter((p) => p.creadoEn && diasDesde(p.creadoEn) < 7).length;
+
+  const q = normalizarTexto(filtros.texto.trim());
+  const lista = postulantes
+    .filter((p) => {
+      if (q && !normalizarTexto(`${nombrePostulante(p)} ${p.localidad || ""} ${p.telefono || ""} ${textoRubros(p)} ${p.notas || ""}`).includes(q)) return false;
+      if (filtros.rubro || filtros.categoria) {
+        const ok = (p.rubros || []).some((r) =>
+          (!filtros.rubro || r.rubro === filtros.rubro || r.rubro.startsWith(`${filtros.rubro}:`)) &&
+          (!filtros.categoria || (RANGO_CATEGORIA[r.categoria] || 0) >= (RANGO_CATEGORIA[filtros.categoria] || 0)));
+        if (!ok) return false;
+      }
+      if (filtros.estado && p.estado !== filtros.estado) return false;
+      if (filtros.modalidad && p.modalidad !== filtros.modalidad) return false;
+      if (filtros.herramientas && !p.herramientasPropias) return false;
+      if (filtros.ieric && !p.tarjetaIeric) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      switch (orden) {
+        case "calificacion": return (b.calificacion || 0) - (a.calificacion || 0) || (b.aniosExperiencia || 0) - (a.aniosExperiencia || 0);
+        case "experiencia": return (b.aniosExperiencia ?? -1) - (a.aniosExperiencia ?? -1);
+        case "categoria": return mejorCategoria(b, filtros.rubro) - mejorCategoria(a, filtros.rubro) || (b.calificacion || 0) - (a.calificacion || 0);
+        case "disponibles": return (a.disponibleDesde || "9999").localeCompare(b.disponibleDesde || "9999");
+        case "nombre": return nombrePostulante(a).localeCompare(nombrePostulante(b));
+        default: return (b.creadoEn || "").localeCompare(a.creadoEn || "");
+      }
+    });
+  const abierto = postulantes.find((p) => p.id === abiertoId) || null;
+  const selCls = "rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm text-slate-800";
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900">Postulantes</h2>
+          <p className="mt-1 max-w-xl text-xs text-slate-500">Personal externo que dejó sus datos con el link de postulación. Filtrá y ordená para ver a quién llamar cuando necesiten gente.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={async () => { try { await navigator.clipboard.writeText(urlPostulacion()); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch { window.prompt("Copiá el link:", urlPostulacion()); } }} className={btnGhost}>
+            <span className="flex items-center gap-1"><Copy size={13} /> {copiado ? "¡Copiado!" : "Copiar link para postularse"}</span>
+          </button>
+          <a href={`https://wa.me/?text=${encodeURIComponent(`¿Trabajás en la construcción? Dejá tus datos en Grupo Concretar: ${urlPostulacion()}`)}`} target="_blank" rel="noreferrer" className={btnGhost}>
+            <span className="flex items-center gap-1"><MessageCircle size={13} /> Compartir por WhatsApp</span>
+          </a>
+          <button onClick={abrirCartelQR} className={btnGhost}><span className="flex items-center gap-1"><QrCode size={13} /> Cartel con QR</span></button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-3">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-sky-900">Últimos ingresados</span>
+          <span className="text-xs text-sky-800">{nuevosSemana} en los últimos 7 días · {postulantes.length} en total</span>
+        </div>
+        {ultimos.length === 0 ? (
+          <div className="text-sm text-slate-500">Todavía no se postuló nadie. Compartí el link o imprimí el cartel con QR.</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {ultimos.map((p) => (
+              <button key={p.id} onClick={() => setAbiertoId(p.id)} className="rounded-md border border-sky-100 bg-white p-2.5 text-left text-sm shadow-sm hover:border-sky-300">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-semibold text-slate-900">{nombrePostulante(p)}</span>
+                  {p.estado === "Nuevo" && <span className="shrink-0 rounded-full bg-sky-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Nuevo</span>}
+                </div>
+                <div className="truncate text-xs text-slate-600">{textoRubros(p)}</div>
+                <div className="text-[11px] text-slate-400">{p.localidad ? `${p.localidad} · ` : ""}{p.creadoEn ? hace(p.creadoEn) : ""}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <label className="col-span-2 flex items-center gap-1.5 rounded-md border border-stone-300 bg-white px-2 sm:col-span-3 lg:col-span-2">
+            <Search size={14} className="text-slate-400" />
+            <input value={filtros.texto} onChange={setFiltro("texto")} placeholder="Buscar nombre, zona, teléfono…" className="w-full py-1.5 text-sm outline-none" />
+          </label>
+          <select value={filtros.rubro} onChange={setFiltro("rubro")} className={selCls} aria-label="Rubro">
+            <option value="">Todos los rubros</option>
+            {RUBROS_POSTULANTE.map((r) => <option key={r}>{r}</option>)}
+          </select>
+          <select value={filtros.categoria} onChange={setFiltro("categoria")} className={selCls} aria-label="Categoría mínima">
+            <option value="">Categoría</option>
+            {CATEGORIAS_POSTULANTE.map((c) => <option key={c} value={c}>{c} o más</option>)}
+          </select>
+          <select value={filtros.estado} onChange={setFiltro("estado")} className={selCls} aria-label="Estado">
+            <option value="">Estado</option>
+            {ESTADOS_POSTULANTE.map((e) => <option key={e}>{e}</option>)}
+          </select>
+          <select value={filtros.modalidad} onChange={setFiltro("modalidad")} className={selCls} aria-label="Modalidad">
+            <option value="">Modalidad</option>
+            {MODALIDADES_POSTULANTE.map((m) => <option key={m}>{m}</option>)}
+          </select>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-700">
+            <label className="flex items-center gap-1.5"><input type="checkbox" checked={filtros.herramientas} onChange={setFiltro("herramientas")} /> Con herramientas propias</label>
+            <label className="flex items-center gap-1.5"><input type="checkbox" checked={filtros.ieric} onChange={setFiltro("ieric")} /> Con tarjeta IERIC</label>
+            {hayFiltros && <button onClick={() => setFiltros({ texto: "", rubro: "", categoria: "", estado: "", modalidad: "", herramientas: false, ieric: false })} className="font-semibold text-slate-500 underline hover:text-slate-800">Limpiar filtros</button>}
+          </div>
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+            Ordenar por
+            <select value={orden} onChange={(e) => setOrden(e.target.value)} className={selCls}>
+              {Object.entries(ORDENES_POSTULANTES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1.5 text-xs text-slate-500">{lista.length} postulante{lista.length === 1 ? "" : "s"}{hayFiltros ? " con estos filtros" : ""}</div>
+        {lista.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-stone-300 bg-white px-3 py-6 text-center text-sm text-slate-400">No hay postulantes que coincidan.</div>
+        ) : (
+          <div className="space-y-2">
+            {lista.map((p) => {
+              const wa = linkWhatsApp(p.telefono, `Hola ${p.nombre}, te escribimos de Grupo Concretar por tu postulación.`);
+              return (
+                <div key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-stone-200 bg-white p-3 shadow-sm">
+                  <button onClick={() => setAbiertoId(p.id)} className="min-w-0 flex-1 text-left">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-slate-900">{nombrePostulante(p)}</span>
+                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${ESTILO_ESTADO_POSTULANTE[p.estado] || ""}`}>{p.estado}</span>
+                      {p.calificacion ? <Estrellas valor={p.calificacion} size={12} /> : null}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap gap-1">
+                      {(p.rubros || []).map((r, i) => <span key={i} className="rounded bg-stone-100 px-1.5 py-0.5 text-[11px] text-slate-700">{r.rubro} · <b>{r.categoria}</b></span>)}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">
+                      {[p.localidad, p.aniosExperiencia != null ? `${p.aniosExperiencia} año(s) de experiencia` : null, p.herramientasPropias ? "herramientas propias" : null, p.tarjetaIeric ? "IERIC" : null, p.modalidad, p.disponibleDesde ? `disponible desde ${fmtFecha(p.disponibleDesde)}` : null, p.creadoEn ? `se postuló ${hace(p.creadoEn)}` : null].filter(Boolean).join(" · ")}
+                    </div>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {wa && <a href={wa} target="_blank" rel="noreferrer" className={btnGhost}><span className="flex items-center gap-1"><MessageCircle size={13} /> WhatsApp</span></a>}
+                    <button onClick={() => setAbiertoId(p.id)} className={btnGhost}>Ver ficha</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {abierto && (
+        <FichaPostulante
+          key={abierto.id}
+          p={abierto}
+          onClose={() => setAbiertoId(null)}
+          onActualizar={(patch) => onActualizar(abierto, patch)}
+          onBorrar={() => { onBorrar(abierto); setAbiertoId(null); }}
+          onPasarAPersonal={() => onPasarAPersonal(abierto)}
+        />
+      )}
+    </div>
+  );
+}
+
+function FichaPostulante({ p, onClose, onActualizar, onBorrar, onPasarAPersonal }) {
+  const [fotos, setFotos] = useState(Array.isArray(p.fotos) ? p.fotos : []);
+  const [pasando, setPasando] = useState(false);
+  useEffect(() => {
+    if (!esArchivoDiferido(p.fotos)) return;
+    let vivo = true;
+    resolverArchivo(p.fotos).then((d) => { if (vivo && Array.isArray(d)) setFotos(d); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [p.fotos]);
+  useEffect(() => {
+    const cerrar = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", cerrar);
+    return () => window.removeEventListener("keydown", cerrar);
+  }, [onClose]);
+  const wa = linkWhatsApp(p.telefono, `Hola ${p.nombre}, te escribimos de Grupo Concretar por tu postulación.`);
+  const dato = (label, valor) => (valor === null || valor === undefined || valor === "" ? null : (
+    <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div><div className="text-sm text-slate-800">{valor}</div></div>
+  ));
+  const siNo = (v) => (v === true ? "Sí" : v === false ? "No" : null);
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">{nombrePostulante(p)}</h3>
+            <div className="text-xs text-slate-500">Se postuló el {p.creadoEn ? new Date(p.creadoEn).toLocaleDateString("es-AR") : "—"}{p.creadoEn ? ` (${hace(p.creadoEn)})` : ""}</div>
+          </div>
+          <button onClick={onClose} aria-label="Cerrar"><X size={18} /></button>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md bg-stone-50 p-2.5">
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+            Estado
+            <select value={p.estado} onChange={(e) => onActualizar({ estado: e.target.value })} className="rounded-md border border-stone-300 bg-white px-2 py-1 text-sm">
+              {ESTADOS_POSTULANTE.map((e) => <option key={e}>{e}</option>)}
+            </select>
+          </label>
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">Calificación <Estrellas valor={p.calificacion} onCambiar={(v) => onActualizar({ calificacion: v })} size={18} /></span>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {(p.rubros || []).map((r, i) => <span key={i} className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-900 ring-1 ring-amber-200">{r.rubro} · <b>{r.categoria}</b></span>)}
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {dato("Teléfono", p.telefono)}
+          {dato("DNI", p.dni)}
+          {dato("Mail", p.email)}
+          {dato("Localidad", p.localidad)}
+          {dato("Edad", p.edad)}
+          {dato("Experiencia", p.aniosExperiencia != null ? `${p.aniosExperiencia} año(s)` : null)}
+          {dato("Herramientas propias", siNo(p.herramientasPropias))}
+          {dato("Tarjeta IERIC", siNo(p.tarjetaIeric))}
+          {dato("Disponible desde", p.disponibleDesde ? fmtFecha(p.disponibleDesde) : null)}
+          {dato("Prefiere", p.modalidad)}
+        </div>
+        {p.ultimasObras && <div className="mt-3">{dato("Últimas obras / empresas", <span className="whitespace-pre-wrap">{p.ultimasObras}</span>)}</div>}
+        {p.comentarios && <div className="mt-3">{dato("Comentarios", <span className="whitespace-pre-wrap">{p.comentarios}</span>)}</div>}
+
+        {(p.cvArchivo || fotos.length > 0) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {p.cvArchivo && <button onClick={() => abrirArchivo(p.cvArchivo)} className={btnGhost}><span className="flex items-center gap-1"><FileText size={13} /> Ver CV{p.cvNombre ? ` (${p.cvNombre})` : ""}</span></button>}
+            {fotos.map((src, i) => (
+              <button key={i} onClick={() => abrirArchivo(src)} className="h-16 w-16 overflow-hidden rounded-md ring-1 ring-stone-200"><img src={src} alt={`Trabajo ${i + 1}`} className="h-full w-full object-cover" /></button>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-3">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Notas internas</div>
+          <textarea
+            key={`n-${p.id}-${p.notas ?? ""}`}
+            defaultValue={p.notas || ""}
+            rows={2}
+            placeholder="Ej: lo llamamos el martes, puede desde diciembre…"
+            onBlur={(e) => { const v = e.target.value.trim(); if (v !== (p.notas || "")) onActualizar({ notas: v || null }); }}
+            className={`${inputCls} w-full`}
+          />
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {wa && <a href={wa} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><MessageCircle size={15} /> WhatsApp</a>}
+          {p.telefono && <a href={`tel:${String(p.telefono).replace(/[^\d+]/g, "")}`} className={btnGhost}><span className="flex items-center gap-1"><Phone size={13} /> Llamar</span></a>}
+          {p.personalId ? (
+            <span className="text-xs font-semibold text-slate-600">Ya está en Personal</span>
+          ) : (
+            <button
+              disabled={pasando}
+              onClick={async () => { if (!window.confirm(`¿Dar de alta a ${nombrePostulante(p)} en Personal? Queda como "Contratado" acá.`)) return; setPasando(true); await onPasarAPersonal(); setPasando(false); }}
+              className={btnPrimary}
+            >
+              <UserPlus size={15} /> {pasando ? "Pasando…" : "Pasar a Personal"}
+            </button>
+          )}
+          <button onClick={onBorrar} className="ml-auto text-xs font-semibold text-slate-400 hover:text-rose-600">Borrar postulante</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const nombrePersona = (p) => [(p.nombre || "").trim(), (p.apellido || "").trim()].filter(Boolean).join(" ") || "—";
 // Alta de un recordatorio de obra (fecha obligatoria y obra) o de una nota (fecha opcional).
 function FormRecordatorio({ conObra = false, obras = [], personal = [], fechaOpcional = false, textoBoton = "Guardar", placeholder = "Ej: Llega el hormigón, visita del cliente…", onGuardar, onCancelar }) {
@@ -5734,6 +6074,13 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   // Entregas a cuenta a proveedores: plata que se le lleva al proveedor sin
   // pagar factura por factura — resta de la deuda total y salda solas las
   // facturas más viejas que alcanza a cubrir.
+  const haceDias = (n) => new Date(Date.now() - n * 86400000).toISOString();
+  const DEMO_POSTULANTES = [
+    { id: 1, creadoEn: haceDias(0.2), nombre: "Lucas", apellido: "Gómez", dni: "38111222", telefono: "264 4556677", email: "", localidad: "Rivadavia", edad: 29, rubros: [{ rubro: "Electricidad", categoria: "Oficial" }, { rubro: "Plomería / Gas", categoria: "Ayudante" }], aniosExperiencia: 7, ultimasObras: "Constructora Andina (2023-2025), edificio en Capital", herramientasPropias: true, tarjetaIeric: true, disponibleDesde: fechaMasDias(3), modalidad: "Por obra", comentarios: "", cvArchivo: null, cvNombre: null, fotos: [], consentimiento: true, estado: "Nuevo", calificacion: null, notas: "" },
+    { id: 2, creadoEn: haceDias(2), nombre: "Marcelo", apellido: "Ruiz", dni: "", telefono: "264 5001122", email: "", localidad: "Pocito", edad: 45, rubros: [{ rubro: "Albañilería", categoria: "Oficial Especializado" }, { rubro: "Hormigón / Estructura", categoria: "Oficial" }], aniosExperiencia: 20, ultimasObras: "", herramientasPropias: true, tarjetaIeric: false, disponibleDesde: null, modalidad: "Tiempo completo", comentarios: "Tengo cuadrilla de 3", cvArchivo: null, cvNombre: null, fotos: [], consentimiento: true, estado: "Contactado", calificacion: 4, notas: "Lo llamamos el martes, puede desde diciembre." },
+    { id: 3, creadoEn: haceDias(15), nombre: "Diego", apellido: "Sosa", dni: "", telefono: "264 6112233", email: "", localidad: "Capital", edad: 23, rubros: [{ rubro: "Pintura", categoria: "Ayudante" }], aniosExperiencia: 1, ultimasObras: "", herramientasPropias: false, tarjetaIeric: false, disponibleDesde: null, modalidad: "", comentarios: "", cvArchivo: null, cvNombre: null, fotos: [], consentimiento: true, estado: "Apto", calificacion: 3, notas: "" },
+    { id: 4, creadoEn: haceDias(40), nombre: "Ramón", apellido: "Ortiz", dni: "", telefono: "264 4998877", email: "", localidad: "Chimbas", edad: 51, rubros: [{ rubro: "Herrería / Soldadura", categoria: "Oficial" }], aniosExperiencia: 25, ultimasObras: "", herramientasPropias: true, tarjetaIeric: true, disponibleDesde: null, modalidad: "Por tanto", comentarios: "", cvArchivo: null, cvNombre: null, fotos: [], consentimiento: true, estado: "Apto", calificacion: 5, notas: "Muy prolijo, trabajó en Bandejas Graffigna." },
+  ];
   const DEMO_RECORDATORIOS = [
     { id: 1, tipo: "obra", fecha: fechaMasDias(1), obraId: 1, texto: "Visita del cliente a la obra", hecho: false, creadoPor: "Pablo" },
     { id: 5, tipo: "obra", fecha: fechaMasDias(0), hora: "10:30", encargadoId: 3, obraId: 1, texto: "Recibir el hormigón", hecho: false, creadoPor: "Pablo" },
@@ -5860,6 +6207,8 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
   const [portalObras, setPortalObras] = useState([]);
   // Recordatorios de obras (Calendario) y block de notas (Notas): misma tabla, por "tipo".
   const [recordatorios, setRecordatorios] = useState(isSupabaseConfigured ? [] : DEMO_RECORDATORIOS);
+  // Personal externo que dejó sus datos desde el formulario público (?trabajo).
+  const [postulantes, setPostulantes] = useState(isSupabaseConfigured ? [] : DEMO_POSTULANTES);
   const [obraFotos, setObraFotos] = useState([]);
   const [facturasVarias, setFacturasVarias] = useState(isSupabaseConfigured ? [] : DEMO_FACTURAS_VARIAS);
   const [sueldosPlanificados, setSueldosPlanificados] = useState(isSupabaseConfigured ? [] : DEMO_SUELDOS_PLANIFICADOS);
@@ -5928,7 +6277,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         // Además del cron horario en Supabase, disparamos la purga acá para que
         // una obra vencida en Papelera desaparezca apenas alguien abre la app.
         try { await supabase.rpc("purgar_obras_papelera_vencidas"); } catch { /* el cron del servidor la va a agarrar igual */ }
-        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp, dcob, exped, portales, fotosObra, recs] = await Promise.all([
+        const [o, p, cc, a, h, oc, cf, ing, tt, av, ch, cn, cm, cch, pv, rm, fer, cli, sm, tm, cma, pma, ped, pg, stk, bc, cl, lf, rl, mm, dr, pr, cs, pp, eo, ad, ep, af, ael, nc, fv, sp, fvp, gr, entp, cdp, dcob, exped, portales, fotosObra, recs, posts] = await Promise.all([
           sbSelect("obras"), sbSelect("personal"), sbSelect("costos_categoria"), sbSelect("asistencia"),
           sbSelect("herramientas"), sbSelect("ordenes_compra"), sbSelect("compras_facturas"), sbSelect("ingresos"),
           sbSelect("tanteros"), sbSelect("avances_tanteros"), sbSelect("combos_herramientas"),
@@ -5942,7 +6291,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
           sbSelect("ajustes_fiscales"), sbSelect("asistencia_eliminaciones_log"), sbSelect("notas_credito"), sbSelect("facturas_varias"),
           sbSelect("sueldos_planificados"), sbSelect("facturas_venta_proyectadas"), sbSelect("gastos_recurrentes"),
           sbSelect("entregas_proveedores"), sbSelect("correcciones_deuda_proveedor"), sbSelect("documentos_cobros"),
-          sbSelect("expedientes_obra"), sbSelect("portal_obras"), sbSelect("obra_fotos"), sbSelect("recordatorios"),
+          sbSelect("expedientes_obra"), sbSelect("portal_obras"), sbSelect("obra_fotos"), sbSelect("recordatorios"), sbSelect("postulantes"),
         ]);
         setObras(o);
         setPersonal(p);
@@ -5995,6 +6344,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
         setPortalObras(portales);
         setObraFotos(fotosObra);
         setRecordatorios(recs);
+        setPostulantes(posts);
         if (o[0]) setSelectedObraId(o[0].id);
       } catch (err) {
         setDbError(err.message);
@@ -6656,6 +7006,7 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     { id: "ingresos", label: "Ingresos", icon: TrendingUp },
     { id: "facturas", label: "Gastos y Facturas", icon: Receipt },
     { id: "personal", label: "Personal", icon: Users },
+    { id: "postulantes", label: "Postulantes", icon: UserPlus },
     { id: "cuentas", label: "Cuentas", icon: Landmark },
     { id: "cobros_socios", label: "Cobros Ricardo y Pablo", icon: Banknote },
     { id: "proveedores", label: "Clientes/Proveedores", icon: Truck },
@@ -7084,6 +7435,36 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
     const nuevo = await addRecord("expedientes_obra", { obraId, ...datos, pasos: {}, dias: {} }, setExpedientesObra);
     if (nuevo) consultarDondeEsta(nuevo, false);
   }
+  // ---------- Postulantes ----------
+  const puedeVerPostulantes = currentRole === "Gerente" || currentRole === "Recursos Humanos";
+  function actualizarPostulante(p, patch) {
+    updateRecord("postulantes", p.id, patch, setPostulantes);
+  }
+  function borrarPostulante(p) {
+    deleteRecord("postulantes", p.id, setPostulantes);
+  }
+  // Lo da de alta en Personal con lo que ya cargó (nombre, DNI, teléfono, IERIC, su mejor
+  // categoría y la especialidad de ese rubro) y lo marca "Contratado".
+  async function pasarPostulanteAPersonal(p) {
+    const principal = [...(p.rubros || [])].sort((a, b) => (RANGO_CATEGORIA[b.categoria] || 0) - (RANGO_CATEGORIA[a.categoria] || 0))[0];
+    const categoria = CATEGORIAS_PERSONAL.includes(principal?.categoria) ? principal.categoria : "Ayudante";
+    const fila = await addRecord("personal", {
+      ...emptyPersonalForm,
+      fechaNacimiento: null,
+      nombre: p.nombre, apellido: p.apellido, dni: p.dni || "",
+      categoria, especialidad: ESPECIALIDAD_DE_RUBRO[principal?.rubro] || "",
+      direccion: p.localidad || "",
+      tarjetaIeric: p.tarjetaIeric ? "Sí" : "No",
+      observaciones: [
+        `Tel: ${p.telefono}`,
+        `Ingresó desde Postulantes (${(p.rubros || []).map((r) => `${r.rubro} · ${r.categoria}`).join(", ")})`,
+        p.notas,
+      ].filter(Boolean).join(". "),
+    }, setPersonal);
+    if (fila) updateRecord("postulantes", p.id, { estado: "Contratado", personalId: fila.id }, setPostulantes);
+    return fila;
+  }
+
   // ---------- Recordatorios de obras y notas ----------
   const [showRecordatorioForm, setShowRecordatorioForm] = useState(false);
   function agregarRecordatorio(datos) {
@@ -19124,6 +19505,23 @@ function ConcretarApp({ usuario = null, onCerrarSesion }) {
               );
             })()}
           </div>
+        )}
+
+        {tab === "postulantes" && (
+          !puedeVerPostulantes ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-stone-300 bg-white p-10 text-center">
+              <UserPlus size={28} className="text-slate-400" />
+              <div className="text-sm font-semibold text-slate-700">Sección restringida</div>
+              <div className="max-w-sm text-xs text-slate-500">Solo Gerente y Recursos Humanos ven los postulantes.</div>
+            </div>
+          ) : (
+            <SeccionPostulantes
+              postulantes={postulantes}
+              onActualizar={actualizarPostulante}
+              onBorrar={borrarPostulante}
+              onPasarAPersonal={pasarPostulanteAPersonal}
+            />
+          )
         )}
 
         {tab === "notas" && (

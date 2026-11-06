@@ -17,10 +17,20 @@ window.addEventListener("appinstalled", () => {
 
 // El link privado de un cliente (?portal=...) abre solo la página de su obra: se carga
 // aparte, sin bajar la app completa ni pedir usuario.
-const tokenPortal = new URLSearchParams(window.location.search).get("portal");
+const parametros = new URLSearchParams(window.location.search);
+const tokenPortal = parametros.get("portal");
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
-if (tokenPortal) {
+// Link fijo para que personal externo deje su CV (?trabajo): solo el formulario.
+if (parametros.has("trabajo")) {
+  import("./postulacion.jsx").then(({ default: Postulacion }) => {
+    root.render(
+      <React.StrictMode>
+        <Postulacion />
+      </React.StrictMode>
+    );
+  });
+} else if (tokenPortal) {
   import("./portalCliente.jsx").then(({ default: PortalCliente }) => {
     root.render(
       <React.StrictMode>
